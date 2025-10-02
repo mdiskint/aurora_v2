@@ -1,50 +1,91 @@
 import { create } from 'zustand';
 import { Node } from './types';
 
+interface Nexus {
+  id: string;
+  position: [number, number, number];
+  content: string;
+  title: string; // Add this
+  videoUrl?: string;
+  audioUrl?: string;
+}
+
 interface CanvasStore {
-  nexus: { id: string; position: [number, number, number]; content: string } | null;
+  nexuses: Nexus[];
   nodes: { [id: string]: Node };
   selectedId: string | null;
   showContentOverlay: boolean;
-  createNexus: (content: string) => void;
+  isAnimatingCamera: boolean;
+  showReplyModal: boolean;
+  createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   addNode: (content: string, parentId: string) => void;
-  selectNode: (id: string | null) => void;
+  selectNode: (id: string | null, showOverlay?: boolean) => void;
   setShowContentOverlay: (show: boolean) => void;
+  setIsAnimatingCamera: (isAnimating: boolean) => void;
+  setShowReplyModal: (show: boolean) => void;
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
+  getNexusForNode: (nodeId: string) => Nexus | null;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
-  nexus: null,
+  nexuses: [],
   nodes: {},
   selectedId: null,
   showContentOverlay: false,
+  isAnimatingCamera: false,
+  showReplyModal: false,
   
-  createNexus: (content: string) => {
-    set(() => {
-      const newNexus = {
-        id: `nexus-${Date.now()}`,
-        position: [0, 0, 0] as [number, number, number],
-        content,
-      };
-      
-      console.log('🟢 Creating Nexus at [0, 0, 0]');
-      
-      return { nexus: newNexus };
-    });
-  },
+createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
+  set((state) => {
+    const nexusCount = state.nexuses.length;
+    
+    let position: [number, number, number];
+    
+    if (nexusCount === 0) {
+      position = [0, 0, 0];
+    } else {
+      const radius = 50;
+      const angle = (nexusCount * 2 * Math.PI) / 3;
+      position = [
+        radius * Math.cos(angle),
+        0,
+        radius * Math.sin(angle)
+      ];
+    }
+    
+    const newNexus: Nexus = {
+      id: `nexus-${Date.now()}`,
+      position,
+      title,
+      content,
+      videoUrl,
+      audioUrl,
+    };
+    
+    console.log(`🟢 Creating Nexus ${nexusCount + 1} at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+    
+    return { nexuses: [...state.nexuses, newNexus] };
+  });
+},
   
   addNode: (content: string, parentId: string) => {
+    let newNodeId = '';
+    
     set((state) => {
-      const newNodeId = `node-${Date.now()}`;
+      newNodeId = `node-${Date.now()}`;
       
       const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
       const siblingIndex = siblings.length;
       
       let position: [number, number, number];
       
-      if (parentId === state.nexus?.id) {
-        // L1 nodes: Ring system around Nexus
+      // Find which Nexus this node belongs to
+      const parentNexus = state.nexuses.find(n => n.id === parentId);
+      
+      if (parentNexus) {
+        // L1 nodes: Ring system around parent Nexus
+        const nexusPos = parentNexus.position;
         const baseRadius = 6;
         const radiusIncrement = 0.4;
         const radius = baseRadius + (siblingIndex * radiusIncrement);
@@ -64,17 +105,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           y = step * 2.5 * direction;
         }
         
-        const x = radius * Math.cos(angle);
-        const z = radius * Math.sin(angle);
+        const x = nexusPos[0] + radius * Math.cos(angle);
+        const z = nexusPos[2] + radius * Math.sin(angle);
         
         position = [x, y, z];
         console.log(`➕ L1 Node: Ring ${ringIndex}, Position ${positionInRing}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
       } else {
-        // L2+ nodes: 3D helix spiral from parent, moving AWAY from Nexus
+        // L2+ nodes: 3D helix spiral from parent, moving AWAY from parent's Nexus
         const parentNode = state.nodes[parentId];
         if (!parentNode) return state;
         
-        const nexusPos = state.nexus!.position;
+        // Find the Nexus this node tree belongs to
+        const nexus = get().getNexusForNode(parentId);
+        if (!nexus) return state;
+        
+        const nexusPos = nexus.position;
         const directionX = parentNode.position[0] - nexusPos[0];
         const directionY = parentNode.position[1] - nexusPos[1];
         const directionZ = parentNode.position[2] - nexusPos[2];
@@ -127,7 +172,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       };
       
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
-      if (parentId !== state.nexus?.id && state.nodes[parentId]) {
+      
+      // Update parent node's children array if parent is a node (not Nexus)
+      if (state.nodes[parentId]) {
         updatedNodes[parentId] = {
           ...state.nodes[parentId],
           children: [...state.nodes[parentId].children, newNodeId],
@@ -136,19 +183,37 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       
       return { nodes: updatedNodes };
     });
+    
+    setTimeout(() => {
+      get().selectNode(newNodeId, false);
+    }, 100);
   },
-  
-  selectNode: (id: string | null) => {
-    console.log(`🎯 Selected: ${id}`);
-   set({ selectedId: id, showContentOverlay: id !== null });
+
+  selectNode: (id: string | null, showOverlay: boolean = true) => {
+    console.log(`🎯 Selected: ${id}, showOverlay: ${showOverlay}`);
+    set({ selectedId: id, showContentOverlay: false });
+    
+    if (!showOverlay) {
+      set({ isAnimatingCamera: true });
+    }
   },
-  
+
   getNodesByParent: (parentId: string | null) => {
     return Object.values(get().nodes).filter(n => n.parentId === parentId);
   },
+
+  setIsAnimatingCamera: (isAnimating: boolean) => {
+    set({ isAnimatingCamera: isAnimating });
+  },
+
+  setShowReplyModal: (show: boolean) => {
+    set({ showReplyModal: show });
+  },
+
   setShowContentOverlay: (show: boolean) => {
     set({ showContentOverlay: show });
   },
+
   getNodeLevel: (nodeId: string) => {
     const state = get();
     const node = state.nodes[nodeId];
@@ -157,12 +222,34 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     let level = 1;
     let currentNode = node;
     
-    while (currentNode.parentId && currentNode.parentId !== state.nexus?.id) {
+    // Walk up the tree until we hit a Nexus
+    while (currentNode.parentId) {
+      const isNexus = state.nexuses.some(n => n.id === currentNode.parentId);
+      if (isNexus) break;
+      
       level++;
       currentNode = state.nodes[currentNode.parentId];
       if (!currentNode) break;
     }
     
     return level;
+  },
+  
+  getNexusForNode: (nodeId: string) => {
+    const state = get();
+    const node = state.nodes[nodeId];
+    if (!node) return null;
+    
+    // Walk up the tree to find the Nexus
+    let currentNode = node;
+    while (currentNode.parentId) {
+      const nexus = state.nexuses.find(n => n.id === currentNode.parentId);
+      if (nexus) return nexus;
+      
+      currentNode = state.nodes[currentNode.parentId];
+      if (!currentNode) break;
+    }
+    
+    return null;
   },
 }));

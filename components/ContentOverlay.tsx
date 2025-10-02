@@ -5,32 +5,43 @@ import { useCanvasStore } from '@/lib/store';
 export default function ContentOverlay() {
   const selectedId = useCanvasStore((state) => state.selectedId);
   const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
-  const nexus = useCanvasStore((state) => state.nexus);
+  const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
+  const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
   const getNodeLevel = useCanvasStore((state) => state.getNodeLevel);
   
   if (!selectedId || !showContentOverlay) return null;
   
+  // Get the selected item
   let content = '';
+  let videoUrl: string | undefined;
+  let audioUrl: string | undefined;
   let isNexus = false;
   let level = 0;
   
-  if (selectedId === nexus?.id) {
-    content = nexus.content;
+  const selectedNexus = nexuses.find(n => n.id === selectedId);
+  
+  if (selectedNexus) {
+    content = selectedNexus.content;
+    videoUrl = selectedNexus.videoUrl;
+    audioUrl = selectedNexus.audioUrl;
     isNexus = true;
   } else if (nodes[selectedId]) {
     content = nodes[selectedId].content;
+    videoUrl = nodes[selectedId].videoUrl;
+    audioUrl = nodes[selectedId].audioUrl;
     level = getNodeLevel(selectedId);
   }
   
   const handleClose = () => {
-    selectNode(null);
+    setShowContentOverlay(false);
   };
   
   const handleReply = () => {
     setShowContentOverlay(false);
+    setShowReplyModal(true);
   };
   
   return (
@@ -94,15 +105,49 @@ export default function ContentOverlay() {
           </button>
         </div>
         
-        <div style={{
-          color: 'white',
-          fontSize: '18px',
-          lineHeight: '1.6',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-        }}>
-          {content}
-        </div>
+        {videoUrl && (
+          <div style={{ marginBottom: '24px' }}>
+            <video
+  src={videoUrl}
+  autoPlay
+  loop
+  playsInline
+              style={{
+                width: '100%',
+                maxHeight: '400px',
+                borderRadius: '12px',
+                backgroundColor: '#000',
+              }}
+            />
+          </div>
+        )}
+        
+        {audioUrl && (
+          <div style={{ marginBottom: '24px' }}>
+          <audio
+  src={audioUrl}
+  // Remove autoPlay
+  loop
+  style={{
+    width: '100%',
+    borderRadius: '8px',
+  }}
+  controls
+/>
+          </div>
+        )}
+        
+        {content && (
+          <div style={{
+            color: 'white',
+            fontSize: '18px',
+            lineHeight: '1.6',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}>
+            {content}
+          </div>
+        )}
         
         <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #4b5563' }}>
           <button

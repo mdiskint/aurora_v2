@@ -7,13 +7,14 @@ import { useCanvasStore } from '@/lib/store';
 export default function ReplyModal() {
   const [content, setContent] = useState('');
   const selectedId = useCanvasStore((state) => state.selectedId);
-  const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
+  const showReplyModal = useCanvasStore((state) => state.showReplyModal);
   const nexus = useCanvasStore((state) => state.nexus);
   const nodes = useCanvasStore((state) => state.nodes);
   const addNode = useCanvasStore((state) => state.addNode);
   const selectNode = useCanvasStore((state) => state.selectNode);
+  const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
   
-  const isOpen = !!selectedId && !showContentOverlay;
+  const isOpen = showReplyModal && !!selectedId;
   
   let selectedContent = '';
   if (selectedId === nexus?.id) {
@@ -28,11 +29,13 @@ export default function ReplyModal() {
     console.log('📝 Submitting reply to:', selectedId);
     addNode(content, selectedId);
     setContent('');
+    setShowReplyModal(false);
     selectNode(null);
   };
   
   const handleClose = () => {
     setContent('');
+    setShowReplyModal(false);
     selectNode(null);
   };
   
