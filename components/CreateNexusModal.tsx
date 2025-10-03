@@ -76,7 +76,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: 'rgba(5, 10, 30, 0.85)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -93,17 +93,18 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
           maxWidth: '90vw',
           maxHeight: '90vh',
           overflow: 'auto',
+          border: '2px solid #00FFD4',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ color: '#10b981', marginBottom: '16px', fontSize: '24px' }}>
+        <h2 style={{ color: '#00FFD4', marginBottom: '16px', fontSize: '24px' }}>
           Create New Nexus
         </h2>
         
         <div style={{ marginBottom: '16px' }}>
           <label style={{ 
             display: 'block',
-            color: '#10b981',
+            color: '#00FFD4',
             marginBottom: '8px',
             fontSize: '14px',
             fontWeight: 'bold'
@@ -121,7 +122,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
               fontSize: '16px',
               backgroundColor: '#374151',
               color: 'white',
-              border: '2px solid #10b981',
+              border: '2px solid #00FFD4',
               borderRadius: '8px',
             }}
             autoFocus
@@ -139,7 +140,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
             fontSize: '16px',
             backgroundColor: '#374151',
             color: 'white',
-            border: '2px solid #10b981',
+            border: '2px solid #00FFD4',
             borderRadius: '8px',
             marginBottom: '16px',
             resize: 'none',
@@ -149,7 +150,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
         <div style={{ marginBottom: '16px' }}>
           <label style={{ 
             display: 'block',
-            color: '#10b981',
+            color: '#00FFD4',
             marginBottom: '8px',
             fontSize: '14px'
           }}>
@@ -164,7 +165,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
               padding: '8px',
               backgroundColor: '#374151',
               color: 'white',
-              border: '2px solid #10b981',
+              border: '2px solid #00FFD4',
               borderRadius: '8px',
               cursor: 'pointer',
             }}
@@ -189,7 +190,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
         <div style={{ marginBottom: '16px' }}>
           <label style={{ 
             display: 'block',
-            color: '#10b981',
+            color: '#00FFD4',
             marginBottom: '8px',
             fontSize: '14px'
           }}>
@@ -204,7 +205,7 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
               padding: '8px',
               backgroundColor: '#374151',
               color: 'white',
-              border: '2px solid #10b981',
+              border: '2px solid #00FFD4',
               borderRadius: '8px',
               cursor: 'pointer',
             }}
@@ -245,12 +246,13 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
             disabled={!title.trim()}
             style={{
               padding: '10px 20px',
-              backgroundColor: title.trim() ? '#10b981' : '#6b7280',
-              color: 'white',
+              backgroundColor: title.trim() ? '#00FFD4' : '#6b7280',
+              color: title.trim() ? '#050A1E' : 'white',
               border: 'none',
               borderRadius: '8px',
               cursor: title.trim() ? 'pointer' : 'not-allowed',
               fontSize: '16px',
+              fontWeight: 'bold',
             }}
           >
             Create Nexus

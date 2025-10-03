@@ -8,7 +8,7 @@ export default function ReplyModal() {
   const [content, setContent] = useState('');
   const selectedId = useCanvasStore((state) => state.selectedId);
   const showReplyModal = useCanvasStore((state) => state.showReplyModal);
-  const nexus = useCanvasStore((state) => state.nexus);
+  const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const addNode = useCanvasStore((state) => state.addNode);
   const selectNode = useCanvasStore((state) => state.selectNode);
@@ -17,8 +17,9 @@ export default function ReplyModal() {
   const isOpen = showReplyModal && !!selectedId;
   
   let selectedContent = '';
-  if (selectedId === nexus?.id) {
-    selectedContent = nexus.content;
+  const selectedNexus = nexuses.find(n => n.id === selectedId);
+  if (selectedNexus) {
+    selectedContent = selectedNexus.content;
   } else if (selectedId && nodes[selectedId]) {
     selectedContent = nodes[selectedId].content;
   }
@@ -49,7 +50,7 @@ export default function ReplyModal() {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: 'rgba(5, 10, 30, 0.85)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -64,10 +65,11 @@ export default function ReplyModal() {
           borderRadius: '16px',
           width: '500px',
           maxWidth: '90vw',
+          border: '2px solid #9333EA',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ color: '#d946ef', marginBottom: '8px', fontSize: '24px' }}>
+        <h2 style={{ color: '#9333EA', marginBottom: '8px', fontSize: '24px' }}>
           Reply to Node
         </h2>
         
@@ -86,7 +88,7 @@ export default function ReplyModal() {
             fontSize: '16px',
             backgroundColor: '#374151',
             color: 'white',
-            border: '2px solid #d946ef',
+            border: '2px solid #9333EA',
             borderRadius: '8px',
             marginBottom: '16px',
             resize: 'none',
@@ -115,12 +117,13 @@ export default function ReplyModal() {
             disabled={!content.trim()}
             style={{
               padding: '10px 20px',
-              backgroundColor: content.trim() ? '#d946ef' : '#6b7280',
+              backgroundColor: content.trim() ? '#9333EA' : '#6b7280',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
               cursor: content.trim() ? 'pointer' : 'not-allowed',
               fontSize: '16px',
+              fontWeight: 'bold',
             }}
           >
             Submit Reply

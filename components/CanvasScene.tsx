@@ -85,7 +85,7 @@ function VideoThumbnail({ videoUrl, position }: { videoUrl: string; position: [n
     video.playsInline = true;
     
     video.addEventListener('loadeddata', () => {
-      video.currentTime = 0.1; // Seek to first frame
+      video.currentTime = 0.1;
     });
     
     const texture = new THREE.VideoTexture(video);
@@ -126,23 +126,24 @@ function NexusTitle({ title, position }: { title: string; position: [number, num
   });
   
   return (
-  <group ref={groupRef} position={[position[0], position[1] + 3, position[2]]}>
-  <Html center distanceFactor={10}>
-    <div style={{
-      color: '#ffffff',
-      fontSize: '48px',  // Changed from 24px to 32px
-      fontWeight: 'bold',
-      textShadow: '0 0 10px rgba(16, 185, 129, 0.8), 0 0 20px rgba(16, 185, 129, 0.5)',
-      whiteSpace: 'nowrap',
-      pointerEvents: 'none',
-      userSelect: 'none',
-    }}>
-      {title}
-    </div>
-  </Html>
-</group>
+    <group ref={groupRef} position={[position[0], position[1] + 3, position[2]]}>
+      <Html center distanceFactor={10}>
+        <div style={{
+          color: '#FFD700',
+          fontSize: '48px',
+          fontWeight: 'bold',
+          textShadow: '0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.5)',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}>
+          {title}
+        </div>
+      </Html>
+    </group>
   );
 }
+
 function Scene() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
@@ -271,22 +272,20 @@ function Scene() {
     if (glowNodes.next) {
       const material = nextMaterialsRef.current.get(glowNodes.next);
       if (material) {
-        material.emissiveIntensity = 1.8 + Math.sin(time * 2) * 0.4;
+        material.emissiveIntensity = 3.5 + Math.sin(time * 3) * 1.5;
       }
     }
     
     if (glowNodes.alternate) {
       const material = alternateMaterialsRef.current.get(glowNodes.alternate);
       if (material) {
-        material.emissiveIntensity = 1.8 + Math.sin(time * 2) * 0.4;
+        material.emissiveIntensity = 2.5 + Math.sin(time * 3) * 1.0;
       }
     }
   });
   
   return (
     <>
-      <Grid args={[20, 20]} cellColor="#6b7280" sectionColor="#3b82f6" />
-      
       <ConnectionLines />
       
       {nexuses.map((nexus) => (
@@ -308,17 +307,17 @@ function Scene() {
                   }
                 }
               }}
-              color="#10b981"
+              color="#00FFD4"
               wireframe 
               emissive={
                 glowNodes.selected === nexus.id ? "#FFD700" : 
-                glowNodes.next === nexus.id ? "#C0C0C0" :
-                glowNodes.alternate === nexus.id ? "#C0C0C0" :
-                "#10b981"
+                glowNodes.next === nexus.id ? "#00E5FF" :
+                glowNodes.alternate === nexus.id ? "#00E5FF" :
+                "#00FFD4"
               }
               emissiveIntensity={
                 glowNodes.selected === nexus.id ? 2.0 :
-                glowNodes.next === nexus.id || glowNodes.alternate === nexus.id ? 1.8 : 
+                glowNodes.next === nexus.id || glowNodes.alternate === nexus.id ? 3.5 : 
                 0.3
               }
               wireframeLinewidth={3}
@@ -333,56 +332,67 @@ function Scene() {
         </group>
       ))}
       
-      {nodeArray.map((node) => {
-        const level = getNodeLevel(node.id);
-        const size = level === 1 ? 0.75 : 0.5;
-        
-        let emissiveColor = "#d946ef";
-        let emissiveIntensity = 0.5;
-        let glowType = null;
-        
-        if (glowNodes.selected === node.id) {
-          emissiveColor = "#FFD700";
-          emissiveIntensity = 2.0;
-          glowType = 'selected';
-        } else if (glowNodes.next === node.id) {
-          emissiveColor = "#C0C0C0";
-          emissiveIntensity = 1.8;
-          glowType = 'next';
-        } else if (glowNodes.alternate === node.id) {
-          emissiveColor = "#C0C0C0";
-          emissiveIntensity = 1.8;
-          glowType = 'alternate';
-        }
-        
-        return (
-          <mesh 
-            key={node.id}
-            position={node.position} 
-            onClick={() => selectNode(node.id)}
-          >
-            <octahedronGeometry args={[size]} />
-            <meshStandardMaterial 
-              ref={(mat) => {
-                if (mat && glowType) {
-                  if (glowType === 'selected') {
-                    selectedMaterialsRef.current.set(node.id, mat);
-                  } else if (glowType === 'next') {
-                    nextMaterialsRef.current.set(node.id, mat);
-                  } else if (glowType === 'alternate') {
-                    alternateMaterialsRef.current.set(node.id, mat);
-                  }
-                }
-              }}
-              color="#d946ef" 
-              wireframe 
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-              wireframeLinewidth={3}
-            />
-          </mesh>
-        );
-      })}
+{nodeArray.map((node) => {
+  const level = getNodeLevel(node.id);
+  const size = level === 1 ? 0.75 : 0.5;
+  
+  let emissiveColor = "#9333EA";
+  let emissiveIntensity = 0.5;
+  let glowType = null;
+  
+  if (glowNodes.selected === node.id) {
+    emissiveColor = "#FFD700";
+    emissiveIntensity = 2.0;
+    glowType = 'selected';
+  } else if (glowNodes.next === node.id) {
+    emissiveColor = "#00E5FF";
+    emissiveIntensity = 3.5;
+    glowType = 'next';
+  } else if (glowNodes.alternate === node.id) {
+    emissiveColor = "#00E5FF";
+    emissiveIntensity = 2.5;
+    glowType = 'alternate';
+  }
+  
+  return (
+    <group key={node.id}>
+      {/* Solid mesh */}
+      <mesh 
+        position={node.position} 
+        onClick={() => selectNode(node.id)}
+      >
+        <octahedronGeometry args={[size]} />
+        <meshStandardMaterial 
+          ref={(mat) => {
+            if (mat && glowType) {
+              if (glowType === 'selected') {
+                selectedMaterialsRef.current.set(node.id, mat);
+              } else if (glowType === 'next') {
+                nextMaterialsRef.current.set(node.id, mat);
+              } else if (glowType === 'alternate') {
+                alternateMaterialsRef.current.set(node.id, mat);
+              }
+            }
+          }}
+          color="#9333EA" 
+          emissive={emissiveColor}
+          emissiveIntensity={emissiveIntensity}
+        />
+      </mesh>
+      
+      {/* Wireframe overlay */}
+      <mesh position={node.position}>
+        <octahedronGeometry args={[size * 1.01]} />
+        <meshBasicMaterial 
+          color="#00FFD4"
+          wireframe
+          transparent
+          opacity={0.4}
+        />
+      </mesh>
+    </group>
+  );
+})}
       
       <ambientLight intensity={1.5} />
       <pointLight position={[10, 10, 10]} intensity={2} />
@@ -402,8 +412,8 @@ function Controls() {
             onClick={() => setShowCreateModal(true)}
             style={{
               padding: '12px 24px',
-              backgroundColor: '#10b981',
-              color: 'white',
+              backgroundColor: '#00FFD4',
+              color: '#050A1E',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
@@ -426,7 +436,7 @@ function Controls() {
 
 export default function CanvasScene() {
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
       <ReplyModal />
       <ContentOverlay />

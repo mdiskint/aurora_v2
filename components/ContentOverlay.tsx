@@ -52,7 +52,7 @@ export default function ContentOverlay() {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        backgroundColor: 'rgba(5, 10, 30, 0.95)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -70,7 +70,7 @@ export default function ContentOverlay() {
           width: '100%',
           maxHeight: '80vh',
           overflow: 'auto',
-          border: isNexus ? '3px solid #10b981' : '3px solid #d946ef',
+          border: isNexus ? '3px solid #00FFD4' : '3px solid #9333EA',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -79,8 +79,8 @@ export default function ContentOverlay() {
             display: 'inline-block',
             padding: '6px 16px',
             borderRadius: '12px',
-            backgroundColor: isNexus ? '#10b981' : '#d946ef',
-            color: 'white',
+            backgroundColor: isNexus ? '#00FFD4' : '#9333EA',
+            color: isNexus ? '#050A1E' : 'white',
             fontSize: '14px',
             fontWeight: 'bold',
             marginBottom: '16px',
@@ -108,10 +108,10 @@ export default function ContentOverlay() {
         {videoUrl && (
           <div style={{ marginBottom: '24px' }}>
             <video
-  src={videoUrl}
-  autoPlay
-  loop
-  playsInline
+              src={videoUrl}
+              autoPlay
+              loop
+              playsInline
               style={{
                 width: '100%',
                 maxHeight: '400px',
@@ -124,16 +124,15 @@ export default function ContentOverlay() {
         
         {audioUrl && (
           <div style={{ marginBottom: '24px' }}>
-          <audio
-  src={audioUrl}
-  // Remove autoPlay
-  loop
-  style={{
-    width: '100%',
-    borderRadius: '8px',
-  }}
-  controls
-/>
+            <audio
+              src={audioUrl}
+              loop
+              style={{
+                width: '100%',
+                borderRadius: '8px',
+              }}
+              controls
+            />
           </div>
         )}
         
@@ -154,8 +153,8 @@ export default function ContentOverlay() {
             onClick={handleReply}
             style={{
               padding: '12px 24px',
-              backgroundColor: isNexus ? '#10b981' : '#d946ef',
-              color: 'white',
+              backgroundColor: isNexus ? '#00FFD4' : '#9333EA',
+              color: isNexus ? '#050A1E' : 'white',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
