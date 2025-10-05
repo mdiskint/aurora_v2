@@ -5,7 +5,7 @@ interface Nexus {
   id: string;
   position: [number, number, number];
   content: string;
-  title: string; // Add this
+  title: string;
   videoUrl?: string;
   audioUrl?: string;
 }
@@ -17,12 +17,15 @@ interface CanvasStore {
   showContentOverlay: boolean;
   isAnimatingCamera: boolean;
   showReplyModal: boolean;
+  quotedText: string | null;
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
+  loadAcademicPaper: () => void;
   addNode: (content: string, parentId: string) => void;
   selectNode: (id: string | null, showOverlay?: boolean) => void;
   setShowContentOverlay: (show: boolean) => void;
   setIsAnimatingCamera: (isAnimating: boolean) => void;
   setShowReplyModal: (show: boolean) => void;
+  setQuotedText: (text: string | null) => void;
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
@@ -35,41 +38,101 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   showContentOverlay: false,
   isAnimatingCamera: false,
   showReplyModal: false,
-  
-createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
-  set((state) => {
-    const nexusCount = state.nexuses.length;
-    
-    let position: [number, number, number];
-    
-    if (nexusCount === 0) {
-      position = [0, 0, 0];
-    } else {
-      const radius = 50;
-      const angle = (nexusCount * 2 * Math.PI) / 3;
-      position = [
-        radius * Math.cos(angle),
-        0,
-        radius * Math.sin(angle)
-      ];
-    }
-    
-    const newNexus: Nexus = {
-      id: `nexus-${Date.now()}`,
-      position,
-      title,
-      content,
-      videoUrl,
-      audioUrl,
-    };
-    
-    console.log(`🟢 Creating Nexus ${nexusCount + 1} at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
-    
-    return { nexuses: [...state.nexuses, newNexus] };
-  });
-},
-  
-  addNode: (content: string, parentId: string) => {
+  quotedText: null,
+
+  createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
+    set((state) => {
+      const nexusCount = state.nexuses.length;
+      
+      let position: [number, number, number];
+      
+      if (nexusCount === 0) {
+        position = [0, 0, 0];
+      } else {
+        const radius = 50;
+        const angle = (nexusCount * 2 * Math.PI) / 3;
+        position = [
+          radius * Math.cos(angle),
+          0,
+          radius * Math.sin(angle)
+        ];
+      }
+      
+      const newNexus: Nexus = {
+        id: `nexus-${Date.now()}`,
+        position,
+        title,
+        content,
+        videoUrl,
+        audioUrl,
+      };
+      
+      console.log(`🟢 Creating Nexus ${nexusCount + 1} at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+      
+      return { nexuses: [...state.nexuses, newNexus] };
+    });
+  },
+
+  loadAcademicPaper: () => {
+    fetch('/law-review-seed.json')
+      .then(response => response.json())
+      .then(data => {
+        const nexus: Nexus = {
+          id: data.nexus.id,
+          position: data.nexus.position,
+          title: data.nexus.title,
+          content: data.nexus.content
+        };
+
+        const newNodes: { [id: string]: Node } = {};
+        
+        data.nodes.forEach((jsonNode: any, index: number) => {
+          const baseRadius = 6;
+          const radiusIncrement = 0.4;
+          const radius = baseRadius + (index * radiusIncrement);
+          
+          const nodesPerRing = 6;
+          const ringIndex = Math.floor(index / nodesPerRing);
+          const positionInRing = index % nodesPerRing;
+          
+          const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+          const ringRotationOffset = ringIndex * goldenAngle;
+          const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
+          
+          let y = 0;
+          if (ringIndex > 0) {
+            const step = Math.ceil(ringIndex / 2);
+            const direction = ringIndex % 2 === 1 ? 1 : -1;
+            y = step * 2.5 * direction;
+          }
+          
+          const x = radius * Math.cos(angle);
+          const z = radius * Math.sin(angle);
+          
+         newNodes[jsonNode.id] = {
+  id: jsonNode.id,
+  position: [x, y, z],
+  title: jsonNode.title,  // ADD THIS LINE
+  content: jsonNode.content,
+  parentId: nexus.id,
+  children: []
+};
+        });
+        
+        set({ 
+          nexuses: [nexus],
+          nodes: newNodes,
+          selectedId: null  // FIXED: Don't auto-open overlay
+        });
+        
+        console.log(`📚 Loaded academic paper: ${data.nodes.length} sections`);
+      })
+      .catch(error => {
+        console.error('Failed to load academic paper:', error);
+      });
+  },
+
+  addNode: (content: string, parentId: string, quotedText?: string) => {
     let newNodeId = '';
     
     set((state) => {
@@ -80,11 +143,9 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
       
       let position: [number, number, number];
       
-      // Find which Nexus this node belongs to
       const parentNexus = state.nexuses.find(n => n.id === parentId);
       
       if (parentNexus) {
-        // L1 nodes: Ring system around parent Nexus
         const nexusPos = parentNexus.position;
         const baseRadius = 6;
         const radiusIncrement = 0.4;
@@ -111,11 +172,9 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
         position = [x, y, z];
         console.log(`➕ L1 Node: Ring ${ringIndex}, Position ${positionInRing}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
       } else {
-        // L2+ nodes: 3D helix spiral from parent, moving AWAY from parent's Nexus
         const parentNode = state.nodes[parentId];
         if (!parentNode) return state;
         
-        // Find the Nexus this node tree belongs to
         const nexus = get().getNexusForNode(parentId);
         if (!nexus) return state;
         
@@ -163,17 +222,18 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
         console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
       }
       
-      const newNode: Node = {
-        id: newNodeId,
-        position,
-        content,
-        parentId,
-        children: [],
-      };
+   const newNode: Node = {
+  id: newNodeId,
+  position,
+  title: `Reply ${new Date().toLocaleTimeString()}`,  // Auto-generate title for user replies
+  content,
+  quotedText,
+  parentId,
+  children: [],
+};
       
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
       
-      // Update parent node's children array if parent is a node (not Nexus)
       if (state.nodes[parentId]) {
         updatedNodes[parentId] = {
           ...state.nodes[parentId],
@@ -189,14 +249,14 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
     }, 100);
   },
 
-  selectNode: (id: string | null, showOverlay: boolean = true) => {
-    console.log(`🎯 Selected: ${id}, showOverlay: ${showOverlay}`);
-    set({ selectedId: id, showContentOverlay: false });
-    
-    if (!showOverlay) {
-      set({ isAnimatingCamera: true });
-    }
-  },
+ selectNode: (id: string | null, showOverlay: boolean = true) => {
+  console.log(`🎯 Selected: ${id}, showOverlay: ${showOverlay}`);
+  set({ 
+    selectedId: id, 
+    showContentOverlay: showOverlay,
+    isAnimatingCamera: showOverlay  // Start camera animation when opening overlay
+  });
+},
 
   getNodesByParent: (parentId: string | null) => {
     return Object.values(get().nodes).filter(n => n.parentId === parentId);
@@ -213,7 +273,9 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
   setShowContentOverlay: (show: boolean) => {
     set({ showContentOverlay: show });
   },
-
+setQuotedText: (text: string | null) => {
+  set({ quotedText: text });
+},
   getNodeLevel: (nodeId: string) => {
     const state = get();
     const node = state.nodes[nodeId];
@@ -222,7 +284,6 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
     let level = 1;
     let currentNode = node;
     
-    // Walk up the tree until we hit a Nexus
     while (currentNode.parentId) {
       const isNexus = state.nexuses.some(n => n.id === currentNode.parentId);
       if (isNexus) break;
@@ -240,7 +301,6 @@ createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: stri
     const node = state.nodes[nodeId];
     if (!node) return null;
     
-    // Walk up the tree to find the Nexus
     let currentNode = node;
     while (currentNode.parentId) {
       const nexus = state.nexuses.find(n => n.id === currentNode.parentId);

@@ -1,5 +1,5 @@
 'use client';
-
+import SectionNavigator from './SectionNavigator';
 import ContentOverlay from './ContentOverlay';
 import { useState, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
@@ -327,8 +327,8 @@ function Scene() {
           {nexus.videoUrl && (
             <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} />
           )}
-          
-          <NexusTitle title={nexus.title} position={nexus.position} />
+          {!selectedId && <NexusTitle title={nexus.title} position={nexus.position} />}
+         
         </group>
       ))}
       
@@ -436,14 +436,15 @@ function Controls() {
 
 export default function CanvasScene() {
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
-      <Controls />
-      <ReplyModal />
-      <ContentOverlay />
-      <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-        <Scene />
-        <OrbitControls enableDamping dampingFactor={0.05} />
-      </Canvas>
-    </div>
-  );
+  <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
+    <Controls />
+    <ReplyModal />
+    <ContentOverlay />
+    <SectionNavigator />  {/* ADD THIS LINE */}
+    <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
+      <Scene />
+      <OrbitControls enableDamping dampingFactor={0.05} />
+    </Canvas>
+  </div>
+);
 }

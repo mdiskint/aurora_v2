@@ -8,11 +8,13 @@ export default function ReplyModal() {
   const [content, setContent] = useState('');
   const selectedId = useCanvasStore((state) => state.selectedId);
   const showReplyModal = useCanvasStore((state) => state.showReplyModal);
+  const quotedText = useCanvasStore((state) => state.quotedText);
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const addNode = useCanvasStore((state) => state.addNode);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
+  const setQuotedText = useCanvasStore((state) => state.setQuotedText);
   
   const isOpen = showReplyModal && !!selectedId;
   
@@ -28,15 +30,17 @@ export default function ReplyModal() {
     if (!content.trim() || !selectedId) return;
     
     console.log('📝 Submitting reply to:', selectedId);
-    addNode(content, selectedId);
+    addNode(content, selectedId, quotedText || undefined);
     setContent('');
     setShowReplyModal(false);
+    setQuotedText(null);
     selectNode(null);
   };
   
   const handleClose = () => {
     setContent('');
     setShowReplyModal(false);
+    setQuotedText(null);
     selectNode(null);
   };
   
@@ -63,8 +67,10 @@ export default function ReplyModal() {
           backgroundColor: '#1f2937',
           padding: '32px',
           borderRadius: '16px',
-          width: '500px',
+          width: '600px',
           maxWidth: '90vw',
+          maxHeight: '80vh',
+          overflow: 'auto',
           border: '2px solid #9333EA',
         }}
         onClick={(e) => e.stopPropagation()}
@@ -77,13 +83,43 @@ export default function ReplyModal() {
           Replying to: "{selectedContent.slice(0, 50)}{selectedContent.length > 50 ? '...' : ''}"
         </p>
         
+        {/* Quoted Text Section - Prominent Display */}
+        {quotedText && (
+          <div style={{
+            backgroundColor: '#374151',
+            padding: '16px',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            borderLeft: '4px solid #9333EA',
+          }}>
+            <div style={{ 
+              color: '#9ca3af', 
+              fontSize: '12px', 
+              marginBottom: '8px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              Quoted Section:
+            </div>
+            <div style={{
+              color: 'white',
+              fontWeight: 'bold',
+              fontSize: '16px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-wrap',
+            }}>
+              {quotedText}
+            </div>
+          </div>
+        )}
+        
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="Type your reply..."
           style={{
             width: '100%',
-            height: '120px',
+            height: '150px',
             padding: '12px',
             fontSize: '16px',
             backgroundColor: '#374151',
@@ -91,7 +127,7 @@ export default function ReplyModal() {
             border: '2px solid #9333EA',
             borderRadius: '8px',
             marginBottom: '16px',
-            resize: 'none',
+            resize: 'vertical',
           }}
           autoFocus
         />

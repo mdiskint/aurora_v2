@@ -13,6 +13,7 @@ export function useCameraAnimation() {
   const isAnimatingCamera = useCanvasStore((state) => state.isAnimatingCamera);
   const setIsAnimatingCamera = useCanvasStore((state) => state.setIsAnimatingCamera);
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
+  const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
   
   const shouldShowOverlayRef = useRef(true);
 
@@ -68,14 +69,14 @@ export function useCameraAnimation() {
 
   useEffect(() => {
     if (!setIsAnimatingCamera || !setShowContentOverlay) {
-      console.log('⏸️ Store not ready yet, skipping animation');
+      console.log('Store not ready yet, skipping animation');
       return;
     }
 
     if (!selectedId) {
       if (controls) {
         (controls as any).enabled = true;
-        console.log('🔓 Controls re-enabled (selection cleared)');
+        console.log('Controls re-enabled (selection cleared)');
       }
       setIsAnimatingCamera(false);
       return;
@@ -83,8 +84,7 @@ export function useCameraAnimation() {
     
     if (nexuses.length === 0) return;
 
-    shouldShowOverlayRef.current = !isAnimatingCamera;
-
+    shouldShowOverlayRef.current = showContentOverlay;
     setIsAnimatingCamera(true);
     setShowContentOverlay(false);
 
@@ -114,13 +114,13 @@ export function useCameraAnimation() {
       selectedNexus ? selectedId : undefined
     );
 
-   console.log('🎥 Camera target calculated:', {
-  selectedId,
-  isNexus: !!selectedNexus,
-  nexusPosition: selectedNexus ? selectedNexus.position : 'not a nexus',
-  targetPosition: `[${target.position.x.toFixed(2)}, ${target.position.y.toFixed(2)}, ${target.position.z.toFixed(2)}]`,
-  targetLookAt: `[${target.lookAt.x.toFixed(2)}, ${target.lookAt.y.toFixed(2)}, ${target.lookAt.z.toFixed(2)}]`
-});
+    console.log('Camera target calculated:', {
+      selectedId,
+      isNexus: !!selectedNexus,
+      nexusPosition: selectedNexus ? selectedNexus.position : 'not a nexus',
+      targetPosition: `[${target.position.x.toFixed(2)}, ${target.position.y.toFixed(2)}, ${target.position.z.toFixed(2)}]`,
+      targetLookAt: `[${target.lookAt.x.toFixed(2)}, ${target.lookAt.y.toFixed(2)}, ${target.lookAt.z.toFixed(2)}]`
+    });
 
     const startPos = camera.position.clone();
     const endPos = target.position;
@@ -170,27 +170,30 @@ export function useCameraAnimation() {
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        console.log('✅ Camera animation complete');
+        console.log('Camera animation complete');
         setIsAnimatingCamera(false);
         
-       if (controls) {
-  // When jumping to a Nexus, snap lookAt immediately instead of interpolating
-  const selectedNexus = nexuses.find(n => n.id === selectedId);
-  const isJumpingToNexus = selectedNexus !== null;
-  const currentLookAt = isJumpingToNexus 
-    ? target.lookAt.clone()
-    : new THREE.Vector3().lerpVectors(startLookAt, target.lookAt, eased);
-  (controls as any).target.copy(currentLookAt);
-  (controls as any).update();
-}
+        if (controls) {
+          const selectedNexus = nexuses.find(n => n.id === selectedId);
+          const isJumpingToNexus = selectedNexus !== null;
+          const currentLookAt = isJumpingToNexus 
+            ? target.lookAt.clone()
+            : new THREE.Vector3().lerpVectors(startLookAt, target.lookAt, eased);
+          (controls as any).target.copy(currentLookAt);
+          (controls as any).update();
+        }
+        
         if (shouldShowOverlayRef.current) {
           setTimeout(() => {
             setShowContentOverlay(true);
           }, 100);
         }
+        
+        if (controls) {
+          (controls as any).enabled = true;
+        }
       }
     };
 
     animate();
-  }, [selectedId, setIsAnimatingCamera, setShowContentOverlay]);
-}
+}, [selectedId, setIsAnimatingCamera, setShowContentOverlay]);}
