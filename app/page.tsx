@@ -9,11 +9,19 @@ export default function Home() {
     window.location.href = '/explore';
   };
 
+  const handleChat = () => {
+    window.location.href = '/chat';
+  };
+
   return (
     <div style={{
       width: '100vw',
       height: '100vh',
       backgroundColor: '#050A1E',
+      backgroundImage: 'url(/aurora-bg.jpg)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -21,6 +29,14 @@ export default function Home() {
       position: 'relative',
       overflow: 'hidden'
     }}>
+      {/* Dark overlay to ensure text readability */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        backgroundColor: 'rgba(5, 10, 30, 0.6)',
+        zIndex: 0
+      }} />
+
       <div style={{
         position: 'absolute',
         top: '50%',
@@ -30,7 +46,8 @@ export default function Home() {
         height: '600px',
         background: 'radial-gradient(circle, rgba(0, 255, 212, 0.1) 0%, rgba(5, 10, 30, 0) 70%)',
         animation: 'pulse 4s ease-in-out infinite',
-        pointerEvents: 'none'
+        pointerEvents: 'none',
+        zIndex: 0
       }} />
 
       <style>{`
@@ -121,6 +138,24 @@ export default function Home() {
         >
           Explore
         </button>
+
+        <button
+          onClick={handleChat}
+          className="button-hover"
+          style={{
+            padding: '20px 50px',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            backgroundColor: '#3B82F6',
+            color: 'white',
+           border: '3px solid #3B82F6',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            minWidth: '200px'
+          }}
+        >
+          Chat
+        </button>
       </div>
 
       <div style={{
@@ -130,7 +165,7 @@ export default function Home() {
         zIndex: 1
       }}>
         <p style={{
-          color: '#4B5563',
+          color: '#9CA3AF',
           fontSize: '14px',
           width: '200px',
           textAlign: 'center'
@@ -138,12 +173,20 @@ export default function Home() {
           Build your own conversations
         </p>
         <p style={{
-          color: '#4B5563',
+          color: '#9CA3AF',
           fontSize: '14px',
           width: '200px',
           textAlign: 'center'
         }}>
           Navigate academic papers
+        </p>
+        <p style={{
+          color: '#9CA3AF',
+          fontSize: '14px',
+          width: '200px',
+          textAlign: 'center'
+        }}>
+          Chat with Claude AI
         </p>
       </div>
     </div>

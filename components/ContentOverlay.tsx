@@ -27,7 +27,7 @@ export default function ContentOverlay() {
   };
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-10">
+    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 2000 }}>
       <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 pointer-events-auto">
         <div className="bg-slate-800/95 backdrop-blur-sm rounded-2xl border-2 border-purple-500/50 p-8 shadow-2xl">
           {/* Header with badge and close button */}
@@ -36,11 +36,22 @@ export default function ContentOverlay() {
               {isNexus ? 'NEXUS' : `LEVEL ${level} REPLY`}
             </div>
             <button
-              onClick={() => useCanvasStore.setState({ showContentOverlay: false })}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-            >
-              Close
-            </button>
+  onClick={() => {
+    const isChatNode = selectedId?.startsWith('chat-') || 
+                      selectedId?.startsWith('user-') || 
+                      selectedId?.startsWith('ai-');
+    
+    // Only clear selection for chat nodes, keep it for explore/create
+    if (isChatNode) {
+      useCanvasStore.setState({ showContentOverlay: false, selectedId: null });
+    } else {
+      useCanvasStore.setState({ showContentOverlay: false });
+    }
+  }}
+  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+>
+  Close
+</button>
           </div>
 
           {/* Title - Fixed at top, bold, uppercase, same size as body */}
@@ -62,12 +73,24 @@ export default function ContentOverlay() {
             </div>
           )}
 
-          {/* Scrollable Content - The actual reply */}
-          <div className="max-h-[60vh] overflow-y-auto text-gray-200 leading-relaxed">
-            <div className="whitespace-pre-wrap">
-              {selectedItem.content}
-            </div>
-          </div>
+         {/* Scrollable Content - The actual reply */}
+<div className="max-h-[60vh] overflow-y-auto text-gray-200 leading-relaxed">
+  {/* Show video if Nexus has one */}
+  {isNexus && nexus.videoUrl && (
+    <div className="mb-6">
+      <video 
+        src={nexus.videoUrl} 
+        controls 
+        className="w-full rounded-lg"
+        style={{ maxHeight: '400px' }}
+      />
+    </div>
+  )}
+  
+  <div className="whitespace-pre-wrap">
+    {selectedItem.content}
+  </div>
+</div>
 
           {/* Reply button for ALL content */}
           <div className="mt-6 pt-6 border-t border-slate-700">

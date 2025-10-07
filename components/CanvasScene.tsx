@@ -176,7 +176,7 @@ function Scene() {
     
     if (selectedNexus) {
       const l1Nodes = allNodes.filter(n => n.parentId === selectedNexus.id);
-      if (l1Nodes.length >= 2) {
+      if (l1Nodes.length >= 1) {
         glowNodes.next = l1Nodes[0].id;
       }
     } else if (nodes[selectedId]) {
@@ -194,61 +194,27 @@ function Scene() {
           const currentIndex = l1Siblings.findIndex(n => n.id === selectedId);
           if (currentIndex >= 0 && currentIndex < l1Siblings.length - 1) {
             glowNodes.alternate = l1Siblings[currentIndex + 1].id;
-          } else {
-            const nexusIndex = nexuses.findIndex(n => n.id === parentNexus.id);
-            if (nexusIndex >= 0 && nexusIndex < nexuses.length - 1) {
-              glowNodes.alternate = nexuses[nexusIndex + 1].id;
-            }
           }
         }
       } else {
-        const siblings = allNodes.filter(n => n.parentId === currentNode.parentId);
-        
-        if (siblings.length >= 2) {
-          const currentIndex = siblings.findIndex(n => n.id === selectedId);
+        // Leaf node (no children) - suggest next unexplored L1 branch or loop to first
+        if (nodeNexus) {
+          // Find which L1 branch this leaf belongs to
+          let l1Ancestor = currentNode;
+          while (l1Ancestor.parentId !== nodeNexus.id && nodes[l1Ancestor.parentId]) {
+            l1Ancestor = nodes[l1Ancestor.parentId];
+          }
           
-          if (currentIndex >= 0 && currentIndex < siblings.length - 1) {
-            glowNodes.next = siblings[currentIndex + 1].id;
-            
-            if (level > 1 && nodeNexus) {
-              let l1Ancestor = currentNode;
-              while (l1Ancestor.parentId !== nodeNexus.id && nodes[l1Ancestor.parentId]) {
-                l1Ancestor = nodes[l1Ancestor.parentId];
-              }
-              
-              const l1Siblings = allNodes.filter(n => n.parentId === nodeNexus.id);
-              const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
-              if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
-                glowNodes.alternate = l1Siblings[l1Index + 1].id;
-              }
-            }
-          } else {
-            if (level > 1 && nodeNexus) {
-              let l1Ancestor = currentNode;
-              while (l1Ancestor.parentId !== nodeNexus.id && nodes[l1Ancestor.parentId]) {
-                l1Ancestor = nodes[l1Ancestor.parentId];
-              }
-              
-              const l1Siblings = allNodes.filter(n => n.parentId === nodeNexus.id);
-              const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
-              if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
-                glowNodes.next = l1Siblings[l1Index + 1].id;
-              } else {
-                const nexusIndex = nexuses.findIndex(n => n.id === nodeNexus.id);
-                if (nexusIndex >= 0 && nexusIndex < nexuses.length - 1) {
-                  glowNodes.next = nexuses[nexusIndex + 1].id;
-                } else {
-                  glowNodes.next = nodeNexus.id;
-                }
-              }
-            } else if (nodeNexus) {
-              const nexusIndex = nexuses.findIndex(n => n.id === nodeNexus.id);
-              if (nexusIndex >= 0 && nexusIndex < nexuses.length - 1) {
-                glowNodes.next = nexuses[nexusIndex + 1].id;
-              } else {
-                glowNodes.next = nodeNexus.id;
-              }
-            }
+          // Get all L1 children of this nexus
+          const l1Siblings = allNodes.filter(n => n.parentId === nodeNexus.id);
+          const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
+          
+          if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
+            // There's a next L1 sibling - highlight it as next unexplored branch
+            glowNodes.next = l1Siblings[l1Index + 1].id;
+          } else if (l1Siblings.length > 0) {
+            // We're at the last L1 branch - loop back to first L1
+            glowNodes.next = l1Siblings[0].id;
           }
         }
       }
@@ -332,67 +298,83 @@ function Scene() {
         </group>
       ))}
       
-{nodeArray.map((node) => {
-  const level = getNodeLevel(node.id);
-  const size = level === 1 ? 0.75 : 0.5;
-  
-  let emissiveColor = "#9333EA";
-  let emissiveIntensity = 0.5;
-  let glowType = null;
-  
-  if (glowNodes.selected === node.id) {
-    emissiveColor = "#FFD700";
-    emissiveIntensity = 2.0;
-    glowType = 'selected';
-  } else if (glowNodes.next === node.id) {
-    emissiveColor = "#00E5FF";
-    emissiveIntensity = 3.5;
-    glowType = 'next';
-  } else if (glowNodes.alternate === node.id) {
-    emissiveColor = "#00E5FF";
-    emissiveIntensity = 2.5;
-    glowType = 'alternate';
-  }
-  
-  return (
-    <group key={node.id}>
-      {/* Solid mesh */}
-      <mesh 
-        position={node.position} 
-        onClick={() => selectNode(node.id)}
-      >
-        <octahedronGeometry args={[size]} />
-        <meshStandardMaterial 
-          ref={(mat) => {
-            if (mat && glowType) {
-              if (glowType === 'selected') {
-                selectedMaterialsRef.current.set(node.id, mat);
-              } else if (glowType === 'next') {
-                nextMaterialsRef.current.set(node.id, mat);
-              } else if (glowType === 'alternate') {
-                alternateMaterialsRef.current.set(node.id, mat);
-              }
-            }
-          }}
-          color="#9333EA" 
-          emissive={emissiveColor}
-          emissiveIntensity={emissiveIntensity}
-        />
-      </mesh>
-      
-      {/* Wireframe overlay */}
-      <mesh position={node.position}>
-        <octahedronGeometry args={[size * 1.01]} />
-        <meshBasicMaterial 
-          color="#00FFD4"
-          wireframe
-          transparent
-          opacity={0.4}
-        />
-      </mesh>
-    </group>
-  );
-})}
+      {nodeArray.map((node) => {
+        const level = getNodeLevel(node.id);
+        const size = level === 1 ? 0.75 : 0.5;
+        
+        // Determine base color: orange for AI, purple for user
+        const baseColor = node.isAI ? "#FF8C00" : "#9333EA";
+        
+        let emissiveColor = baseColor;
+        let emissiveIntensity = 0.5;
+        let glowType = null;
+        
+        if (glowNodes.selected === node.id) {
+          emissiveColor = "#FFD700";
+          emissiveIntensity = 2.0;
+          glowType = 'selected';
+        } else if (glowNodes.next === node.id) {
+          emissiveColor = "#00E5FF";
+          emissiveIntensity = 3.5;
+          glowType = 'next';
+        } else if (glowNodes.alternate === node.id) {
+          emissiveColor = "#00E5FF";
+          emissiveIntensity = 2.5;
+          glowType = 'alternate';
+        }
+        
+        // Choose geometry: cube for AI, octahedron for user
+        const Geometry = node.isAI ? (
+          <boxGeometry args={[size * 1.5, size * 1.5, size * 1.5]} />
+        ) : (
+          <octahedronGeometry args={[size]} />
+        );
+        
+        const WireframeGeometry = node.isAI ? (
+          <boxGeometry args={[size * 1.52, size * 1.52, size * 1.52]} />
+        ) : (
+          <octahedronGeometry args={[size * 1.01]} />
+        );
+        
+        return (
+          <group key={node.id}>
+            {/* Solid mesh */}
+            <mesh 
+              position={node.position} 
+              onClick={() => selectNode(node.id)}
+            >
+              {Geometry}
+              <meshStandardMaterial 
+                ref={(mat) => {
+                  if (mat && glowType) {
+                    if (glowType === 'selected') {
+                      selectedMaterialsRef.current.set(node.id, mat);
+                    } else if (glowType === 'next') {
+                      nextMaterialsRef.current.set(node.id, mat);
+                    } else if (glowType === 'alternate') {
+                      alternateMaterialsRef.current.set(node.id, mat);
+                    }
+                  }
+                }}
+                color={baseColor}
+                emissive={emissiveColor}
+                emissiveIntensity={emissiveIntensity}
+              />
+            </mesh>
+            
+            {/* Wireframe overlay */}
+            <mesh position={node.position}>
+              {WireframeGeometry}
+              <meshBasicMaterial 
+                color="#00FFD4"
+                wireframe
+                transparent
+                opacity={0.4}
+              />
+            </mesh>
+          </group>
+        );
+      })}
       
       <ambientLight intensity={1.5} />
       <pointLight position={[10, 10, 10]} intensity={2} />
@@ -436,15 +418,15 @@ function Controls() {
 
 export default function CanvasScene() {
   return (
-  <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
-    <Controls />
-    <ReplyModal />
-    <ContentOverlay />
-    <SectionNavigator />  {/* ADD THIS LINE */}
-    <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-      <Scene />
-      <OrbitControls enableDamping dampingFactor={0.05} />
-    </Canvas>
-  </div>
-);
+    <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
+      <Controls />
+      <ReplyModal />
+      <ContentOverlay />
+      <SectionNavigator />
+      <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
+        <Scene />
+        <OrbitControls enableDamping dampingFactor={0.05} />
+      </Canvas>
+    </div>
+  );
 }
