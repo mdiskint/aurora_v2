@@ -8,6 +8,7 @@ interface Nexus {
   title: string;
   videoUrl?: string;
   audioUrl?: string;
+  type?: 'academic' | 'social';
 }
 
 interface CanvasStore {
@@ -20,7 +21,7 @@ interface CanvasStore {
   quotedText: string | null;
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
-  addNode: (content: string, parentId: string) => void;
+  addNode: (content: string, parentId: string, quotedText?: string) => void;
   createChatNexus: (userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -68,11 +69,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         content,
         videoUrl,
         audioUrl,
+        type: 'social',
       };
       
       console.log(`🟢 Creating Nexus ${nexusCount + 1} at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
       
-    return { nexuses: [...state.nexuses, newNexus] };
+      return { nexuses: [...state.nexuses, newNexus] };
     });
   },
 
@@ -84,7 +86,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           id: data.nexus.id,
           position: data.nexus.position,
           title: data.nexus.title,
-          content: data.nexus.content
+          content: data.nexus.content,
+          type: 'academic'
         };
 
         const newNodes: { [id: string]: Node } = {};
@@ -252,7 +255,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }, 100);
   },
 
-  createChatNexus: (userMessage: string, aiResponse: string) => {
+  createChatNexus: (title: string, userMessage: string, aiResponse: string) => {
     set((state) => {
       const nexusCount = state.nexuses.length;
       
@@ -274,13 +277,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const newNexus: Nexus = {
         id: nexusId,
         position,
-        title: userMessage.substring(0, 50) + (userMessage.length > 50 ? '...' : ''),
-        content: `User: ${userMessage}\n\nClaude: ${aiResponse}`,
+        title: title,
+        content: `You: ${userMessage}\n\nClaude: ${aiResponse}`,
+        type: 'social'
       };
       
-      console.log(`💬 Creating Chat Nexus at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+      console.log(`💬 Creating Chat Nexus "${title}" at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
       
-    return { nexuses: [...state.nexuses, newNexus] };
+      return { nexuses: [...state.nexuses, newNexus] };
     });
   },
 
@@ -475,14 +479,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         };
       }
       
-     console.log(`🟠 AI response node created: ${newNodeId}`);
+      console.log(`🟠 AI response node created: ${newNodeId}`);
       
-      return { nodes: updatedNodes };  // Don't set selectedId here
+      return { nodes: updatedNodes };
     });
     
-    // Automatically show the AI response content
     setTimeout(() => {
-      get().selectNode(newNodeId, true);  // Select it here instead
+      get().selectNode(newNodeId, true);
     }, 600);
     
     return newNodeId;

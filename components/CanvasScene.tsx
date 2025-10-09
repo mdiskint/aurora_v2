@@ -127,7 +127,7 @@ function NexusTitle({ title, position }: { title: string; position: [number, num
   
   return (
     <group ref={groupRef} position={[position[0], position[1] + 3, position[2]]}>
-      <Html center distanceFactor={10}>
+      <Html center distanceFactor={10} zIndexRange={[0, 0]}>
         <div style={{
           color: '#FFD700',
           fontSize: '48px',
@@ -136,6 +136,7 @@ function NexusTitle({ title, position }: { title: string; position: [number, num
           whiteSpace: 'nowrap',
           pointerEvents: 'none',
           userSelect: 'none',
+          zIndex: 1,
         }}>
           {title}
         </div>
@@ -175,6 +176,7 @@ function Scene() {
     const selectedNexus = nexuses.find(n => n.id === selectedId);
     
     if (selectedNexus) {
+      // Clicked a nexus - highlight first L1 child
       const l1Nodes = allNodes.filter(n => n.parentId === selectedNexus.id);
       if (l1Nodes.length >= 1) {
         glowNodes.next = l1Nodes[0].id;
@@ -182,14 +184,16 @@ function Scene() {
     } else if (nodes[selectedId]) {
       const currentNode = nodes[selectedId];
       const children = allNodes.filter(n => n.parentId === selectedId);
-      const level = getNodeLevel(selectedId);
       const nodeNexus = getNexusForNode(selectedId);
       
       if (children.length >= 1) {
+        // Has children - highlight first child as "next"
         glowNodes.next = children[0].id;
         
+        // Also check if current node has siblings (for L1 nodes)
         const parentNexus = nexuses.find(n => n.id === currentNode.parentId);
         if (parentNexus) {
+          // This is an L1 node - highlight next L1 sibling as "alternate"
           const l1Siblings = allNodes.filter(n => n.parentId === parentNexus.id);
           const currentIndex = l1Siblings.findIndex(n => n.id === selectedId);
           if (currentIndex >= 0 && currentIndex < l1Siblings.length - 1) {
@@ -197,7 +201,18 @@ function Scene() {
           }
         }
       } else {
-        // Leaf node (no children) - suggest next unexplored L1 branch or loop to first
+        // Leaf node (no children) - need to suggest next steps
+        
+        // First, check if this node has siblings (L2, L3, L4, etc.)
+        const siblings = allNodes.filter(n => n.parentId === currentNode.parentId);
+        const currentIndex = siblings.findIndex(n => n.id === selectedId);
+        
+        if (currentIndex >= 0 && currentIndex < siblings.length - 1) {
+          // Has a next sibling - highlight it as "next"
+          glowNodes.next = siblings[currentIndex + 1].id;
+        }
+        
+        // ALSO find and highlight the next L1 branch as "alternate"
         if (nodeNexus) {
           // Find which L1 branch this leaf belongs to
           let l1Ancestor = currentNode;
@@ -210,11 +225,11 @@ function Scene() {
           const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
           
           if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
-            // There's a next L1 sibling - highlight it as next unexplored branch
-            glowNodes.next = l1Siblings[l1Index + 1].id;
+            // There's a next L1 sibling - highlight it as alternate
+            glowNodes.alternate = l1Siblings[l1Index + 1].id;
           } else if (l1Siblings.length > 0) {
             // We're at the last L1 branch - loop back to first L1
-            glowNodes.next = l1Siblings[0].id;
+            glowNodes.alternate = l1Siblings[0].id;
           }
         }
       }
@@ -293,8 +308,7 @@ function Scene() {
           {nexus.videoUrl && (
             <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} />
           )}
-          {!selectedId && <NexusTitle title={nexus.title} position={nexus.position} />}
-         
+          <NexusTitle title={nexus.title} position={nexus.position} />
         </group>
       ))}
       
@@ -302,7 +316,6 @@ function Scene() {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
         
-        // Determine base color: orange for AI, purple for user
         const baseColor = node.isAI ? "#FF8C00" : "#9333EA";
         
         let emissiveColor = baseColor;
@@ -323,7 +336,6 @@ function Scene() {
           glowType = 'alternate';
         }
         
-        // Choose geometry: cube for AI, octahedron for user
         const Geometry = node.isAI ? (
           <boxGeometry args={[size * 1.5, size * 1.5, size * 1.5]} />
         ) : (
@@ -338,7 +350,6 @@ function Scene() {
         
         return (
           <group key={node.id}>
-            {/* Solid mesh */}
             <mesh 
               position={node.position} 
               onClick={() => selectNode(node.id)}
@@ -362,7 +373,6 @@ function Scene() {
               />
             </mesh>
             
-            {/* Wireframe overlay */}
             <mesh position={node.position}>
               {WireframeGeometry}
               <meshBasicMaterial 
@@ -417,12 +427,17 @@ function Controls() {
 }
 
 export default function CanvasScene() {
+  const nexuses = useCanvasStore((state) => state.nexuses);
+  
+  // Check if academic paper is loaded by checking the type flag
+  const hasAcademicPaper = nexuses.some(n => n.type === 'academic');
+  
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
       <ReplyModal />
       <ContentOverlay />
-      <SectionNavigator />
+      {hasAcademicPaper && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
         <Scene />
         <OrbitControls enableDamping dampingFactor={0.05} />
