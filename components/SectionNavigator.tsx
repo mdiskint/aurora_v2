@@ -1,6 +1,7 @@
 'use client';
 
 import { useCanvasStore } from '@/lib/store';
+import PaperUploader from './PaperUploader';
 
 export default function SectionNavigator() {
   const selectedId = useCanvasStore((state) => state.selectedId);
@@ -136,6 +137,7 @@ export default function SectionNavigator() {
           </div>
         ))}
       </div>
+      <PaperUploader />
     </div>
   );
 }

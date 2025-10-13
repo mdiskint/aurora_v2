@@ -21,8 +21,9 @@ interface CanvasStore {
   quotedText: string | null;
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
+  loadAcademicPaperFromData: (data: any) => void;
   addNode: (content: string, parentId: string, quotedText?: string) => void;
-  createChatNexus: (userMessage: string, aiResponse: string) => void;
+  createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
   selectNode: (id: string | null, showOverlay?: boolean) => void;
@@ -136,6 +137,70 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       .catch(error => {
         console.error('Failed to load academic paper:', error);
       });
+  },
+
+  loadAcademicPaperFromData: (data: any) => {
+    console.log('📚 Loading academic paper from uploaded data');
+    
+    // Clear existing content
+    set({ 
+      nexuses: [], 
+      nodes: {},
+      selectedId: null,
+      showContentOverlay: false
+    });
+
+    // Create the main nexus
+    const nexus: Nexus = {
+      id: data.nexus.id || 'uploaded-paper-nexus',
+      position: data.nexus.position || [0, 0, 0],
+      title: data.nexus.title,
+      content: data.nexus.content,
+      type: 'academic'
+    };
+
+    const nexuses = [nexus];
+    const nodes: { [id: string]: Node } = {};
+
+    // Create nodes for each section WITH POSITIONING
+    data.sections.forEach((section: any, index: number) => {
+      const nodeId = `node-${index}`;
+      
+      // Calculate position using same logic as original loadAcademicPaper
+      const baseRadius = 6;
+      const radiusIncrement = 0.4;
+      const radius = baseRadius + (index * radiusIncrement);
+      
+      const nodesPerRing = 6;
+      const ringIndex = Math.floor(index / nodesPerRing);
+      const positionInRing = index % nodesPerRing;
+      
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+      const ringRotationOffset = ringIndex * goldenAngle;
+      const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
+      
+      let y = 0;
+      if (ringIndex > 0) {
+        const step = Math.ceil(ringIndex / 2);
+        const direction = ringIndex % 2 === 1 ? 1 : -1;
+        y = step * 2.5 * direction;
+      }
+      
+      const x = radius * Math.cos(angle);
+      const z = radius * Math.sin(angle);
+      
+      nodes[nodeId] = {
+        id: nodeId,
+        position: [x, y, z],  // POSITION ADDED!
+        title: section.title,
+        content: section.content,
+        parentId: nexus.id,
+        children: []
+      };
+    });
+
+    set({ nexuses, nodes });
+    console.log(`✅ Loaded paper: ${nexus.title} with ${data.sections.length} sections`);
   },
 
   addNode: (content: string, parentId: string, quotedText?: string) => {
