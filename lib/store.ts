@@ -15,6 +15,7 @@ interface CanvasStore {
   nexuses: Nexus[];
   nodes: { [id: string]: Node };
   selectedId: string | null;
+  previousId: string | null;  // NEW: Track previous node
   showContentOverlay: boolean;
   isAnimatingCamera: boolean;
   showReplyModal: boolean;
@@ -22,6 +23,8 @@ interface CanvasStore {
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
+  updateNodeContent: (nodeId: string, newContent: string) => void;
+  exportToWordDoc: () => void;
   addNode: (content: string, parentId: string, quotedText?: string) => void;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
@@ -40,6 +43,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   nexuses: [],
   nodes: {},
   selectedId: null,
+  previousId: null,  // NEW: Initialize previous node tracker
   showContentOverlay: false,
   isAnimatingCamera: false,
   showReplyModal: false,
@@ -129,7 +133,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         set({ 
           nexuses: [nexus],
           nodes: newNodes,
-          selectedId: null
+          selectedId: null,
+          previousId: null  // Reset history
         });
         
         console.log(`📚 Loaded academic paper: ${data.nodes.length} sections`);
@@ -147,6 +152,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       nexuses: [], 
       nodes: {},
       selectedId: null,
+      previousId: null,  // Reset history
       showContentOverlay: false
     });
 
@@ -191,7 +197,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       
       nodes[nodeId] = {
         id: nodeId,
-        position: [x, y, z],  // POSITION ADDED!
+        position: [x, y, z],
         title: section.title,
         content: section.content,
         parentId: nexus.id,
@@ -203,6 +209,119 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log(`✅ Loaded paper: ${nexus.title} with ${data.sections.length} sections`);
   },
 
+  updateNodeContent: (nodeId: string, newContent: string) => {
+    set((state) => {
+      const updatedNodes = { ...state.nodes };
+      if (updatedNodes[nodeId]) {
+        updatedNodes[nodeId] = {
+          ...updatedNodes[nodeId],
+          content: newContent,
+        };
+      }
+      return { nodes: updatedNodes };
+    });
+  },
+
+  exportToWordDoc: async () => {
+    const state = get();
+    const { nodes, nexuses } = state;
+    
+    const nexus = nexuses[0];
+    if (!nexus) {
+      alert('No paper loaded to export!');
+      return;
+    }
+
+    const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer } = await import('docx');
+
+    const sections = Object.values(nodes)
+      .filter((n) => n.type !== 'nexus')
+      .sort((a, b) => {
+        const aIndex = parseInt(a.id.split('-')[1]) || 0;
+        const bIndex = parseInt(b.id.split('-')[1]) || 0;
+        return aIndex - bIndex;
+      });
+
+    const documentChildren: any[] = [];
+
+    documentChildren.push(
+      new Paragraph({
+        text: nexus.title,
+        heading: HeadingLevel.TITLE,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 }
+      })
+    );
+
+    if (nexus.content) {
+      documentChildren.push(
+        new Paragraph({
+          text: 'Abstract',
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 200, after: 200 }
+        })
+      );
+      
+      const abstractParagraphs = nexus.content.split('\n\n');
+      abstractParagraphs.forEach(para => {
+        if (para.trim()) {
+          documentChildren.push(
+            new Paragraph({
+              text: para.trim(),
+              spacing: { after: 200 }
+            })
+          );
+        }
+      });
+    }
+
+    sections.forEach((section) => {
+      documentChildren.push(
+        new Paragraph({
+          text: section.title,
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 400, after: 200 }
+        })
+      );
+
+      const paragraphs = section.content.split('\n\n');
+      paragraphs.forEach(para => {
+        if (para.trim()) {
+          documentChildren.push(
+            new Paragraph({
+              text: para.trim(),
+              spacing: { after: 200 }
+            })
+          );
+        }
+      });
+    });
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: documentChildren
+      }]
+    });
+
+    try {
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${nexus.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      console.log('📄 Paper exported successfully as Word document!');
+    } catch (error) {
+      console.error('Error exporting document:', error);
+      alert('Failed to export document. See console for details.');
+    }
+  },
+  
   addNode: (content: string, parentId: string, quotedText?: string) => {
     let newNodeId = '';
     
@@ -557,9 +676,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   selectNode: (id: string | null, showOverlay: boolean = true) => {
-    console.log(`🎯 Selected: ${id}, showOverlay: ${showOverlay}`);
+    const state = get();
+    
+    // Only update previousId if we're selecting a DIFFERENT node
+    const newPreviousId = (id !== state.selectedId) ? state.selectedId : state.previousId;
+    
+    console.log(`🎯 Selected: ${id}, Previous: ${newPreviousId}, showOverlay: ${showOverlay}`);
+    
     set({ 
-      selectedId: id, 
+      selectedId: id,
+      previousId: newPreviousId,  // Only update if different node selected
       showContentOverlay: showOverlay,
       isAnimatingCamera: showOverlay
     });

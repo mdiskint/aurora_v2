@@ -8,6 +8,7 @@ export default function SectionNavigator() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
+  const exportToWordDoc = useCanvasStore((state) => state.exportToWordDoc);
 
   // Get the academic paper nexus (first one)
   const nexus = nexuses[0];
@@ -137,7 +138,54 @@ export default function SectionNavigator() {
           </div>
         ))}
       </div>
+
+      {/* Paper Upload Button */}
       <PaperUploader />
+
+      {/* Export to Word Button */}
+      <button
+        onClick={exportToWordDoc}
+        style={{
+          width: '100%',
+          marginTop: '16px',
+          padding: '12px 16px',
+          backgroundColor: 'rgba(147, 51, 234, 0.2)',
+          border: '2px solid rgba(147, 51, 234, 0.5)',
+          borderRadius: '8px',
+          color: '#D8B4FE',
+          cursor: 'pointer',
+          transition: 'all 0.2s',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          fontSize: '14px',
+          fontWeight: '500',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(147, 51, 234, 0.3)';
+          e.currentTarget.style.borderColor = '#9333EA';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(147, 51, 234, 0.2)';
+          e.currentTarget.style.borderColor = 'rgba(147, 51, 234, 0.5)';
+        }}
+      >
+        <svg 
+          style={{ width: '20px', height: '20px' }}
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path 
+            strokeLinecap="round" 
+            strokeLinejoin="round" 
+            strokeWidth={2} 
+            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" 
+          />
+        </svg>
+        Export to Word
+      </button>
     </div>
   );
 }

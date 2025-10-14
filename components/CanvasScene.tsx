@@ -150,12 +150,14 @@ function Scene() {
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const selectedId = useCanvasStore((state) => state.selectedId);
+  const previousId = useCanvasStore((state) => state.previousId);  // NEW: Get previous node
   const getNodeLevel = useCanvasStore((state) => state.getNodeLevel);
   const getNexusForNode = useCanvasStore((state) => state.getNexusForNode);
   
   useCameraAnimation();
   
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());
+  const previousMaterialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());  // NEW: For silver
   const nextMaterialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());
   const alternateMaterialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());
   
@@ -163,7 +165,8 @@ function Scene() {
   
   const getGlowNodes = () => {
     const glowNodes = { 
-      selected: null as string | null, 
+      selected: null as string | null,
+      previous: null as string | null,  // NEW: Previous node
       next: null as string | null,
       alternate: null as string | null 
     };
@@ -172,14 +175,17 @@ function Scene() {
     
     const allNodes = Object.values(nodes);
     glowNodes.selected = selectedId;
+    glowNodes.previous = previousId;  // NEW: Set previous from store
+    
+    console.log(`🎨 Glow States - Selected: ${selectedId}, Previous: ${previousId}`);
     
     const selectedNexus = nexuses.find(n => n.id === selectedId);
     
     if (selectedNexus) {
-      // Clicked a nexus - highlight first L1 child
       const l1Nodes = allNodes.filter(n => n.parentId === selectedNexus.id);
       if (l1Nodes.length >= 1) {
-        glowNodes.next = l1Nodes[0].id;
+        // Don't set previous as next
+        glowNodes.next = l1Nodes[0].id !== previousId ? l1Nodes[0].id : (l1Nodes.length > 1 ? l1Nodes[1].id : null);
       }
     } else if (nodes[selectedId]) {
       const currentNode = nodes[selectedId];
@@ -187,13 +193,10 @@ function Scene() {
       const nodeNexus = getNexusForNode(selectedId);
       
       if (children.length >= 1) {
-        // Has children - highlight first child as "next"
         glowNodes.next = children[0].id;
         
-        // Also check if current node has siblings (for L1 nodes)
         const parentNexus = nexuses.find(n => n.id === currentNode.parentId);
         if (parentNexus) {
-          // This is an L1 node - highlight next L1 sibling as "alternate"
           const l1Siblings = allNodes.filter(n => n.parentId === parentNexus.id);
           const currentIndex = l1Siblings.findIndex(n => n.id === selectedId);
           if (currentIndex >= 0 && currentIndex < l1Siblings.length - 1) {
@@ -201,34 +204,25 @@ function Scene() {
           }
         }
       } else {
-        // Leaf node (no children) - need to suggest next steps
-        
-        // First, check if this node has siblings (L2, L3, L4, etc.)
         const siblings = allNodes.filter(n => n.parentId === currentNode.parentId);
         const currentIndex = siblings.findIndex(n => n.id === selectedId);
         
         if (currentIndex >= 0 && currentIndex < siblings.length - 1) {
-          // Has a next sibling - highlight it as "next"
           glowNodes.next = siblings[currentIndex + 1].id;
         }
         
-        // ALSO find and highlight the next L1 branch as "alternate"
         if (nodeNexus) {
-          // Find which L1 branch this leaf belongs to
           let l1Ancestor = currentNode;
           while (l1Ancestor.parentId !== nodeNexus.id && nodes[l1Ancestor.parentId]) {
             l1Ancestor = nodes[l1Ancestor.parentId];
           }
           
-          // Get all L1 children of this nexus
           const l1Siblings = allNodes.filter(n => n.parentId === nodeNexus.id);
           const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
           
           if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
-            // There's a next L1 sibling - highlight it as alternate
             glowNodes.alternate = l1Siblings[l1Index + 1].id;
           } else if (l1Siblings.length > 0) {
-            // We're at the last L1 branch - loop back to first L1
             glowNodes.alternate = l1Siblings[0].id;
           }
         }
@@ -243,24 +237,35 @@ function Scene() {
   useFrame(({ clock }) => {
     const time = clock.getElapsedTime();
     
+    // Current node - Darker golden (pulsing)
     if (glowNodes.selected) {
       const material = selectedMaterialsRef.current.get(glowNodes.selected);
       if (material) {
-        material.emissiveIntensity = 2.0 + Math.sin(time * 2) * 0.5;
+        material.emissiveIntensity = 1.5 + Math.sin(time * 2) * 0.3;  // Darker gold
       }
     }
     
+    // Previous node - Silver (subtle pulse)
+    if (glowNodes.previous) {
+      const material = previousMaterialsRef.current.get(glowNodes.previous);
+      if (material) {
+        material.emissiveIntensity = 1.2 + Math.sin(time * 2) * 0.2;  // Silver
+      }
+    }
+    
+    // Next node - Darker cyan (strong pulse)
     if (glowNodes.next) {
       const material = nextMaterialsRef.current.get(glowNodes.next);
       if (material) {
-        material.emissiveIntensity = 3.5 + Math.sin(time * 3) * 1.5;
+        material.emissiveIntensity = 2.5 + Math.sin(time * 3) * 1.0;  // Darker cyan
       }
     }
     
+    // Alternate node - Darker cyan (medium pulse)
     if (glowNodes.alternate) {
       const material = alternateMaterialsRef.current.get(glowNodes.alternate);
       if (material) {
-        material.emissiveIntensity = 2.5 + Math.sin(time * 3) * 1.0;
+        material.emissiveIntensity = 2.0 + Math.sin(time * 3) * 0.8;  // Darker cyan
       }
     }
   });
@@ -281,6 +286,8 @@ function Scene() {
                 if (mat) {
                   if (glowNodes.selected === nexus.id) {
                     selectedMaterialsRef.current.set(nexus.id, mat);
+                  } else if (glowNodes.previous === nexus.id) {
+                    previousMaterialsRef.current.set(nexus.id, mat);
                   } else if (glowNodes.next === nexus.id) {
                     nextMaterialsRef.current.set(nexus.id, mat);
                   } else if (glowNodes.alternate === nexus.id) {
@@ -291,14 +298,16 @@ function Scene() {
               color="#00FFD4"
               wireframe 
               emissive={
-                glowNodes.selected === nexus.id ? "#FFD700" : 
-                glowNodes.next === nexus.id ? "#00E5FF" :
-                glowNodes.alternate === nexus.id ? "#00E5FF" :
+                glowNodes.selected === nexus.id ? "#B8860B" :  // Darker golden
+                glowNodes.previous === nexus.id ? "#C0C0C0" :  // Silver
+                glowNodes.next === nexus.id ? "#008B8B" :      // Darker cyan
+                glowNodes.alternate === nexus.id ? "#008B8B" : // Darker cyan
                 "#00FFD4"
               }
               emissiveIntensity={
-                glowNodes.selected === nexus.id ? 2.0 :
-                glowNodes.next === nexus.id || glowNodes.alternate === nexus.id ? 3.5 : 
+                glowNodes.selected === nexus.id ? 1.5 :
+                glowNodes.previous === nexus.id ? 1.2 :
+                glowNodes.next === nexus.id || glowNodes.alternate === nexus.id ? 2.5 : 
                 0.3
               }
               wireframeLinewidth={3}
@@ -323,16 +332,20 @@ function Scene() {
         let glowType = null;
         
         if (glowNodes.selected === node.id) {
-          emissiveColor = "#FFD700";
-          emissiveIntensity = 2.0;
+          emissiveColor = "#B8860B";  // Darker golden
+          emissiveIntensity = 1.5;
           glowType = 'selected';
+        } else if (glowNodes.previous === node.id) {
+          emissiveColor = "#C0C0C0";  // Silver
+          emissiveIntensity = 1.2;
+          glowType = 'previous';
         } else if (glowNodes.next === node.id) {
-          emissiveColor = "#00E5FF";
-          emissiveIntensity = 3.5;
+          emissiveColor = "#008B8B";  // Darker cyan
+          emissiveIntensity = 2.5;
           glowType = 'next';
         } else if (glowNodes.alternate === node.id) {
-          emissiveColor = "#00E5FF";
-          emissiveIntensity = 2.5;
+          emissiveColor = "#008B8B";  // Darker cyan
+          emissiveIntensity = 2.0;
           glowType = 'alternate';
         }
         
@@ -360,6 +373,8 @@ function Scene() {
                   if (mat && glowType) {
                     if (glowType === 'selected') {
                       selectedMaterialsRef.current.set(node.id, mat);
+                    } else if (glowType === 'previous') {
+                      previousMaterialsRef.current.set(node.id, mat);
                     } else if (glowType === 'next') {
                       nextMaterialsRef.current.set(node.id, mat);
                     } else if (glowType === 'alternate') {
@@ -429,7 +444,6 @@ function Controls() {
 export default function CanvasScene() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   
-  // Check if academic paper is loaded by checking the type flag
   const hasAcademicPaper = nexuses.some(n => n.type === 'academic');
   
   return (

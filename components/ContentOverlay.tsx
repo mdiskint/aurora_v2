@@ -1,108 +1,223 @@
-'use client';
-
+import { useEffect, useState, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
-import { Nexus, Node } from '@/lib/types';
 
 export default function ContentOverlay() {
-  const { selectedId, nexuses, nodes, isAnimatingCamera, showContentOverlay } = useCanvasStore();
+  const pathname = usePathname();
+  const isExplorePage = pathname === '/explore' || pathname === '/create';
 
-  if (!selectedId || isAnimatingCamera || !showContentOverlay) return null;
+  const selectedId = useCanvasStore((state) => state.selectedId);
+  const nodes = useCanvasStore((state) => state.nodes);
+  const nexuses = useCanvasStore((state) => state.nexuses);
+  const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
+  const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
+  const selectNode = useCanvasStore((state) => state.selectNode);
+  const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
+  const setQuotedText = useCanvasStore((state) => state.setQuotedText);
+  
+  const [editedContent, setEditedContent] = useState('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const nexus = nexuses.find((n: Nexus) => n.id === selectedId);
-  const node = nodes[selectedId];
-  const selectedItem = nexus || node;
+  // Find selected node or nexus
+  const node = selectedId ? nodes[selectedId] : null;
+  const nexus = selectedId ? nexuses.find((n) => n.id === selectedId) : null;
+  const selectedItem = node || nexus;
 
-  if (!selectedItem) return null;
+  // Initialize edited content when selection changes
+  useEffect(() => {
+    if (selectedItem && textareaRef.current) {
+      const content = selectedItem.content || '';
+      setEditedContent(content);
+      setHasUnsavedChanges(false);
+      // Set textarea value directly to avoid React re-render
+      textareaRef.current.value = content;
+    }
+  }, [selectedId, selectedItem]);
 
-  const isNexus = !!nexus;
-  const level = isNexus ? 0 : (node as Node).parentId ? 1 : 0;
-  const quotedText = !isNexus && node ? (node as Node).quotedText : undefined;
+  // Auto-save with debounce - moved into handleContentChange for better control
+  // This useEffect now only handles save on node switch
+  useEffect(() => {
+    return () => {
+      // Save when switching nodes
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      if (hasUnsavedChanges && node && isExplorePage && textareaRef.current) {
+        const currentValue = textareaRef.current.value;
+        updateNodeContent(node.id, currentValue);
+      }
+    };
+  }, [selectedId]);
 
-  const handleReplyClick = () => {
-    const selection = window.getSelection();
-    const selectedText = selection?.toString().trim() || null;
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setHasUnsavedChanges(true);
     
-    useCanvasStore.setState({ quotedText: selectedText });
-    useCanvasStore.setState({ showReplyModal: true });
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // Set new timeout - only save after user STOPS typing for 1 second
+    saveTimeoutRef.current = setTimeout(() => {
+      const currentValue = textareaRef.current?.value || '';
+      if (node && isExplorePage) {
+        updateNodeContent(node.id, currentValue);
+        setHasUnsavedChanges(false);
+        console.log('✅ Auto-saved changes to node:', node.id);
+      }
+    }, 1000);
   };
 
-  return (
-    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 2000 }}>
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 pointer-events-auto">
-        <div className="bg-slate-800/95 backdrop-blur-sm rounded-2xl border-2 border-purple-500/50 p-8 shadow-2xl">
-          {/* Header with badge and close button */}
-          <div className="flex items-start justify-between mb-6">
-            <div className="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold text-sm">
-              {isNexus ? 'NEXUS' : `LEVEL ${level} REPLY`}
-            </div>
-            <button
-  onClick={() => {
-    const isChatNode = selectedId?.startsWith('chat-') || 
-                      selectedId?.startsWith('user-') || 
-                      selectedId?.startsWith('ai-');
-    
-    // Only clear selection for chat nodes, keep it for explore/create
-    if (isChatNode) {
-      useCanvasStore.setState({ showContentOverlay: false, selectedId: null });
-    } else {
-      useCanvasStore.setState({ showContentOverlay: false });
+  const handleClose = () => {
+    // Save before closing if there are unsaved changes
+    if (hasUnsavedChanges && node && isExplorePage) {
+      updateNodeContent(node.id, editedContent);
     }
-  }}
-  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
->
-  Close
-</button>
-          </div>
+    // Keep node selected, just hide overlay - this preserves "next node" highlighting
+    selectNode(selectedId, false);
+  };
 
-          {/* Title - Fixed at top, bold, uppercase, same size as body */}
-          <div className="mb-4">
-            <h2 className="font-bold uppercase text-white">
-              {selectedItem.title}
-            </h2>
-          </div>
+  const handleReply = () => {
+    // Get any selected/highlighted text
+    const selection = window.getSelection();
+    const highlightedText = selection?.toString().trim() || '';
+    
+    if (highlightedText) {
+      setQuotedText(highlightedText);
+      console.log('📝 Quoted text:', highlightedText);
+    } else {
+      setQuotedText(null);
+    }
+    
+    // Open reply modal
+    setShowReplyModal(true);
+  };
 
-          {/* Quoted Text Section - Shows what this reply is responding to */}
-          {quotedText && (
-            <div className="mb-6 bg-slate-700/50 p-4 rounded-lg border-l-4 border-purple-500">
-              <div className="text-gray-400 text-xs uppercase tracking-wider mb-2">
-                Responding to:
-              </div>
-              <div className="text-white font-bold leading-relaxed">
-                {quotedText}
+  // Don't show if nothing selected or overlay is hidden
+  if (!selectedItem || !showContentOverlay) return null;
+
+  return (
+    <>
+      {/* Backdrop - click to close */}
+      <div 
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000]"
+        onClick={handleClose}
+      />
+
+      {/* Centered Modal - 70% width, 80% height */}
+      <div 
+        className="fixed z-[2001]"
+        style={{
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '70vw',
+          height: '80vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl h-full flex flex-col">
+          
+          {/* Header */}
+          <div className="p-6 border-b border-cyan-500/30 flex items-start justify-between flex-shrink-0">
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-cyan-400 mb-2">
+                {selectedItem.title || 'Untitled'}
+              </h2>
+              <div className="flex items-center gap-4">
+                {hasUnsavedChanges && isExplorePage && (
+                  <div className="text-sm text-yellow-400 flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
+                    Saving...
+                  </div>
+                )}
+                {!hasUnsavedChanges && isExplorePage && node && (
+                  <div className="text-sm text-green-400/80 flex items-center gap-2">
+                    ✓ Saved
+                  </div>
+                )}
+                <div className="text-xs text-gray-500">
+                  ID: {selectedItem.id}
+                </div>
               </div>
             </div>
-          )}
-
-         {/* Scrollable Content - The actual reply */}
-<div className="max-h-[60vh] overflow-y-auto text-gray-200 leading-relaxed">
-  {/* Show video if Nexus has one */}
-  {isNexus && nexus.videoUrl && (
-    <div className="mb-6">
-      <video 
-        src={nexus.videoUrl} 
-        controls 
-        className="w-full rounded-lg"
-        style={{ maxHeight: '400px' }}
-      />
-    </div>
-  )}
-  
-  <div className="whitespace-pre-wrap">
-    {selectedItem.content}
-  </div>
-</div>
-
-          {/* Reply button for ALL content */}
-          <div className="mt-6 pt-6 border-t border-slate-700">
+            
+            {/* Close Button */}
             <button
-              onClick={handleReplyClick}
-              className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
+              onClick={handleClose}
+              className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/10 rounded"
+              type="button"
             >
-              {isNexus ? 'Reply to Nexus' : 'Reply to Node'}
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
+          </div>
+
+          {/* Content Area - Scrollable and Fills Space */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {isExplorePage && node ? (
+              <div className="relative h-full flex flex-col">
+                <textarea
+                  ref={textareaRef}
+                  defaultValue={editedContent}
+                  onChange={handleContentChange}
+                  className="w-full flex-1 bg-slate-950/50 text-gray-200 border border-cyan-500/20 rounded-lg p-4 
+                           focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/30
+                           resize-none text-base leading-relaxed"
+                  placeholder="Start typing to edit this section..."
+                  spellCheck={true}
+                  style={{ minHeight: '400px' }}
+                />
+                <div className="mt-2 text-xs text-gray-500 italic">
+                  💡 Changes auto-save as you type • Ctrl+Z to undo works naturally
+                </div>
+              </div>
+            ) : (
+              <div className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap">
+                {selectedItem.content || 'No content available.'}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-cyan-500/30 flex justify-between items-center flex-shrink-0">
+            <div className="text-sm text-gray-400">
+              {isExplorePage && node ? (
+                <span>✏️ Edit mode active</span>
+              ) : (
+                <span>👁️ Read-only view</span>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleReply}
+                type="button"
+                className="px-6 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 
+                         text-purple-300 rounded-lg transition-all duration-200 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                Reply
+              </button>
+              <button
+                onClick={handleClose}
+                type="button"
+                className="px-6 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 
+                         text-cyan-300 rounded-lg transition-all duration-200"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
