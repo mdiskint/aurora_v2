@@ -11,6 +11,7 @@ export default function ContentOverlay() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
   const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
+  const updateNexusContent = useCanvasStore((state) => state.updateNexusContent);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
@@ -40,13 +41,17 @@ export default function ContentOverlay() {
   // This useEffect now only handles save on node switch
   useEffect(() => {
     return () => {
-      // Save when switching nodes
+      // Save when switching nodes/nexuses
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
-      if (hasUnsavedChanges && node && isExplorePage && textareaRef.current) {
+      if (hasUnsavedChanges && selectedItem && isExplorePage && textareaRef.current) {
         const currentValue = textareaRef.current.value;
-        updateNodeContent(node.id, currentValue);
+        if (node) {
+          updateNodeContent(node.id, currentValue);
+        } else if (nexus) {
+          updateNexusContent(nexus.id, currentValue);
+        }
       }
     };
   }, [selectedId]);
@@ -63,18 +68,27 @@ export default function ContentOverlay() {
     // Set new timeout - only save after user STOPS typing for 1 second
     saveTimeoutRef.current = setTimeout(() => {
       const currentValue = textareaRef.current?.value || '';
-      if (node && isExplorePage) {
-        updateNodeContent(node.id, currentValue);
+      if (isExplorePage && selectedItem) {
+        if (node) {
+          updateNodeContent(node.id, currentValue);
+        } else if (nexus) {
+          updateNexusContent(nexus.id, currentValue);
+        }
         setHasUnsavedChanges(false);
-        console.log('✅ Auto-saved changes to node:', node.id);
+        console.log('✅ Auto-saved changes to:', selectedItem.id);
       }
     }, 1000);
   };
 
   const handleClose = () => {
     // Save before closing if there are unsaved changes
-    if (hasUnsavedChanges && node && isExplorePage) {
-      updateNodeContent(node.id, editedContent);
+    if (hasUnsavedChanges && selectedItem && isExplorePage && textareaRef.current) {
+      const currentValue = textareaRef.current.value;
+      if (node) {
+        updateNodeContent(node.id, currentValue);
+      } else if (nexus) {
+        updateNexusContent(nexus.id, currentValue);
+      }
     }
     // Keep node selected, just hide overlay - this preserves "next node" highlighting
     selectNode(selectedId, false);
@@ -136,7 +150,7 @@ export default function ContentOverlay() {
                     Saving...
                   </div>
                 )}
-                {!hasUnsavedChanges && isExplorePage && node && (
+                {!hasUnsavedChanges && isExplorePage && selectedItem && (
                   <div className="text-sm text-green-400/80 flex items-center gap-2">
                     ✓ Saved
                   </div>
@@ -161,7 +175,7 @@ export default function ContentOverlay() {
 
           {/* Content Area - Scrollable and Fills Space */}
           <div className="flex-1 overflow-y-auto p-6">
-            {isExplorePage && node ? (
+            {isExplorePage && selectedItem ? (
               <div className="relative h-full flex flex-col">
                 <textarea
                   ref={textareaRef}
@@ -188,8 +202,8 @@ export default function ContentOverlay() {
           {/* Footer */}
           <div className="p-4 border-t border-cyan-500/30 flex justify-between items-center flex-shrink-0">
             <div className="text-sm text-gray-400">
-              {isExplorePage && node ? (
-                <span>✏️ Edit mode active</span>
+              {isExplorePage && selectedItem ? (
+                <span>✏️ Edit mode active - {nexus ? 'Nexus' : 'Node'}</span>
               ) : (
                 <span>👁️ Read-only view</span>
               )}
