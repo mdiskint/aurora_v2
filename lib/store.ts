@@ -24,6 +24,7 @@ interface CanvasStore {
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
   updateNodeContent: (nodeId: string, newContent: string) => void;
+  updateNexusContent: (nexusId: string, newContent: string) => void;
   exportToWordDoc: () => void;
   addNode: (content: string, parentId: string, quotedText?: string) => void;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
@@ -221,7 +222,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return { nodes: updatedNodes };
     });
   },
-
+updateNexusContent: (nexusId: string, newContent: string) => {
+  set((state) => {
+    const updatedNexuses = state.nexuses.map((nexus) => {
+      if (nexus.id === nexusId) {
+        return {
+          ...nexus,
+          content: newContent,
+        };
+      }
+      return nexus;
+    });
+    return { nexuses: updatedNexuses };
+  });
+  console.log(`✅ Updated nexus content: ${nexusId}`);
+},
   exportToWordDoc: async () => {
     const state = get();
     const { nodes, nexuses } = state;
