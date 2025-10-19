@@ -13,30 +13,25 @@ function setupWebSocket(httpServer) {
   io.on('connection', (socket) => {
     console.log('👋 User connected:', socket.id);
 
-    // When user joins a portal
     socket.on('join_portal', (portalId) => {
       socket.join(portalId);
       console.log(`📍 User ${socket.id} joined portal: ${portalId}`);
       
-      // Notify others in the portal
       socket.to(portalId).emit('user_joined', {
         userId: socket.id,
         timestamp: Date.now()
       });
     });
 
-    // When user creates a node
     socket.on('create_node', (data) => {
       console.log('🆕 Node created:', data);
       
-      // Broadcast to everyone in the portal INCLUDING sender
       io.to(data.portalId).emit('node_created', {
         ...data,
         timestamp: Date.now()
       });
     });
 
-    // When user disconnects
     socket.on('disconnect', () => {
       console.log('👋 User disconnected:', socket.id);
     });
