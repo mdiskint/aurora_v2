@@ -81,15 +81,17 @@ function ConnectionLines() {
               opacity={0.5}
             />
             
-            {/* Single animated rainbow pulse */}
-            <mesh position={[pulseX, pulseY, pulseZ]}>
-              <sphereGeometry args={[0.15, 16, 16]} />
-              <meshBasicMaterial 
-                color={rainbowColor}
-                transparent
-                opacity={1}
-              />
-            </mesh>
+{/* Single animated rainbow pulse - only every 2nd line */}
+{idx % 2 === 0 && (
+  <mesh position={[pulseX, pulseY, pulseZ]}>
+    <sphereGeometry args={[0.12, 16, 16]} />
+    <meshBasicMaterial 
+      color={rainbowColor}
+      transparent
+      opacity={0.6}
+    />
+  </mesh>
+)}
           </group>
         );
       })}
@@ -413,22 +415,18 @@ function Scene() {
       {nexuses.map((nexus) => (
         <group key={nexus.id}>
           {/* Main metallic sphere - pure chrome, no glow */}
-          <mesh 
-            position={nexus.position}
-            onClick={() => selectNode(nexus.id)}
-          >
-            <sphereGeometry args={[2, 32, 32]} />
-            <meshStandardMaterial 
-              color="#00FF9D"
-              metalness={1.0}
-              roughness={0.0}
-              emissive="#00FF9D"
-              emissiveIntensity={0.2}
-              envMapIntensity={3.0}
-              clearcoat={1.0}
-              clearcoatRoughness={0.0}
-            />
-          </mesh>
+        <mesh 
+  position={nexus.position}
+  onClick={() => selectNode(nexus.id)}
+>
+  <sphereGeometry args={[2, 32, 32]} />
+  <meshBasicMaterial 
+    color="#00FF9D"
+    wireframe={true}
+    transparent={true}
+    opacity={1}
+  />
+</mesh>
           
           {/* Halo ring for selected state */}
           {glowNodes.selected === nexus.id && (
