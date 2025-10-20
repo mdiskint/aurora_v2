@@ -40,11 +40,12 @@ interface CanvasStore {
   getNexusForNode: (nodeId: string) => Nexus | null;
   addNodeFromWebSocket: (data: any) => void;
   addNexusFromWebSocket: (data: any) => void;
-  
-  // NEW: Memory features - add these 3 lines
   activatedConversations: string[];
   toggleActivateConversation: (nexusId: string) => void;
   getActivatedConversations: () => Nexus[];
+  deleteConversation: (nexusId: string) => void;
+  saveToLocalStorage: () => void;
+  loadFromLocalStorage: () => void;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -56,7 +57,50 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isAnimatingCamera: false,
   showReplyModal: false,
   quotedText: null,
-activatedConversations: [], // ← ADD THIS LINE
+  activatedConversations: [],
+
+  // 💾 SAVE TO LOCALSTORAGE
+  saveToLocalStorage: () => {
+    const state = get();
+    const dataToSave = {
+      nexuses: state.nexuses,
+      nodes: state.nodes,
+      activatedConversations: state.activatedConversations,
+    };
+    
+    try {
+      localStorage.setItem('aurora-portal-data', JSON.stringify(dataToSave));
+      console.log('💾 Saved to localStorage:', {
+        nexusCount: state.nexuses.length,
+        nodeCount: Object.keys(state.nodes).length
+      });
+    } catch (error) {
+      console.error('❌ Failed to save to localStorage:', error);
+    }
+  },
+
+  // 📂 LOAD FROM LOCALSTORAGE
+  loadFromLocalStorage: () => {
+    try {
+      const saved = localStorage.getItem('aurora-portal-data');
+      if (saved) {
+        const data = JSON.parse(saved);
+        set({
+          nexuses: data.nexuses || [],
+          nodes: data.nodes || {},
+          activatedConversations: data.activatedConversations || [],
+        });
+        console.log('📂 Loaded from localStorage:', {
+          nexusCount: data.nexuses?.length || 0,
+          nodeCount: Object.keys(data.nodes || {}).length
+        });
+      } else {
+        console.log('📂 No saved data found in localStorage');
+      }
+    } catch (error) {
+      console.error('❌ Failed to load from localStorage:', error);
+    }
+  },
 
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
     let newNexus: Nexus | null = null;
@@ -92,6 +136,9 @@ activatedConversations: [], // ← ADD THIS LINE
       
       return { nexuses: [...state.nexuses, newNexus] };
     });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
     
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
@@ -164,6 +211,9 @@ activatedConversations: [], // ← ADD THIS LINE
           previousId: null
         });
         
+        // 💾 SAVE TO LOCALSTORAGE
+        get().saveToLocalStorage();
+        
         console.log(`📚 Loaded academic paper: ${data.nodes.length} sections`);
       })
       .catch(error => {
@@ -229,6 +279,10 @@ activatedConversations: [], // ← ADD THIS LINE
     });
 
     set({ nexuses, nodes });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+    
     console.log(`✅ Loaded paper: ${nexus.title} with ${data.sections.length} sections`);
   },
 
@@ -243,6 +297,9 @@ activatedConversations: [], // ← ADD THIS LINE
       }
       return { nodes: updatedNodes };
     });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
   },
 
   updateNexusContent: (nexusId: string, newContent: string) => {
@@ -258,6 +315,10 @@ activatedConversations: [], // ← ADD THIS LINE
       });
       return { nexuses: updatedNexuses };
     });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+    
     console.log(`✅ Updated nexus content: ${nexusId}`);
   },
 
@@ -473,6 +534,9 @@ activatedConversations: [], // ← ADD THIS LINE
       return { nodes: updatedNodes };
     });
     
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+    
     // Broadcast node creation to WebSocket
     const socket = (window as any).socket;
     if (socket) {
@@ -525,6 +589,9 @@ activatedConversations: [], // ← ADD THIS LINE
       
       return { nexuses: [...state.nexuses, newNexus] };
     });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
     
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
@@ -655,6 +722,9 @@ activatedConversations: [], // ← ADD THIS LINE
       return { nodes: updatedNodes, selectedId: newNodeId };
     });
     
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+    
     return newNodeId;
   },
 
@@ -738,6 +808,9 @@ activatedConversations: [], // ← ADD THIS LINE
       
       return { nodes: updatedNodes };
     });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
     
     setTimeout(() => {
       get().selectNode(newNodeId, true);
@@ -841,10 +914,13 @@ activatedConversations: [], // ← ADD THIS LINE
       nodes: { ...state.nodes, [newNode.id]: newNode }
     }));
     
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+    
     console.log('✅ Node added from WebSocket');
   },
 
-addNexusFromWebSocket: (data: any) => {
+  addNexusFromWebSocket: (data: any) => {
     const state = get();
     
     if (state.nexuses.find(n => n.id === data.id)) {
@@ -868,6 +944,9 @@ addNexusFromWebSocket: (data: any) => {
       nexuses: [...state.nexuses, newNexus]
     }));
     
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+    
     console.log('✅ Nexus added from WebSocket');
   },
 
@@ -885,10 +964,49 @@ addNexusFromWebSocket: (data: any) => {
         };
       }
     });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
   },
   
   getActivatedConversations: () => {
     const state = get();
     return state.nexuses.filter(n => state.activatedConversations.includes(n.id));
+  },
+
+  deleteConversation: (nexusId: string) => {
+    set((state) => {
+      console.log(`🗑️ Deleting conversation: ${nexusId}`);
+      
+      // Remove the nexus
+      const updatedNexuses = state.nexuses.filter(n => n.id !== nexusId);
+      
+      // Remove all nodes associated with this nexus
+      const updatedNodes = { ...state.nodes };
+      Object.keys(updatedNodes).forEach(nodeId => {
+        if (updatedNodes[nodeId].parentId === nexusId) {
+          delete updatedNodes[nodeId];
+        }
+      });
+      
+      // Remove from activated conversations
+      const updatedActivated = state.activatedConversations.filter(id => id !== nexusId);
+      
+      // Clear selection if we're deleting the selected nexus
+      const updatedSelectedId = state.selectedId === nexusId ? null : state.selectedId;
+      
+      console.log(`✅ Deleted conversation ${nexusId}`);
+      
+      return {
+        nexuses: updatedNexuses,
+        nodes: updatedNodes,
+        activatedConversations: updatedActivated,
+        selectedId: updatedSelectedId,
+        showContentOverlay: updatedSelectedId === null ? false : state.showContentOverlay
+      };
+    });
+    
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
   },
 }));

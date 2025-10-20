@@ -2,14 +2,21 @@
 
 import { useCanvasStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect } from 'react';
 
 export default function MemoriesPage() {
   const router = useRouter();
   const nexuses = useCanvasStore((state) => state.nexuses);
   const activatedConversations = useCanvasStore((state) => state.activatedConversations);
   const toggleActivateConversation = useCanvasStore((state) => state.toggleActivateConversation);
+  const deleteConversation = useCanvasStore((state) => state.deleteConversation);
   const selectNode = useCanvasStore((state) => state.selectNode);
+
+  // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
+  useEffect(() => {
+    console.log('🚀 Memories page loading data from localStorage...');
+    useCanvasStore.getState().loadFromLocalStorage();
+  }, []);
 
   const handleOpenConversation = (nexusId: string) => {
     // Select the nexus to load it
@@ -21,6 +28,11 @@ export default function MemoriesPage() {
   const handleActivateToggle = (nexusId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     toggleActivateConversation(nexusId);
+  };
+  
+  const handleDelete = (nexusId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteConversation(nexusId);
   };
 
   return (
@@ -84,28 +96,63 @@ export default function MemoriesPage() {
                 transition: 'all 0.2s ease'
               }}
             >
-              {/* Activate Checkbox - Top Right */}
-              <div
-                onClick={(e) => handleActivateToggle(nexus.id, e)}
-                style={{
-                  position: 'absolute',
-                  top: '16px',
-                  right: '16px',
-                  width: '24px',
-                  height: '24px',
-                  border: isActivated ? '2px solid #00FFD4' : '2px solid #6B7280',
-                  borderRadius: '4px',
-                  background: isActivated ? '#00FFD4' : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  zIndex: 10
-                }}
-              >
-                {isActivated && (
-                  <span style={{ color: '#050A1E', fontWeight: 'bold' }}>✓</span>
-                )}
+              {/* Top Right Controls */}
+              <div style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+                zIndex: 10
+              }}>
+                {/* Activate Checkbox */}
+                <div
+                  onClick={(e) => handleActivateToggle(nexus.id, e)}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    border: isActivated ? '2px solid #00FFD4' : '2px solid #6B7280',
+                    borderRadius: '4px',
+                    background: isActivated ? '#00FFD4' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {isActivated && (
+                    <span style={{ color: '#050A1E', fontWeight: 'bold' }}>✓</span>
+                  )}
+                </div>
+
+                {/* Delete Button (X) */}
+                <div
+                  onClick={(e) => handleDelete(nexus.id, e)}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#EF4444',
+                    fontSize: '20px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#DC2626';
+                    e.currentTarget.style.transform = 'scale(1.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = '#EF4444';
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  title="Delete conversation"
+                >
+                  ×
+                </div>
               </div>
 
               {/* Nexus Title */}
@@ -114,7 +161,7 @@ export default function MemoriesPage() {
                 fontSize: '24px',
                 fontWeight: 'bold',
                 marginBottom: '12px',
-                marginRight: '40px'
+                marginRight: '60px'
               }}>
                 {nexus.title}
               </h3>

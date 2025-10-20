@@ -1,6 +1,15 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useCanvasStore } from '@/lib/store';
+
 export default function Home() {
+  // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN APP STARTS
+  useEffect(() => {
+    console.log('🚀 Loading data from localStorage...');
+    useCanvasStore.getState().loadFromLocalStorage();
+  }, []);
+
   const handleCreate = () => {
     window.location.href = '/create';
   };
@@ -29,6 +38,32 @@ export default function Home() {
       position: 'relative',
       overflow: 'hidden'
     }}>
+      {/* TOP BAR - NEW! */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        padding: '20px 40px',
+        backgroundColor: 'rgba(5, 10, 30, 0.9)',
+        borderBottom: '2px solid #FFD700',
+        backdropFilter: 'blur(10px)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{
+          fontSize: '28px',
+          color: '#FFD700',
+          fontWeight: '700',
+          letterSpacing: '2px',
+          textShadow: '0 0 20px rgba(255, 215, 0, 0.5)',
+        }}>
+          Welcome to the Conversation
+        </div>
+      </div>
+
       {/* Dark overlay to ensure text readability */}
       <div style={{
         position: 'absolute',
@@ -84,19 +119,6 @@ export default function Home() {
       }}>
         Aurora
       </h1>
-
-      <p style={{
-        fontSize: '42px',
-        color: '#FFD700',
-        marginBottom: '60px',
-        textAlign: 'center',
-        fontWeight: '700',
-        letterSpacing: '2px',
-        textShadow: '0 0 20px rgba(255, 215, 0, 0.5)',
-        zIndex: 1
-      }}>
-        Welcome to the Conversation
-      </p>
 
       <div style={{
         display: 'flex',
