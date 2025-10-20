@@ -17,11 +17,12 @@ function ConnectionLines() {
   const [pulseStates, setPulseStates] = useState<{ [key: string]: number }>({});
   const initializedRef = useRef(false);
   
+  // Initialize pulses with random positions
   useEffect(() => {
     if (!initializedRef.current) {
       const initialStates: { [key: string]: number } = {};
       Object.values(nodes).forEach((node) => {
-        initialStates[node.id] = Math.random();
+        initialStates[node.id] = Math.random(); // Random start position
       });
       setPulseStates(initialStates);
       initializedRef.current = true;
@@ -31,14 +32,14 @@ function ConnectionLines() {
   useFrame(({ clock }) => {
     const time = clock.getElapsedTime();
     
+    // Update all pulse positions
     const newPulseStates: { [key: string]: number } = {};
     Object.values(nodes).forEach((node) => {
       const currentPos = pulseStates[node.id] || Math.random();
-      newPulseStates[node.id] = (currentPos + 0.01) % 1;
+      newPulseStates[node.id] = (currentPos + 0.01) % 1; // Slowed down speed
     });
     setPulseStates(newPulseStates);
   });
-
   
   if (nexuses.length === 0) return null;
   
@@ -60,15 +61,18 @@ function ConnectionLines() {
         
         const pulseProgress = pulseStates[node.id] || Math.random();
         
+        // Calculate pulse position along the line
         const pulseX = parentPosition[0] + (node.position[0] - parentPosition[0]) * pulseProgress;
         const pulseY = parentPosition[1] + (node.position[1] - parentPosition[1]) * pulseProgress;
         const pulseZ = parentPosition[2] + (node.position[2] - parentPosition[2]) * pulseProgress;
         
+        // Rainbow color that changes over time and per line
         const hue = (pulseProgress + idx * 0.15) % 1;
         const rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
         
         return (
           <group key={node.id}>
+            {/* Main connection line with rainbow color */}
             <Line
               points={[parentPosition, node.position]}
               color={rainbowColor}
@@ -77,6 +81,7 @@ function ConnectionLines() {
               opacity={0.5}
             />
             
+            {/* Single animated rainbow pulse */}
             <mesh position={[pulseX, pulseY, pulseZ]}>
               <sphereGeometry args={[0.15, 16, 16]} />
               <meshBasicMaterial 
@@ -168,40 +173,141 @@ function NexusTitle({ title, position }: { title: string; position: [number, num
 
 function CameraLight() {
   const { camera } = useThree();
-  const spotLightRef = useRef<THREE.SpotLight>(null);
-  const pointLightRef = useRef<THREE.PointLight>(null);
+  const lightRef = useRef<THREE.SpotLight>(null);
+  const fillLight1Ref = useRef<THREE.PointLight>(null);
+  const fillLight2Ref = useRef<THREE.PointLight>(null);
+  const spotlight1Ref = useRef<THREE.SpotLight>(null);
+  const spotlight2Ref = useRef<THREE.SpotLight>(null);
+  const spotlight3Ref = useRef<THREE.SpotLight>(null);
+  const topLight1Ref = useRef<THREE.SpotLight>(null);
+  const topLight2Ref = useRef<THREE.SpotLight>(null);
   
   useFrame(() => {
-    if (spotLightRef.current) {
-      spotLightRef.current.position.copy(camera.position);
-      spotLightRef.current.target.position.set(0, 0, 0);
-      spotLightRef.current.target.updateMatrixWorld();
+    if (lightRef.current) {
+      lightRef.current.position.copy(camera.position);
+      lightRef.current.target.position.set(0, 0, 0);
+      lightRef.current.target.updateMatrixWorld();
     }
     
-    if (pointLightRef.current) {
-      pointLightRef.current.position.copy(camera.position);
+    // Additional spotlights angled from camera
+    if (spotlight1Ref.current) {
+      const offset = new THREE.Vector3(3, 2, 0);
+      spotlight1Ref.current.position.copy(camera.position).add(offset);
+      spotlight1Ref.current.target.position.set(0, 0, 0);
+      spotlight1Ref.current.target.updateMatrixWorld();
     }
+    
+    if (spotlight2Ref.current) {
+      const offset = new THREE.Vector3(-3, 2, 0);
+      spotlight2Ref.current.position.copy(camera.position).add(offset);
+      spotlight2Ref.current.target.position.set(0, 0, 0);
+      spotlight2Ref.current.target.updateMatrixWorld();
+    }
+    
+    if (spotlight3Ref.current) {
+      const offset = new THREE.Vector3(0, 3, 0);
+      spotlight3Ref.current.position.copy(camera.position).add(offset);
+      spotlight3Ref.current.target.position.set(0, 0, 0);
+      spotlight3Ref.current.target.updateMatrixWorld();
+    }
+    
+    // Top-down lights from above-left and above-right
+    if (topLight1Ref.current) {
+      const offset = new THREE.Vector3(5, 8, 0);
+      topLight1Ref.current.position.copy(camera.position).add(offset);
+      topLight1Ref.current.target.position.set(0, -5, 0);
+      topLight1Ref.current.target.updateMatrixWorld();
+    }
+    
+    if (topLight2Ref.current) {
+      const offset = new THREE.Vector3(-5, 8, 0);
+      topLight2Ref.current.position.copy(camera.position).add(offset);
+      topLight2Ref.current.target.position.set(0, -5, 0);
+      topLight2Ref.current.target.updateMatrixWorld();
+    }
+    
+    // Fill lights follow camera at slight offsets
+    if (fillLight1Ref.current) {
+      const offset1 = new THREE.Vector3(5, 3, 0);
+      fillLight1Ref.current.position.copy(camera.position).add(offset1);
+    }
+    
+    if (fillLight2Ref.current) {
+      const offset2 = new THREE.Vector3(-5, 3, 0);
+      fillLight2Ref.current.position.copy(camera.position).add(offset2);
+    }
+  });
+  
+  // Create 4 equator ring lights - fewer but MUCH more powerful
+  const equatorLights = Array.from({ length: 4 }).map((_, i) => {
+    const angle = (i / 4) * Math.PI * 2; // 4 lights = 90° apart (N, E, S, W)
+    const radius = 15; // Distance from center
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const y = 0; // At equator level
+    
+    return (
+      <spotLight
+        key={`equator-${i}`}
+        position={[x, y, z]}
+        target-position={[0, 0, 0]}
+        intensity={350}
+        angle={Math.PI / 2.5}
+        penumbra={0.2}
+        distance={350}
+        decay={0.3}
+        color="#ffffff"
+      />
+    );
   });
   
   return (
     <>
+      {/* Main spotlight from camera - WIDER & BRIGHTER */}
       <spotLight 
-        ref={spotLightRef} 
-        intensity={750} 
-        angle={Math.PI / 3}
-        penumbra={0.1}
-        distance={200}
-        decay={1.5}
-        color="#FFFFFF"
+        ref={lightRef} 
+        intensity={250} 
+        angle={Math.PI / 1.5}
+        penumbra={0.3}
+        distance={400}
+        decay={0.4}
       />
       
-      <pointLight 
-        ref={pointLightRef}
-        intensity={450}
-        distance={100}
-        decay={2}
-        color="#FFFFFF"
+      {/* Additional spotlights for wider coverage */}
+      <spotLight 
+        ref={spotlight1Ref} 
+        intensity={200} 
+        angle={Math.PI / 1.8}
+        penumbra={0.3}
+        distance={400}
+        decay={0.4}
       />
+      
+      <spotLight 
+        ref={topLight2Ref} 
+        intensity={200} 
+        angle={Math.PI / 1.8}
+        penumbra={0.3}
+        distance={400}
+        decay={0.4}
+      />
+      
+      {/* Fill lights for softer spread */}
+      <pointLight 
+        ref={fillLight1Ref} 
+        intensity={50}
+        distance={150}
+        decay={1}
+      />
+      <pointLight 
+        ref={fillLight2Ref} 
+        intensity={50}
+        distance={150}
+        decay={1}
+      />
+      
+      {/* ✨ NEW: Equator ring lights - 8 spotlights around the middle */}
+      {equatorLights}
     </>
   );
 }
@@ -218,6 +324,7 @@ function Scene() {
   useCameraAnimation();
   
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
+  const previousMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const nextMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const alternateMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const sparkleMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial[]>>(new Map());
@@ -305,22 +412,25 @@ function Scene() {
       
       {nexuses.map((nexus) => (
         <group key={nexus.id}>
+          {/* Main metallic sphere - pure chrome, no glow */}
           <mesh 
             position={nexus.position}
             onClick={() => selectNode(nexus.id)}
           >
-            <sphereGeometry args={[2, 64, 64]} />
+            <sphereGeometry args={[2, 32, 32]} />
             <meshStandardMaterial 
               color="#00FF9D"
-              metalness={0.98}
-              roughness={0.02}
+              metalness={1.0}
+              roughness={0.0}
               emissive="#00FF9D"
-              emissiveIntensity={0.15}
-              envMapIntensity={1.5}
+              emissiveIntensity={0.2}
+              envMapIntensity={3.0}
+              clearcoat={1.0}
+              clearcoatRoughness={0.0}
             />
           </mesh>
           
-          {/* Selected halo - YELLOW */}
+          {/* Halo ring for selected state */}
           {glowNodes.selected === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -335,12 +445,17 @@ function Scene() {
                 />
               </mesh>
               
+              {/* Sparkles around the halo - Saturn ring style */}
               {Array.from({ length: 30 }).map((_, i) => {
+                // Random angle for scattered distribution
                 const angle = (Math.random() * Math.PI * 2);
+                // Slightly varied radius for depth
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
                 const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
                 const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                // Slight vertical variation
                 const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                // Varied sizes for realism
                 const size = 0.04 + Math.random() * 0.06;
                 
                 return (
@@ -365,7 +480,53 @@ function Scene() {
             </>
           )}
           
-          {/* Next halo - CYAN */}
+          {/* Halo for previous state */}
+          {glowNodes.previous === nexus.id && (
+            <>
+              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[2.5, 0.15, 16, 32]} />
+                <meshBasicMaterial 
+                  ref={(mat) => {
+                    if (mat) previousMaterialsRef.current.set(nexus.id, mat);
+                  }}
+                  color="#FFFFFF"
+                  transparent
+                  opacity={0.7}
+                />
+              </mesh>
+              
+              {/* Sparkles - Saturn style */}
+              {Array.from({ length: 30 }).map((_, i) => {
+                const angle = (Math.random() * Math.PI * 2);
+                const sparkleRadius = 2.4 + Math.random() * 0.3;
+                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
+                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                const size = 0.04 + Math.random() * 0.06;
+                
+                return (
+                  <mesh key={`sparkle-prev-${i}`} position={[x, y, z]}>
+                    <sphereGeometry args={[size, 6, 6]} />
+                    <meshBasicMaterial 
+                      ref={(mat) => {
+                        if (mat) {
+                          if (!sparkleMaterialsRef.current.has(nexus.id)) {
+                            sparkleMaterialsRef.current.set(nexus.id, []);
+                          }
+                          sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
+                        }
+                      }}
+                      color="#FFFFFF"
+                      transparent
+                      opacity={0.7}
+                    />
+                  </mesh>
+                );
+              })}
+            </>
+          )}
+          
+          {/* Halo for next state */}
           {glowNodes.next === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -380,6 +541,7 @@ function Scene() {
                 />
               </mesh>
               
+              {/* Sparkles - Saturn style */}
               {Array.from({ length: 30 }).map((_, i) => {
                 const angle = (Math.random() * Math.PI * 2);
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
@@ -410,7 +572,7 @@ function Scene() {
             </>
           )}
           
-          {/* Alternate halo - CYAN */}
+          {/* Halo for alternate state */}
           {glowNodes.alternate === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -425,6 +587,7 @@ function Scene() {
                 />
               </mesh>
               
+              {/* Sparkles - Saturn style */}
               {Array.from({ length: 30 }).map((_, i) => {
                 const angle = (Math.random() * Math.PI * 2);
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
@@ -466,6 +629,7 @@ function Scene() {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
         
+        // ALL diamonds are NEON purple
         const baseColor = "#E933FF";
         
         let haloColor = null;
@@ -474,6 +638,9 @@ function Scene() {
         if (glowNodes.selected === node.id) {
           haloColor = "#FFFF00";
           haloType = 'selected';
+        } else if (glowNodes.previous === node.id) {
+          haloColor = "#FFFFFF";
+          haloType = 'previous';
         } else if (glowNodes.next === node.id) {
           haloColor = "#00FFFF";
           haloType = 'next';
@@ -482,10 +649,12 @@ function Scene() {
           haloType = 'alternate';
         }
         
-        const Geometry = <octahedronGeometry args={[size, 3]} />;
+        // All nodes are diamonds (octahedrons)
+        const Geometry = <octahedronGeometry args={[size, 0]} />;
         
         return (
           <group key={node.id}>
+            {/* Main metallic shape - pure chrome, no glow */}
             <mesh 
               position={node.position} 
               onClick={() => selectNode(node.id)}
@@ -493,14 +662,17 @@ function Scene() {
               {Geometry}
               <meshStandardMaterial 
                 color={baseColor}
-                metalness={0.98}
-                roughness={0.02}
+                metalness={1.0}
+                roughness={0.0}
                 emissive={baseColor}
-                emissiveIntensity={0.2}
-                envMapIntensity={1.5}
+                emissiveIntensity={0.3}
+                envMapIntensity={3.0}
+                clearcoat={1.0}
+                clearcoatRoughness={0.0}
               />
             </mesh>
             
+            {/* Halo ring around diamond */}
             {haloColor && (
               <>
                 <mesh position={node.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -510,6 +682,8 @@ function Scene() {
                       if (mat && haloType) {
                         if (haloType === 'selected') {
                           selectedMaterialsRef.current.set(node.id, mat);
+                        } else if (haloType === 'previous') {
+                          previousMaterialsRef.current.set(node.id, mat);
                         } else if (haloType === 'next') {
                           nextMaterialsRef.current.set(node.id, mat);
                         } else if (haloType === 'alternate') {
@@ -519,10 +693,11 @@ function Scene() {
                     }}
                     color={haloColor}
                     transparent
-                    opacity={haloType === 'selected' ? 0.8 : 0.9}
+                    opacity={haloType === 'selected' ? 0.8 : haloType === 'previous' ? 0.7 : 0.9}
                   />
                 </mesh>
                 
+                {/* Sparkles around node halo - Saturn style */}
                 {Array.from({ length: 20 }).map((_, i) => {
                   const angle = (Math.random() * Math.PI * 2);
                   const sparkleRadius = size * 1.4 + Math.random() * 0.2;
@@ -545,7 +720,7 @@ function Scene() {
                         }}
                         color={haloColor}
                         transparent
-                        opacity={haloType === 'selected' ? 0.8 : 0.9}
+                        opacity={haloType === 'selected' ? 0.8 : haloType === 'previous' ? 0.7 : 0.9}
                       />
                     </mesh>
                   );
@@ -556,85 +731,36 @@ function Scene() {
         );
       })}
       
-      <ambientLight intensity={0.2} />
+      <ambientLight intensity={0.1} />
+      <pointLight position={[10, 10, 10]} intensity={0.3} />
     </>
   );
 }
+
 function Controls() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const nexuses = useCanvasStore((state) => state.nexuses);
   
   return (
     <>
-      {/* Top Bar */}
-      <div style={{ 
-        position: 'absolute', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
-        height: '70px',
-        backgroundColor: 'rgba(5, 10, 30, 0.9)',
-        borderBottom: '2px solid #FFD700',
-        backdropFilter: 'blur(10px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 40px',
-        zIndex: 1000 
-      }}>
-        {/* Left side - Create Nexus button */}
-        <div>
-          {nexuses.length < 3 && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              style={{
-                padding: '12px 24px',
-                backgroundColor: '#00FFD4',
-                color: '#050A1E',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '16px',
-                fontWeight: 'bold',
-              }}
-            >
-              Create Nexus
-            </button>
-          )}
-        </div>
-
-        {/* Center - Welcome message */}
-        <div style={{
-          fontSize: '28px',
-          color: '#FFD700',
-          fontWeight: '700',
-          letterSpacing: '2px',
-          textShadow: '0 0 20px rgba(255, 215, 0, 0.5)',
-        }}>
-          Welcome to the conversation
-        </div>
-
-        {/* Right side - Memories button */}
-        <div style={{ width: '200px', display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 1000 }}>
+        {nexuses.length < 3 && (
           <button
-            onClick={() => window.location.href = '/memories'}
+            onClick={() => setShowCreateModal(true)}
             style={{
               padding: '12px 24px',
-              backgroundColor: '#9333EA',
-              color: 'white',
-              border: '2px solid #9333EA',
+              backgroundColor: '#00FFD4',
+              color: '#050A1E',
+              border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
               fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
             }}
           >
-            🧠 Memories
+            Create Nexus
           </button>
-        </div>
+        )}
       </div>
       
       <CreateNexusModal 
