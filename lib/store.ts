@@ -15,7 +15,7 @@ interface CanvasStore {
   nexuses: Nexus[];
   nodes: { [id: string]: Node };
   selectedId: string | null;
-  previousId: string | null;  // NEW: Track previous node
+  previousId: string | null;
   showContentOverlay: boolean;
   isAnimatingCamera: boolean;
   showReplyModal: boolean;
@@ -38,19 +38,29 @@ interface CanvasStore {
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
+  addNodeFromWebSocket: (data: any) => void;
+  addNexusFromWebSocket: (data: any) => void;
+  
+  // NEW: Memory features - add these 3 lines
+  activatedConversations: string[];
+  toggleActivateConversation: (nexusId: string) => void;
+  getActivatedConversations: () => Nexus[];
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   nexuses: [],
   nodes: {},
   selectedId: null,
-  previousId: null,  // NEW: Initialize previous node tracker
+  previousId: null,
   showContentOverlay: false,
   isAnimatingCamera: false,
   showReplyModal: false,
   quotedText: null,
+activatedConversations: [], // ← ADD THIS LINE
 
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
+    let newNexus: Nexus | null = null;
+    
     set((state) => {
       const nexusCount = state.nexuses.length;
       
@@ -68,7 +78,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         ];
       }
       
-      const newNexus: Nexus = {
+      newNexus = {
         id: `nexus-${Date.now()}`,
         position,
         title,
@@ -82,6 +92,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       
       return { nexuses: [...state.nexuses, newNexus] };
     });
+    
+    // Broadcast nexus creation to WebSocket
+    if (newNexus) {
+      console.log('🔍 Checking for socket...', typeof window !== 'undefined' ? (window as any).socket : 'window is undefined');
+      const socket = typeof window !== 'undefined' ? (window as any).socket : null;
+      if (socket) {
+        console.log('✅ Socket found! Broadcasting...');
+        socket.emit('create_nexus', {
+          portalId: 'default-portal',
+          ...newNexus
+        });
+        console.log('📤 Broadcasting nexus creation:', newNexus.id);
+      } else {
+        console.error('❌ No socket available for broadcasting!');
+      }
+    }
   },
 
   loadAcademicPaper: () => {
@@ -135,7 +161,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           nexuses: [nexus],
           nodes: newNodes,
           selectedId: null,
-          previousId: null  // Reset history
+          previousId: null
         });
         
         console.log(`📚 Loaded academic paper: ${data.nodes.length} sections`);
@@ -148,16 +174,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   loadAcademicPaperFromData: (data: any) => {
     console.log('📚 Loading academic paper from uploaded data');
     
-    // Clear existing content
     set({ 
       nexuses: [], 
       nodes: {},
       selectedId: null,
-      previousId: null,  // Reset history
+      previousId: null,
       showContentOverlay: false
     });
 
-    // Create the main nexus
     const nexus: Nexus = {
       id: data.nexus.id || 'uploaded-paper-nexus',
       position: data.nexus.position || [0, 0, 0],
@@ -169,11 +193,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const nexuses = [nexus];
     const nodes: { [id: string]: Node } = {};
 
-    // Create nodes for each section WITH POSITIONING
     data.sections.forEach((section: any, index: number) => {
       const nodeId = `node-${index}`;
       
-      // Calculate position using same logic as original loadAcademicPaper
       const baseRadius = 6;
       const radiusIncrement = 0.4;
       const radius = baseRadius + (index * radiusIncrement);
@@ -222,21 +244,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return { nodes: updatedNodes };
     });
   },
-updateNexusContent: (nexusId: string, newContent: string) => {
-  set((state) => {
-    const updatedNexuses = state.nexuses.map((nexus) => {
-      if (nexus.id === nexusId) {
-        return {
-          ...nexus,
-          content: newContent,
-        };
-      }
-      return nexus;
+
+  updateNexusContent: (nexusId: string, newContent: string) => {
+    set((state) => {
+      const updatedNexuses = state.nexuses.map((nexus) => {
+        if (nexus.id === nexusId) {
+          return {
+            ...nexus,
+            content: newContent,
+          };
+        }
+        return nexus;
+      });
+      return { nexuses: updatedNexuses };
     });
-    return { nexuses: updatedNexuses };
-  });
-  console.log(`✅ Updated nexus content: ${nexusId}`);
-},
+    console.log(`✅ Updated nexus content: ${nexusId}`);
+  },
+
   exportToWordDoc: async () => {
     const state = get();
     const { nodes, nexuses } = state;
@@ -247,7 +271,7 @@ updateNexusContent: (nexusId: string, newContent: string) => {
       return;
     }
 
-    const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer } = await import('docx');
+    const { Document, Paragraph, HeadingLevel, AlignmentType, Packer } = await import('docx');
 
     const sections = Object.values(nodes)
       .filter((n) => n.type !== 'nexus')
@@ -449,12 +473,29 @@ updateNexusContent: (nexusId: string, newContent: string) => {
       return { nodes: updatedNodes };
     });
     
+    // Broadcast node creation to WebSocket
+    const socket = (window as any).socket;
+    if (socket) {
+      const newNode = get().nodes[newNodeId];
+      socket.emit('create_node', {
+        portalId: 'default-portal',
+        id: newNode.id,
+        position: newNode.position,
+        title: newNode.title,
+        content: newNode.content,
+        parentId: newNode.parentId,
+      });
+      console.log('📤 Broadcasting node creation:', newNodeId);
+    }
+    
     setTimeout(() => {
       get().selectNode(newNodeId, false);
     }, 100);
   },
 
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => {
+    let newNexus: Nexus | null = null;
+    
     set((state) => {
       const nexusCount = state.nexuses.length;
       
@@ -472,9 +513,8 @@ updateNexusContent: (nexusId: string, newContent: string) => {
         ];
       }
       
-      const nexusId = `chat-${Date.now()}`;
-      const newNexus: Nexus = {
-        id: nexusId,
+      newNexus = {
+        id: `chat-${Date.now()}`,
         position,
         title: title,
         content: `You: ${userMessage}\n\nClaude: ${aiResponse}`,
@@ -485,6 +525,22 @@ updateNexusContent: (nexusId: string, newContent: string) => {
       
       return { nexuses: [...state.nexuses, newNexus] };
     });
+    
+    // Broadcast nexus creation to WebSocket
+    if (newNexus) {
+      console.log('🔍 Checking for socket...', typeof window !== 'undefined' ? (window as any).socket : 'window is undefined');
+      const socket = typeof window !== 'undefined' ? (window as any).socket : null;
+      if (socket) {
+        console.log('✅ Socket found! Broadcasting...');
+        socket.emit('create_nexus', {
+          portalId: 'default-portal',
+          ...newNexus
+        });
+        console.log('📤 Broadcasting nexus creation:', newNexus.id);
+      } else {
+        console.error('❌ No socket available for broadcasting!');
+      }
+    }
   },
 
   addUserMessage: (content: string, parentId: string) => {
@@ -693,14 +749,13 @@ updateNexusContent: (nexusId: string, newContent: string) => {
   selectNode: (id: string | null, showOverlay: boolean = true) => {
     const state = get();
     
-    // Only update previousId if we're selecting a DIFFERENT node
     const newPreviousId = (id !== state.selectedId) ? state.selectedId : state.previousId;
     
     console.log(`🎯 Selected: ${id}, Previous: ${newPreviousId}, showOverlay: ${showOverlay}`);
     
     set({ 
       selectedId: id,
-      previousId: newPreviousId,  // Only update if different node selected
+      previousId: newPreviousId,
       showContentOverlay: showOverlay,
       isAnimatingCamera: showOverlay
     });
@@ -761,5 +816,79 @@ updateNexusContent: (nexusId: string, newContent: string) => {
     }
     
     return null;
+  },
+
+  addNodeFromWebSocket: (data: any) => {
+    const state = get();
+    
+    if (state.nodes[data.id]) {
+      console.log('⏭️ Node already exists, skipping:', data.id);
+      return;
+    }
+
+    console.log('➕ Adding node from WebSocket:', data.id);
+    
+    const newNode: Node = {
+      id: data.id,
+      position: data.position,
+      title: data.title || 'Untitled',
+      content: data.content,
+      parentId: data.parentId,
+      children: [],
+    };
+
+    set((state) => ({
+      nodes: { ...state.nodes, [newNode.id]: newNode }
+    }));
+    
+    console.log('✅ Node added from WebSocket');
+  },
+
+addNexusFromWebSocket: (data: any) => {
+    const state = get();
+    
+    if (state.nexuses.find(n => n.id === data.id)) {
+      console.log('⏭️ Nexus already exists, skipping:', data.id);
+      return;
+    }
+
+    console.log('➕ Adding nexus from WebSocket:', data.id);
+    
+    const newNexus: Nexus = {
+      id: data.id,
+      position: data.position,
+      title: data.title,
+      content: data.content,
+      videoUrl: data.videoUrl,
+      audioUrl: data.audioUrl,
+      type: data.type || 'social',
+    };
+
+    set((state) => ({
+      nexuses: [...state.nexuses, newNexus]
+    }));
+    
+    console.log('✅ Nexus added from WebSocket');
+  },
+
+  toggleActivateConversation: (nexusId: string) => {
+    set((state) => {
+      const isActivated = state.activatedConversations.includes(nexusId);
+      
+      if (isActivated) {
+        return {
+          activatedConversations: state.activatedConversations.filter(id => id !== nexusId)
+        };
+      } else {
+        return {
+          activatedConversations: [...state.activatedConversations, nexusId]
+        };
+      }
+    });
+  },
+  
+  getActivatedConversations: () => {
+    const state = get();
+    return state.nexuses.filter(n => state.activatedConversations.includes(n.id));
   },
 }));

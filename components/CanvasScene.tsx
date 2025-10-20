@@ -9,6 +9,7 @@ import ReplyModal from './ReplyModal';
 import CreateNexusModal from './CreateNexusModal';
 import * as THREE from 'three';
 import { useCameraAnimation } from '@/lib/useCameraAnimation';
+import { io } from 'socket.io-client';
 
 function ConnectionLines() {
   const nexuses = useCanvasStore((state) => state.nexuses);
@@ -440,12 +441,39 @@ function Controls() {
     </>
   );
 }
-
 export default function CanvasScene() {
   const nexuses = useCanvasStore((state) => state.nexuses);
+  const addNodeFromWebSocket = useCanvasStore((state) => state.addNodeFromWebSocket);
+  const addNexusFromWebSocket = useCanvasStore((state) => state.addNexusFromWebSocket);
   
   const hasAcademicPaper = nexuses.some(n => n.type === 'academic');
   
+useEffect(() => {
+    console.log('🔵 useEffect running, attempting connection...');
+    const socket = io('http://localhost:3001');
+    
+    socket.on('connect', () => {
+      console.log('🟢 Connected to WebSocket server');
+      socket.emit('join_portal', 'default-portal');
+      console.log('📍 Joined default-portal');
+    });
+    
+    socket.on('nodeCreated', (data) => {
+      console.log('📥 Received node from WebSocket:', data);
+      addNodeFromWebSocket(data);
+    });
+    
+    socket.on('nexusCreated', (data) => {
+      console.log('📥 Received nexus from WebSocket:', data);
+      addNexusFromWebSocket(data);
+    });
+    
+    (window as any).socket = socket;
+    
+    return () => {
+      socket.disconnect();
+    };
+  }, [addNodeFromWebSocket, addNexusFromWebSocket]);
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />

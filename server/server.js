@@ -1,48 +1,61 @@
+const express = require('express');
+const http = require('http');
 const { Server } = require('socket.io');
+const cors = require('cors');
 
-function setupWebSocket(httpServer) {
-  const io = new Server(httpServer, {
-    cors: {
-      origin: "http://localhost:3000",
-      methods: ["GET", "POST"]
-    }
-  });
+// Create Express app
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-  console.log('🌐 WebSocket server initialized');
+// Create HTTP server
+const server = http.createServer(app);
 
-  io.on('connection', (socket) => {
-    console.log('👋 User connected:', socket.id);
+// Setup Socket.io
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"]
+  }
+});
 
-    // When user joins a portal
-    socket.on('join_portal', (portalId) => {
-      socket.join(portalId);
-      console.log(`📍 User ${socket.id} joined portal: ${portalId}`);
-      
-      // Notify others in the portal
-      socket.to(portalId).emit('user_joined', {
-        userId: socket.id,
-        timestamp: Date.now()
-      });
-    });
+console.log('🌐 WebSocket server initialized');
 
-    // When user creates a node
-    socket.on('create_node', (data) => {
-      console.log('🆕 Node created:', data);
-      
-      // Broadcast to everyone in the portal INCLUDING sender
-      io.to(data.portalId).emit('node_created', {
-        ...data,
-        timestamp: Date.now()
-      });
-    });
+io.on('connection', (socket) => {
+  console.log('👋 User connected:', socket.id);
 
-    // When user disconnects
-    socket.on('disconnect', () => {
-      console.log('👋 User disconnected:', socket.id);
+  // When user joins a portal
+  socket.on('join_portal', (portalId) => {
+    socket.join(portalId);
+    console.log(`📍 User ${socket.id} joined portal: ${portalId}`);
+    
+    socket.to(portalId).emit('user_joined', {
+      userId: socket.id,
+      timestamp: Date.now()
     });
   });
 
-  return io;
-}
+  // When user creates a node
+  socket.on('create_node', (data) => {
+    console.log('🆕 Node created:', data);
+    
+    io.to(data.portalId).emit('nodeCreated', data);
+  });
 
-module.exports = { setupWebSocket };
+  // When user creates a nexus
+  socket.on('create_nexus', (data) => {
+    console.log('🌟 Nexus created:', data);
+    
+    io.to(data.portalId).emit('nexusCreated', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('👋 User disconnected:', socket.id);
+  });
+});
+
+// Start server
+const PORT = 3001;
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+});

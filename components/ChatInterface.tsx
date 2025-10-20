@@ -19,16 +19,81 @@ export default function ChatInterface() {
   const [spatialSections, setSpatialSections] = useState<Array<{ title: string; type: string }>>([]);
   const [showSpatialNavigator, setShowSpatialNavigator] = useState(false);
 
-  const { nexuses, createChatNexus, addNode } = useCanvasStore();
+  const { nexuses, nodes, createChatNexus, addNode, getActivatedConversations, selectedId } = useCanvasStore();
 
-  // Track if we have a chat nexus
+  // 🧠 Track selection state
   useEffect(() => {
-    const chatNexus = nexuses.find(n => n.id.startsWith('chat-'));
-    if (chatNexus && isFirstMessage) {
-      setCurrentParentId(chatNexus.id);
+    if (selectedId) {
+      console.log('🔍 Node/Nexus selected, will reply to it:', selectedId);
       setIsFirstMessage(false);
+      setCurrentParentId(selectedId);
+    } else {
+      console.log('🔍 Nothing selected, will create new nexus if AI is used');
+      setIsFirstMessage(true);
+      setCurrentParentId(null);
     }
-  }, [nexuses, isFirstMessage]);
+  }, [selectedId]);
+
+  // 🧠 Build full conversation context
+  const buildConversationContext = () => {
+    const context: string[] = [];
+    
+    console.log('🧠 Building context...');
+    console.log('🧠 Nexuses:', nexuses.length);
+    console.log('🧠 Nodes:', Object.keys(nodes).length);
+    
+    // 1. Get activated conversations
+    const activatedConvos = getActivatedConversations();
+    console.log('🧠 Activated conversations:', activatedConvos.length);
+    
+    if (activatedConvos.length > 0) {
+      context.push("=== ACTIVATED MEMORIES ===\n");
+      activatedConvos.forEach(conv => {
+        context.push(`**${conv.title}**`);
+        context.push(conv.content);
+        context.push("---\n");
+      });
+    }
+    
+    // 2. Get current conversation (use selected nexus or fallback)
+    const selectedNexus = selectedId ? nexuses.find(n => n.id === selectedId) : null;
+    const currentNexus = selectedNexus || nexuses.find(n => n.id.startsWith('chat-')) || nexuses[0];
+    console.log('🧠 Current nexus:', currentNexus?.id, currentNexus?.title);
+    
+    if (currentNexus) {
+      context.push("=== CURRENT CONVERSATION ===\n");
+      context.push(`**Topic: ${currentNexus.title}**`);
+      context.push(currentNexus.content);
+      context.push("\n**Full Thread:**\n");
+      
+      // Get ALL nodes
+      const conversationNodes = Object.values(nodes)
+        .filter(node => node.parentId === currentNexus.id)
+        .sort((a, b) => {
+          const aTime = parseInt(a.id.split('-')[1]) || 0;
+          const bTime = parseInt(b.id.split('-')[1]) || 0;
+          return aTime - bTime;
+        });
+      
+      console.log('🧠 Found nodes:', conversationNodes.length);
+      
+      conversationNodes.forEach(node => {
+        console.log('  📝', node.isAI ? 'AI' : 'User', ':', node.content.substring(0, 50));
+        
+        if (node.isAI) {
+          context.push(`\n[AI]: ${node.content}`);
+        } else {
+          context.push(`\n[User]: ${node.content}`);
+        }
+      });
+    }
+    
+    const finalContext = context.join('\n');
+    console.log('🧠 Final context length:', finalContext.length, 'characters');
+    console.log('🧠 Context preview:', finalContext.substring(0, 200));
+    
+    return finalContext;
+  };
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
@@ -38,14 +103,14 @@ export default function ChatInterface() {
     setIsLoading(true);
     setError(null);
 
-    // ✨ NEW: Check for Explore: prefix (case-insensitive)
     const explorePattern = /^explore:\s*/i;
     const isSpatialMode = explorePattern.test(userMessage);
     const cleanMessage = userMessage.replace(explorePattern, '').trim();
 
     console.log(isSpatialMode ? '🌌 SPATIAL MODE DETECTED' : '💬 Standard chat mode');
+    console.log('🎯 isFirstMessage:', isFirstMessage);
+    console.log('🎯 selectedId:', selectedId);
 
-    // ✨ Parse title and prompt for first message
     let title = 'Chat';
     let actualPrompt = cleanMessage;
 
@@ -53,23 +118,19 @@ export default function ChatInterface() {
       console.log('🔍 Raw message:', userMessage);
       console.log('🔍 Clean message:', cleanMessage);
       
-      // Check if message has both Title: and Prompt: patterns
       const titleIndex = cleanMessage.toLowerCase().indexOf('title:');
       const promptIndex = cleanMessage.toLowerCase().indexOf('prompt:');
       
       console.log('🔍 Title index:', titleIndex, 'Prompt index:', promptIndex);
       
       if (titleIndex !== -1 && promptIndex !== -1 && promptIndex > titleIndex) {
-        // Extract title (between "Title:" and "Prompt:")
         title = cleanMessage.substring(titleIndex + 6, promptIndex).trim();
-        // Extract prompt (everything after "Prompt:")
         actualPrompt = cleanMessage.substring(promptIndex + 7).trim();
         
         console.log('🔍 Parsed title:', title);
         console.log('🔍 Parsed prompt:', actualPrompt);
       } else {
         console.log('🔍 Could not find both Title: and Prompt:');
-        // If no Title/Prompt format, use first few words as title for spatial mode
         if (isSpatialMode) {
           const words = cleanMessage.split(' ').slice(0, 5).join(' ');
           title = words + (cleanMessage.split(' ').length > 5 ? '...' : '');
@@ -77,19 +138,21 @@ export default function ChatInterface() {
       }
     }
 
-    // Add user message to conversation history (use actual prompt, not title)
+    // 🧠 Build full context
+    const fullContext = buildConversationContext();
+    
     const updatedHistory = [...conversationHistory, { role: 'user' as const, content: actualPrompt }];
 
     try {
-      // ✨ NEW: Call backend API with mode parameter
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
           messages: updatedHistory,
-          mode: isSpatialMode ? 'spatial' : 'standard'
+          mode: isSpatialMode ? 'spatial' : 'standard',
+          conversationContext: fullContext,
         }),
       });
 
@@ -99,106 +162,70 @@ export default function ChatInterface() {
 
       const data = await response.json();
       console.log('🔍 Backend response:', data);
-      console.log('🔍 Mode:', data.mode);
-      console.log('🔍 SpatialData:', data.spatialData);
 
-      
-      // ✨ NEW: Handle spatial vs standard responses
       if (data.mode === 'spatial' && data.spatialData) {
         console.log('✨ Processing spatial response:', data.spatialData);
-        console.log('📊 Number of nodes in spatialData:', data.spatialData.nodes?.length);
-        console.log('📊 Nodes array:', data.spatialData.nodes);
         
-        // Add AI response to history (use the raw response for history)
         const finalHistory = [...updatedHistory, { role: 'assistant' as const, content: data.response }];
         setConversationHistory(finalHistory);
 
-        // ✨ FIXED: Handle first message vs subsequent messages
         if (isFirstMessage) {
-          console.log('🆕 First message - creating nexus with first section only');
-          
-          // ✨ CRITICAL FIX: First section becomes the nexus, rest become nodes
           const firstSection = data.spatialData.nodes[0];
           const remainingSections = data.spatialData.nodes.slice(1);
 
-          // ✨ NEW: Store sections for the navigator
           setSpatialSections(data.spatialData.nodes);
           setShowSpatialNavigator(true);
-
-          console.log('📍 First section (NEXUS):', firstSection?.title);
-          console.log('📊 Remaining sections (NODES):', remainingSections.length);
           
-          // Create nexus with ONLY the first section
           const nexusTitle = title !== 'Chat' ? title : (firstSection?.title || 'Spatial Exploration');
-
-          // ✨ NEW: Create a clean prompt message for the nexus (not the full text dump)
           const cleanPromptMessage = actualPrompt.length > 200 
             ? "Parse and spatially organize the provided document." 
             : actualPrompt;
-
           const nexusContent = `${cleanPromptMessage}\n\n**${firstSection?.title || 'Introduction'}**\n\n${firstSection?.content || 'Spatial exploration starting point'}`;
 
           createChatNexus(nexusTitle, cleanPromptMessage, nexusContent);
           setIsFirstMessage(false);
           
-          // Wait for nexus to be created, then add REMAINING nodes
           setTimeout(() => {
-            console.log('⏰ Timeout fired - checking for nexus');
             const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
-            console.log('🔍 Found nexus:', chatNexus);
             
             if (chatNexus) {
-              console.log(`🌌 Creating ${remainingSections.length} reply nodes...`);
-              
-              // Create nodes for sections 2-N (NOT section 1, that's the nexus)
               remainingSections.forEach((node: any, index: number) => {
                 const nodeContent = `${node.title}\n\n${node.content}`;
-                
-                console.log(`📝 Scheduling node ${index + 1}:`, node.title);
-                
                 setTimeout(() => {
-                  console.log(`✅ Creating node ${index + 1}:`, node.title);
                   addNode(nodeContent, chatNexus.id);
                 }, index * 100);
               });
-            } else {
-              console.error('❌ No chat nexus found!');
             }
           }, 300);
         } else {
-          // Subsequent spatial explorations
-          const selectedId = useCanvasStore.getState().selectedId;
-          const parentId = selectedId || currentParentId || nexuses[0]?.id;
+          // 🧠 Reply to selected
+          const parentId = selectedId || currentParentId;
+          
+          console.log('🎯 Replying to:', parentId);
           
           if (!parentId) {
             throw new Error('No parent node found');
           }
 
-          // Create a node for each item in the spatial response
           data.spatialData.nodes.forEach((node: any, index: number) => {
             const nodeContent = `${node.title}\n\n${node.content}`;
-            
             setTimeout(() => {
               addNode(nodeContent, parentId);
             }, index * 100);
           });
-
-          console.log(`🌌 Created ${data.spatialData.nodes.length} spatial nodes`);
         }
       } else {
-        // Standard single response
+        // Standard response
         const aiResponse = data.response;
-
-        // Add AI response to conversation history
         const finalHistory = [...updatedHistory, { role: 'assistant' as const, content: aiResponse }];
         setConversationHistory(finalHistory);
 
         if (isFirstMessage) {
-          // First exchange: Create Chat Nexus with parsed title and both messages
+          // Create new nexus (nothing was selected)
+          console.log('🆕 Creating new nexus');
           createChatNexus(title, actualPrompt, aiResponse);
           setIsFirstMessage(false);
           
-          // Auto-show overlay for chat nexus
           setTimeout(() => {
             const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
             if (chatNexus) {
@@ -207,18 +234,21 @@ export default function ChatInterface() {
             }
           }, 300);
         } else {
-          // Subsequent exchanges: Create single node
-          const selectedId = useCanvasStore.getState().selectedId;
-          const parentId = selectedId || currentParentId || nexuses[0]?.id;
+          // 🧠 Reply to selected conversation
+          const parentId = selectedId || currentParentId;
+          
+          console.log('🎯 Replying to existing conversation:', parentId);
+          console.log('🎯 Selected ID:', selectedId);
+          console.log('🎯 Current Parent:', currentParentId);
           
           if (!parentId) {
             throw new Error('No parent node found');
           }
 
+          // 💜 Create ONE node with both prompt and response
           const combinedContent = `You: ${actualPrompt}\n\nClaude: ${aiResponse}`;
           addNode(combinedContent, parentId);
           
-          // Auto-show the content overlay
           setTimeout(() => {
             const { setShowContentOverlay } = useCanvasStore.getState();
             setShowContentOverlay(true);
@@ -240,12 +270,10 @@ export default function ChatInterface() {
     }
   };
 
-  // ✨ NEW: Detect if user is typing "Explore:"
   const isSpatialModeActive = /^explore:\s*/i.test(message);
 
   return (
     <>
-      {/* Chat Interface */}
       <div
         style={{
           position: 'fixed',
@@ -260,7 +288,7 @@ export default function ChatInterface() {
         }}
       >
         <div style={{ marginBottom: '12px', color: isSpatialModeActive ? '#9333EA' : '#00FFD4', fontSize: '14px', fontWeight: 'bold' }}>
-          {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : 'Aurora Chat'} {!isFirstMessage && '(Replying to conversation)'}
+          {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : '🧠 Aurora Chat'} {!isFirstMessage && '(Full Context Active)'}
         </div>
 
         <textarea
@@ -309,7 +337,6 @@ export default function ChatInterface() {
         </button>
       </div>
 
-      {/* ✨ Spatial Navigator - separate component positioned bottom-right */}
       <SpatialNavigator 
         sections={spatialSections} 
         isVisible={showSpatialNavigator} 
