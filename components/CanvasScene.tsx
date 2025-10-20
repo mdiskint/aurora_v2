@@ -729,8 +729,8 @@ function Scene() {
         );
       })}
       
-      <ambientLight intensity={0.1} />
-      <pointLight position={[10, 10, 10]} intensity={0.3} />
+      <ambientLight intensity={0.02} />
+<pointLight position={[10, 10, 10]} intensity={0.1} />
     </>
   );
 }
