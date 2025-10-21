@@ -20,6 +20,8 @@ interface CanvasStore {
   isAnimatingCamera: boolean;
   showReplyModal: boolean;
   quotedText: string | null;
+  connectionModeNodeA: string | null;
+  connectionModeActive: boolean;
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
@@ -35,6 +37,9 @@ interface CanvasStore {
   setIsAnimatingCamera: (isAnimating: boolean) => void;
   setShowReplyModal: (show: boolean) => void;
   setQuotedText: (text: string | null) => void;
+   startConnectionMode: (nodeId: string) => void;     // ← ADD THIS
+  clearConnectionMode: () => void;  
+  createConnection: (nodeAId: string, nodeBId: string) => void;                  // ← ADD THIS
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
@@ -58,6 +63,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   showReplyModal: false,
   quotedText: null,
   activatedConversations: [],
+  connectionModeNodeA: null,
+  connectionModeActive: false,
 
   // 💾 SAVE TO LOCALSTORAGE
   saveToLocalStorage: () => {
@@ -854,7 +861,100 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({ quotedText: text });
   },
 
+  startConnectionMode: (nodeId: string) => {
+    console.log('🔗 Connection mode started with node:', nodeId);
+    set({ 
+      connectionModeActive: true,
+      connectionModeNodeA: nodeId 
+    });
+  },
+
+  clearConnectionMode: () => {
+    console.log('❌ Connection mode cancelled');
+    set({ 
+      connectionModeActive: false,
+      connectionModeNodeA: null 
+    });
+  },
+
+createConnection: (nodeAId: string, nodeBId: string) => {
+  console.log('🔗 Creating connection node between', nodeAId, 'and', nodeBId);
+  
+  let newConnectionNodeId = '';
+  
+  set((state) => {
+    const nodeA = state.nodes[nodeAId];
+    const nodeB = state.nodes[nodeBId];
+    
+    if (!nodeA || !nodeB) {
+      console.error('❌ One or both nodes not found:', nodeAId, nodeBId);
+      return state;
+    }
+    
+    // Generate new node ID
+    newConnectionNodeId = `connection-${Date.now()}`;
+    
+    // Calculate position: midpoint between A and B, raised up
+    const midX = (nodeA.position[0] + nodeB.position[0]) / 2;
+    const midY = (nodeA.position[1] + nodeB.position[1]) / 2;
+    const midZ = (nodeA.position[2] + nodeB.position[2]) / 2;
+    
+    // Add upward curve to avoid other nodes
+    const upwardOffset = 4; // Height above midpoint
+    const position: [number, number, number] = [midX, midY + upwardOffset, midZ];
+    
+    console.log(`✨ Connection node position: [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+    
+    // Create the new connection node
+    const newNode: Node = {
+      id: newConnectionNodeId,
+      position,
+      title: `Connection ${new Date().toLocaleTimeString()}`,
+      content: '', // Empty - user will fill it in
+      parentId: nodeA.parentId, // Use Node A's parent
+      children: [],
+      isConnectionNode: true,
+      connectionNodes: [nodeAId, nodeBId], // Store both inspiration nodes
+    };
+    
+    const updatedNodes = { ...state.nodes, [newConnectionNodeId]: newNode };
+    
+    console.log('✅ Connection node created:', newConnectionNodeId);
+    
+    return { 
+      nodes: updatedNodes,
+      selectedId: newConnectionNodeId, // Select the new node
+    };
+  });
+  
+  // Save to localStorage
+  get().saveToLocalStorage();
+  
+  // Open the reply modal for the user to write about the connection
+  setTimeout(() => {
+    get().setShowReplyModal(true);
+  }, 100);
+  
+  // Emit to backend via WebSocket
+  const socket = (window as any).socket;
+  if (socket) {
+    const newNode = get().nodes[newConnectionNodeId];
+    socket.emit('create_node', {
+      portalId: 'default-portal',
+      id: newNode.id,
+      position: newNode.position,
+      title: newNode.title,
+      content: newNode.content,
+      parentId: newNode.parentId,
+      isConnectionNode: true,
+      connectionNodes: [nodeAId, nodeBId],
+    });
+    console.log('📤 Broadcasting connection node to backend');
+  }
+},
+
   getNodeLevel: (nodeId: string) => {
+
     const state = get();
     const node = state.nodes[nodeId];
     if (!node) return 0;

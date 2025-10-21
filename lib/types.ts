@@ -8,5 +8,7 @@ export interface Node {
   children: string[];
   videoUrl?: string;
   audioUrl?: string;
-  isAI?: boolean;  // NEW: flag to identify AI response nodes
+  isAI?: boolean;
+  connectionNodes?: [string, string];  // ← ADD THIS: IDs of the two nodes this connection bridges
+  isConnectionNode?: boolean;          // ← ADD THIS: Flag to identify connection nodes
 }

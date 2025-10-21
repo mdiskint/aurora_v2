@@ -11,6 +11,34 @@ import * as THREE from 'three';
 import { useCameraAnimation } from '@/lib/useCameraAnimation';
 import { io } from 'socket.io-client';
 
+function RotatingConnectionNode({ node, size, baseColor, onClick }: any) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  
+  // Rotate the mesh every frame
+  useFrame(() => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.01; // Rotate on Y axis
+      meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
+    }
+  });
+  
+  return (
+    <mesh ref={meshRef} position={node.position} onClick={onClick}>
+      <dodecahedronGeometry args={[size * 1.3, 0]} />
+      <meshStandardMaterial 
+        color="#FFD700" // Golden color for connection nodes!
+        metalness={1.0}
+        roughness={0.0}
+        emissive="#FFD700"
+        emissiveIntensity={0.5}
+        envMapIntensity={3.0}
+        clearcoat={1.0}
+        clearcoatRoughness={0.0}
+      />
+    </mesh>
+  );
+}
+
 function ConnectionLines() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
@@ -22,7 +50,7 @@ function ConnectionLines() {
     if (!initializedRef.current) {
       const initialStates: { [key: string]: number } = {};
       Object.values(nodes).forEach((node) => {
-        initialStates[node.id] = Math.random(); // Random start position
+        initialStates[node.id] = Math.random();
       });
       setPulseStates(initialStates);
       initializedRef.current = true;
@@ -32,11 +60,10 @@ function ConnectionLines() {
   useFrame(({ clock }) => {
     const time = clock.getElapsedTime();
     
-    // Update all pulse positions
     const newPulseStates: { [key: string]: number } = {};
     Object.values(nodes).forEach((node) => {
       const currentPos = pulseStates[node.id] || Math.random();
-      newPulseStates[node.id] = (currentPos + 0.01) % 1; // Slowed down speed
+      newPulseStates[node.id] = (currentPos + 0.01) % 1;
     });
     setPulseStates(newPulseStates);
   });
@@ -48,6 +75,78 @@ function ConnectionLines() {
   return (
     <>
       {nodeArray.map((node, idx) => {
+        // Special handling for connection nodes - draw to BOTH inspiration nodes
+        if (node.isConnectionNode && node.connectionNodes) {
+          const [nodeAId, nodeBId] = node.connectionNodes;
+          const nodeA = nodes[nodeAId];
+          const nodeB = nodes[nodeBId];
+          
+          if (!nodeA || !nodeB) return null;
+          
+          const pulseProgress = pulseStates[node.id] || Math.random();
+          const hue = (pulseProgress + idx * 0.15) % 1;
+          const rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
+          
+          return (
+            <group key={node.id}>
+              {/* Line from connection node to Node A */}
+              <Line
+                points={[node.position, nodeA.position]}
+                color={rainbowColor}
+                lineWidth={2}
+                transparent
+                opacity={0.5}
+              />
+              
+              {/* Line from connection node to Node B */}
+              <Line
+                points={[node.position, nodeB.position]}
+                color={rainbowColor}
+                lineWidth={2}
+                transparent
+                opacity={0.5}
+              />
+              
+              {/* Pulse on line to Node A */}
+              {idx % 2 === 0 && (() => {
+                const pulseX = node.position[0] + (nodeA.position[0] - node.position[0]) * pulseProgress;
+                const pulseY = node.position[1] + (nodeA.position[1] - node.position[1]) * pulseProgress;
+                const pulseZ = node.position[2] + (nodeA.position[2] - node.position[2]) * pulseProgress;
+                
+                return (
+                  <mesh position={[pulseX, pulseY, pulseZ]}>
+                    <sphereGeometry args={[0.12, 16, 16]} />
+                    <meshBasicMaterial 
+                      color={rainbowColor}
+                      transparent
+                      opacity={0.6}
+                    />
+                  </mesh>
+                );
+              })()}
+              
+              {/* Pulse on line to Node B */}
+              {idx % 2 === 1 && (() => {
+                const pulseX = node.position[0] + (nodeB.position[0] - node.position[0]) * pulseProgress;
+                const pulseY = node.position[1] + (nodeB.position[1] - node.position[1]) * pulseProgress;
+                const pulseZ = node.position[2] + (nodeB.position[2] - node.position[2]) * pulseProgress;
+                
+                return (
+                  <mesh position={[pulseX, pulseY, pulseZ]}>
+                    <sphereGeometry args={[0.12, 16, 16]} />
+                    <meshBasicMaterial 
+                      color={rainbowColor}
+                      transparent
+                      opacity={0.6}
+                    />
+                  </mesh>
+                );
+              })()}
+            </group>
+          );
+        }
+        
+        // Normal node - draw single line to parent
         let parentPosition: [number, number, number];
         
         const parentNexus = nexuses.find(n => n.id === node.parentId);
@@ -61,18 +160,15 @@ function ConnectionLines() {
         
         const pulseProgress = pulseStates[node.id] || Math.random();
         
-        // Calculate pulse position along the line
         const pulseX = parentPosition[0] + (node.position[0] - parentPosition[0]) * pulseProgress;
         const pulseY = parentPosition[1] + (node.position[1] - parentPosition[1]) * pulseProgress;
         const pulseZ = parentPosition[2] + (node.position[2] - parentPosition[2]) * pulseProgress;
         
-        // Rainbow color that changes over time and per line
         const hue = (pulseProgress + idx * 0.15) % 1;
         const rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
         
         return (
           <group key={node.id}>
-            {/* Main connection line with rainbow color */}
             <Line
               points={[parentPosition, node.position]}
               color={rainbowColor}
@@ -81,17 +177,16 @@ function ConnectionLines() {
               opacity={0.5}
             />
             
-{/* Single animated rainbow pulse - only every 2nd line */}
-{idx % 2 === 0 && (
-  <mesh position={[pulseX, pulseY, pulseZ]}>
-    <sphereGeometry args={[0.12, 16, 16]} />
-    <meshBasicMaterial 
-      color={rainbowColor}
-      transparent
-      opacity={0.6}
-    />
-  </mesh>
-)}
+            {idx % 2 === 0 && (
+              <mesh position={[pulseX, pulseY, pulseZ]}>
+                <sphereGeometry args={[0.12, 16, 16]} />
+                <meshBasicMaterial 
+                  color={rainbowColor}
+                  transparent
+                  opacity={0.6}
+                />
+              </mesh>
+            )}
           </group>
         );
       })}
@@ -191,7 +286,6 @@ function CameraLight() {
       lightRef.current.target.updateMatrixWorld();
     }
     
-    // Additional spotlights angled from camera
     if (spotlight1Ref.current) {
       const offset = new THREE.Vector3(3, 2, 0);
       spotlight1Ref.current.position.copy(camera.position).add(offset);
@@ -213,7 +307,6 @@ function CameraLight() {
       spotlight3Ref.current.target.updateMatrixWorld();
     }
     
-    // Top-down lights from above-left and above-right
     if (topLight1Ref.current) {
       const offset = new THREE.Vector3(5, 8, 0);
       topLight1Ref.current.position.copy(camera.position).add(offset);
@@ -228,7 +321,6 @@ function CameraLight() {
       topLight2Ref.current.target.updateMatrixWorld();
     }
     
-    // Fill lights follow camera at slight offsets
     if (fillLight1Ref.current) {
       const offset1 = new THREE.Vector3(5, 3, 0);
       fillLight1Ref.current.position.copy(camera.position).add(offset1);
@@ -240,13 +332,12 @@ function CameraLight() {
     }
   });
   
-  // Create 4 equator ring lights - fewer but MUCH more powerful
   const equatorLights = Array.from({ length: 4 }).map((_, i) => {
-    const angle = (i / 4) * Math.PI * 2; // 4 lights = 90° apart (N, E, S, W)
-    const radius = 15; // Distance from center
+    const angle = (i / 4) * Math.PI * 2;
+    const radius = 15;
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;
-    const y = 0; // At equator level
+    const y = 0;
     
     return (
       <spotLight
@@ -265,7 +356,6 @@ function CameraLight() {
   
   return (
     <>
-      {/* Main spotlight from camera - WIDER & BRIGHTER */}
       <spotLight 
         ref={lightRef} 
         intensity={250} 
@@ -275,7 +365,6 @@ function CameraLight() {
         decay={0.4}
       />
       
-      {/* Additional spotlights for wider coverage */}
       <spotLight 
         ref={spotlight1Ref} 
         intensity={200} 
@@ -294,7 +383,6 @@ function CameraLight() {
         decay={0.4}
       />
       
-      {/* Fill lights for softer spread */}
       <pointLight 
         ref={fillLight1Ref} 
         intensity={50}
@@ -308,7 +396,6 @@ function CameraLight() {
         decay={1}
       />
       
-      {/* ✨ NEW: Equator ring lights - 8 spotlights around the middle */}
       {equatorLights}
     </>
   );
@@ -322,8 +409,28 @@ function Scene() {
   const previousId = useCanvasStore((state) => state.previousId);
   const getNodeLevel = useCanvasStore((state) => state.getNodeLevel);
   const getNexusForNode = useCanvasStore((state) => state.getNexusForNode);
-  
+  const startConnectionMode = useCanvasStore((state) => state.startConnectionMode);
+  const clearConnectionMode = useCanvasStore((state) => state.clearConnectionMode);
+  const connectionModeActive = useCanvasStore((state) => state.connectionModeActive);
+  const connectionModeNodeA = useCanvasStore((state) => state.connectionModeNodeA);
+  const createConnection = useCanvasStore((state) => state.createConnection);
+
   useCameraAnimation();
+  
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'c' || e.key === 'C') {
+        console.log('🔗 Entering connection mode - click two nodes to connect');
+        startConnectionMode('');
+      } else if (e.key === 'Escape') {
+        console.log('❌ Exiting connection mode');
+        clearConnectionMode();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [startConnectionMode, clearConnectionMode]);
   
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const previousMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
@@ -414,21 +521,37 @@ function Scene() {
       
       {nexuses.map((nexus) => (
         <group key={nexus.id}>
-          {/* Main metallic sphere - pure chrome, no glow */}
-        <mesh 
-  position={nexus.position}
-  onClick={() => selectNode(nexus.id)}
->
-  <sphereGeometry args={[2, 32, 32]} />
-  <meshBasicMaterial 
-    color="#00FF9D"
-    wireframe={true}
-    transparent={true}
-    opacity={1}
-  />
-</mesh>
+          <mesh 
+            position={nexus.position}
+            onClick={(e) => {
+              e.stopPropagation();
+              
+              if (connectionModeActive) {
+                if (!connectionModeNodeA) {
+                  console.log('🔗 Node A selected:', nexus.id);
+                  startConnectionMode(nexus.id);
+                } else if (connectionModeNodeA === nexus.id) {
+                  console.log('❌ Cancelled - same node clicked');
+                  clearConnectionMode();
+                } else {
+                  console.log('✅ Creating connection:', connectionModeNodeA, '→', nexus.id);
+                createConnection(connectionModeNodeA, nexus.id);
+                  clearConnectionMode();
+                }
+              } else {
+                selectNode(nexus.id);
+              }
+            }}
+          >
+            <sphereGeometry args={[2, 32, 32]} />
+            <meshBasicMaterial 
+              color="#00FF9D"
+              wireframe={true}
+              transparent={true}
+              opacity={1}
+            />
+          </mesh>
           
-          {/* Halo ring for selected state */}
           {glowNodes.selected === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -443,17 +566,12 @@ function Scene() {
                 />
               </mesh>
               
-              {/* Sparkles around the halo - Saturn ring style */}
               {Array.from({ length: 30 }).map((_, i) => {
-                // Random angle for scattered distribution
                 const angle = (Math.random() * Math.PI * 2);
-                // Slightly varied radius for depth
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
                 const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
                 const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                // Slight vertical variation
                 const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                // Varied sizes for realism
                 const size = 0.04 + Math.random() * 0.06;
                 
                 return (
@@ -478,7 +596,6 @@ function Scene() {
             </>
           )}
           
-          {/* Halo for previous state */}
           {glowNodes.previous === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -493,7 +610,6 @@ function Scene() {
                 />
               </mesh>
               
-              {/* Sparkles - Saturn style */}
               {Array.from({ length: 30 }).map((_, i) => {
                 const angle = (Math.random() * Math.PI * 2);
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
@@ -524,7 +640,6 @@ function Scene() {
             </>
           )}
           
-          {/* Halo for next state */}
           {glowNodes.next === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -539,7 +654,6 @@ function Scene() {
                 />
               </mesh>
               
-              {/* Sparkles - Saturn style */}
               {Array.from({ length: 30 }).map((_, i) => {
                 const angle = (Math.random() * Math.PI * 2);
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
@@ -570,7 +684,6 @@ function Scene() {
             </>
           )}
           
-          {/* Halo for alternate state */}
           {glowNodes.alternate === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -585,7 +698,6 @@ function Scene() {
                 />
               </mesh>
               
-              {/* Sparkles - Saturn style */}
               {Array.from({ length: 30 }).map((_, i) => {
                 const angle = (Math.random() * Math.PI * 2);
                 const sparkleRadius = 2.4 + Math.random() * 0.3;
@@ -627,7 +739,6 @@ function Scene() {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
         
-        // ALL diamonds are NEON purple
         const baseColor = "#E933FF";
         
         let haloColor = null;
@@ -647,55 +758,106 @@ function Scene() {
           haloType = 'alternate';
         }
         
-        // All nodes are diamonds (octahedrons)
-        const Geometry = <octahedronGeometry args={[size, 0]} />;
+       // Special rendering for connection nodes
+let Geometry;
+
+
+if (node.isConnectionNode) {
+  // Connection nodes get a star-like dodecahedron shape
+  Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
+} else {
+  // Normal nodes get octahedron
+  Geometry = <octahedronGeometry args={[size, 0]} />;
+}
         
-        return (
-          <group key={node.id}>
-            {/* Main metallic shape - pure chrome, no glow */}
-            <mesh 
-              position={node.position} 
-              onClick={() => selectNode(node.id)}
-            >
-              {Geometry}
-              <meshStandardMaterial 
-                color={baseColor}
-                metalness={1.0}
-                roughness={0.0}
-                emissive={baseColor}
-                emissiveIntensity={0.3}
-                envMapIntensity={3.0}
-                clearcoat={1.0}
-                clearcoatRoughness={0.0}
-              />
-            </mesh>
-            
-            {/* Halo ring around diamond */}
-            {haloColor && (
-              <>
-                <mesh position={node.position} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
-                  <meshBasicMaterial 
-                    ref={(mat) => {
-                      if (mat && haloType) {
-                        if (haloType === 'selected') {
-                          selectedMaterialsRef.current.set(node.id, mat);
-                        } else if (haloType === 'previous') {
-                          previousMaterialsRef.current.set(node.id, mat);
-                        } else if (haloType === 'next') {
-                          nextMaterialsRef.current.set(node.id, mat);
-                        } else if (haloType === 'alternate') {
-                          alternateMaterialsRef.current.set(node.id, mat);
-                        }
-                      }
-                    }}
-                    color={haloColor}
-                    transparent
-                    opacity={haloType === 'selected' ? 0.8 : haloType === 'previous' ? 0.7 : 0.9}
-                  />
-                </mesh>
-                
-                {/* Sparkles around node halo - Saturn style */}
+       return (
+  <group key={node.id}>
+    {node.isConnectionNode ? (
+      // Render rotating golden star for connection nodes
+      <RotatingConnectionNode
+        node={node}
+        size={size}
+        baseColor={baseColor}
+        onClick={(e: any) => {
+          e.stopPropagation();
+          
+          if (connectionModeActive) {
+            if (!connectionModeNodeA) {
+              console.log('🔗 Node A selected:', node.id);
+              startConnectionMode(node.id);
+            } else if (connectionModeNodeA === node.id) {
+              console.log('❌ Cancelled - same node clicked');
+              clearConnectionMode();
+            } else {
+              console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
+              createConnection(connectionModeNodeA, node.id);
+              clearConnectionMode();
+            }
+          } else {
+            selectNode(node.id);
+          }
+        }}
+      />
+    ) : (
+      // Normal node rendering
+      <mesh 
+        position={node.position} 
+        onClick={(e) => {
+          e.stopPropagation();
+          
+          if (connectionModeActive) {
+            if (!connectionModeNodeA) {
+              console.log('🔗 Node A selected:', node.id);
+              startConnectionMode(node.id);
+            } else if (connectionModeNodeA === node.id) {
+              console.log('❌ Cancelled - same node clicked');
+              clearConnectionMode();
+            } else {
+              console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
+              createConnection(connectionModeNodeA, node.id);
+              clearConnectionMode();
+            }
+          } else {
+            selectNode(node.id);
+          }
+        }}
+      >
+        {Geometry}
+        <meshStandardMaterial 
+          color={baseColor}
+          metalness={1.0}
+          roughness={0.0}
+          emissive={baseColor}
+          emissiveIntensity={0.3}
+          envMapIntensity={3.0}
+          clearcoat={1.0}
+          clearcoatRoughness={0.0}
+        />
+      </mesh>
+    )}
+                {haloColor && (
+  <>
+  <mesh position={node.position} rotation={[Math.PI / 2, 0, 0]}>
+  <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
+  <meshBasicMaterial 
+    ref={(mat) => {
+      if (mat && haloType) {
+        if (haloType === 'selected') {
+          selectedMaterialsRef.current.set(node.id, mat);
+        } else if (haloType === 'previous') {
+          previousMaterialsRef.current.set(node.id, mat);
+        } else if (haloType === 'next') {
+          nextMaterialsRef.current.set(node.id, mat);
+        } else if (haloType === 'alternate') {
+          alternateMaterialsRef.current.set(node.id, mat);
+        }
+      }
+    }}
+    color={haloColor}
+    transparent
+    opacity={haloType === 'selected' ? 0.8 : haloType === 'previous' ? 0.7 : 0.9}
+  />
+</mesh>
                 {Array.from({ length: 20 }).map((_, i) => {
                   const angle = (Math.random() * Math.PI * 2);
                   const sparkleRadius = size * 1.4 + Math.random() * 0.2;
@@ -730,7 +892,7 @@ function Scene() {
       })}
       
       <ambientLight intensity={0.02} />
-<pointLight position={[10, 10, 10]} intensity={0.1} />
+      <pointLight position={[10, 10, 10]} intensity={0.1} />
     </>
   );
 }

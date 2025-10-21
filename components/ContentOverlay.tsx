@@ -4,8 +4,7 @@ import { useCanvasStore } from '@/lib/store';
 
 export default function ContentOverlay() {
   const pathname = usePathname();
-  const isExplorePage = pathname === '/explore' || pathname === '/create';
-
+ const isExplorePage = pathname === '/explore' || pathname === '/create' || pathname === '/chat';
   const selectedId = useCanvasStore((state) => state.selectedId);
   const nodes = useCanvasStore((state) => state.nodes);
   const nexuses = useCanvasStore((state) => state.nexuses);

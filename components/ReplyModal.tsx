@@ -12,6 +12,7 @@ export default function ReplyModal() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const addNode = useCanvasStore((state) => state.addNode);
+  const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
@@ -30,11 +31,25 @@ export default function ReplyModal() {
     if (!content.trim() || !selectedId) return;
     
     console.log('📝 Submitting reply to:', selectedId);
-    addNode(content, selectedId, quotedText || undefined);
-    setContent('');
-    setShowReplyModal(false);
-    setQuotedText(null);
-    selectNode(null);
+    
+    // Check if this is an empty connection node
+    const selectedNode = nodes[selectedId];
+    if (selectedNode && selectedNode.isConnectionNode && !selectedNode.content.trim()) {
+      // Update the connection node's content directly
+      console.log('✏️ Updating connection node content:', selectedId);
+      updateNodeContent(selectedId, content);
+      setContent('');
+      setShowReplyModal(false);
+      setQuotedText(null);
+      // Keep the connection node selected so user can see their content
+    } else {
+      // Normal behavior: create a child node
+      addNode(content, selectedId, quotedText || undefined);
+      setContent('');
+      setShowReplyModal(false);
+      setQuotedText(null);
+      selectNode(null);
+    }
   };
   
   const handleClose = () => {
