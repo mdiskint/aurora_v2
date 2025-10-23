@@ -24,16 +24,14 @@ function RotatingConnectionNode({ node, size, baseColor, onClick }: any) {
   
   return (
     <mesh ref={meshRef} position={node.position} onClick={onClick}>
-      <dodecahedronGeometry args={[size * 1.3, 0]} />
-      <meshStandardMaterial 
+      <dodecahedronGeometry args={[size * 0.5, 0]} />
+      <meshStandardMaterial
         color="#FFD700" // Golden color for connection nodes!
         metalness={1.0}
         roughness={0.0}
         emissive="#FFD700"
         emissiveIntensity={0.5}
         envMapIntensity={3.0}
-        clearcoat={1.0}
-        clearcoatRoughness={0.0}
       />
     </mesh>
   );
@@ -401,7 +399,7 @@ function CameraLight() {
   );
 }
 
-function Scene() {
+function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
@@ -414,23 +412,11 @@ function Scene() {
   const connectionModeActive = useCanvasStore((state) => state.connectionModeActive);
   const connectionModeNodeA = useCanvasStore((state) => state.connectionModeNodeA);
   const createConnection = useCanvasStore((state) => state.createConnection);
+  const selectedNodesForConnection = useCanvasStore((state) => state.selectedNodesForConnection);
+  const addNodeToConnection = useCanvasStore((state) => state.addNodeToConnection);
+  const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
 
   useCameraAnimation();
-  
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === 'c' || e.key === 'C') {
-        console.log('🔗 Entering connection mode - click two nodes to connect');
-        startConnectionMode('');
-      } else if (e.key === 'Escape') {
-        console.log('❌ Exiting connection mode');
-        clearConnectionMode();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [startConnectionMode, clearConnectionMode]);
   
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const previousMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
@@ -521,12 +507,16 @@ function Scene() {
       
       {nexuses.map((nexus) => (
         <group key={nexus.id}>
-          <mesh 
+          <mesh
             position={nexus.position}
             onClick={(e) => {
               e.stopPropagation();
-              
-              if (connectionModeActive) {
+
+              // NEW: Multi-node connection mode (hold C)
+              if (isHoldingC) {
+                console.log('🔗 Adding nexus to selection:', nexus.id);
+                addNodeToConnection(nexus.id);
+              } else if (connectionModeActive) {
                 if (!connectionModeNodeA) {
                   console.log('🔗 Node A selected:', nexus.id);
                   startConnectionMode(nexus.id);
@@ -535,7 +525,7 @@ function Scene() {
                   clearConnectionMode();
                 } else {
                   console.log('✅ Creating connection:', connectionModeNodeA, '→', nexus.id);
-                createConnection(connectionModeNodeA, nexus.id);
+                  createConnection(connectionModeNodeA, nexus.id);
                   clearConnectionMode();
                 }
               } else {
@@ -551,7 +541,41 @@ function Scene() {
               opacity={1}
             />
           </mesh>
-          
+
+          {/* NEW: Golden glow for nexuses selected in multi-connection mode */}
+          {selectedNodesForConnection.includes(nexus.id) && (
+            <>
+              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[2.5, 0.15, 16, 32]} />
+                <meshBasicMaterial
+                  color="#FFD700"
+                  transparent
+                  opacity={0.9}
+                />
+              </mesh>
+
+              {Array.from({ length: 30 }).map((_, i) => {
+                const angle = (Math.random() * Math.PI * 2);
+                const sparkleRadius = 2.4 + Math.random() * 0.3;
+                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
+                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                const size = 0.04 + Math.random() * 0.06;
+
+                return (
+                  <mesh key={`sparkle-conn-${i}`} position={[x, y, z]}>
+                    <sphereGeometry args={[size, 6, 6]} />
+                    <meshBasicMaterial
+                      color="#FFD700"
+                      transparent
+                      opacity={0.9}
+                    />
+                  </mesh>
+                );
+              })}
+            </>
+          )}
+
           {glowNodes.selected === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -740,11 +764,15 @@ function Scene() {
         const size = level === 1 ? 0.75 : 0.5;
         
         const baseColor = "#E933FF";
-        
+
         let haloColor = null;
         let haloType = null;
-        
-        if (glowNodes.selected === node.id) {
+
+        // NEW: Golden glow for nodes selected in multi-connection mode
+        if (selectedNodesForConnection.includes(node.id)) {
+          haloColor = "#FFD700"; // Gold color
+          haloType = 'connection-selected';
+        } else if (glowNodes.selected === node.id) {
           haloColor = "#FFFF00";
           haloType = 'selected';
         } else if (glowNodes.previous === node.id) {
@@ -780,8 +808,12 @@ if (node.isConnectionNode) {
         baseColor={baseColor}
         onClick={(e: any) => {
           e.stopPropagation();
-          
-          if (connectionModeActive) {
+
+          // NEW: Multi-node connection mode (hold C)
+          if (isHoldingC) {
+            console.log('🔗 Adding connection node to selection:', node.id);
+            addNodeToConnection(node.id);
+          } else if (connectionModeActive) {
             if (!connectionModeNodeA) {
               console.log('🔗 Node A selected:', node.id);
               startConnectionMode(node.id);
@@ -794,18 +826,29 @@ if (node.isConnectionNode) {
               clearConnectionMode();
             }
           } else {
-            selectNode(node.id);
+            // Check if this is a connection node with content (Socratic question)
+            if (node.isConnectionNode && node.content?.trim()) {
+              console.log('💭 Opening Socratic exploration for connection node:', node.id);
+              selectNode(node.id);
+              setShowReplyModal(true);
+            } else {
+              selectNode(node.id);
+            }
           }
         }}
       />
     ) : (
       // Normal node rendering
-      <mesh 
-        position={node.position} 
+      <mesh
+        position={node.position}
         onClick={(e) => {
           e.stopPropagation();
-          
-          if (connectionModeActive) {
+
+          // NEW: Multi-node connection mode (hold C)
+          if (isHoldingC) {
+            console.log('🔗 Adding node to selection:', node.id);
+            addNodeToConnection(node.id);
+          } else if (connectionModeActive) {
             if (!connectionModeNodeA) {
               console.log('🔗 Node A selected:', node.id);
               startConnectionMode(node.id);
@@ -823,15 +866,13 @@ if (node.isConnectionNode) {
         }}
       >
         {Geometry}
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color={baseColor}
           metalness={1.0}
           roughness={0.0}
           emissive={baseColor}
           emissiveIntensity={0.3}
           envMapIntensity={3.0}
-          clearcoat={1.0}
-          clearcoatRoughness={0.0}
         />
       </mesh>
     )}
@@ -897,10 +938,45 @@ if (node.isConnectionNode) {
   );
 }
 
+function ConnectionModeHint({ isHoldingC, selectedCount }: { isHoldingC: boolean; selectedCount: number }) {
+  if (!isHoldingC && selectedCount === 0) return null;
+
+  return (
+    <div style={{
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      backgroundColor: 'rgba(255, 215, 0, 0.95)',
+      color: '#000',
+      padding: '20px 40px',
+      borderRadius: '12px',
+      fontSize: '24px',
+      fontWeight: 'bold',
+      zIndex: 2000,
+      boxShadow: '0 0 30px rgba(255, 215, 0, 0.8)',
+      border: '3px solid #FFD700',
+      textAlign: 'center',
+    }}>
+      {isHoldingC && selectedCount === 0 && (
+        <div>🔗 Hold C and click nodes to connect...</div>
+      )}
+      {isHoldingC && selectedCount > 0 && (
+        <div>
+          <div>🔗 {selectedCount} node{selectedCount > 1 ? 's' : ''} selected</div>
+          <div style={{ fontSize: '16px', marginTop: '8px', opacity: 0.8 }}>
+            {selectedCount < 2 ? 'Select at least 2 nodes' : 'Release C to connect'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Controls() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const nexuses = useCanvasStore((state) => state.nexuses);
-  
+
   return (
     <>
       <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 1000 }}>
@@ -922,10 +998,10 @@ function Controls() {
           </button>
         )}
       </div>
-      
-      <CreateNexusModal 
-        isOpen={showCreateModal} 
-        onClose={() => setShowCreateModal(false)} 
+
+      <CreateNexusModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
       />
     </>
   );
@@ -933,46 +1009,127 @@ function Controls() {
 
 export default function CanvasScene() {
   const nexuses = useCanvasStore((state) => state.nexuses);
+  const nodes = useCanvasStore((state) => state.nodes);
+  const selectedId = useCanvasStore((state) => state.selectedId);
   const addNodeFromWebSocket = useCanvasStore((state) => state.addNodeFromWebSocket);
   const addNexusFromWebSocket = useCanvasStore((state) => state.addNexusFromWebSocket);
-  
+  const selectedNodesForConnection = useCanvasStore((state) => state.selectedNodesForConnection);
+  const clearConnectionMode = useCanvasStore((state) => state.clearConnectionMode);
+  const createMultiConnection = useCanvasStore((state) => state.createMultiConnection);
+  const deleteNode = useCanvasStore((state) => state.deleteNode);
+  const deleteConversation = useCanvasStore((state) => state.deleteConversation);
+
+  const [isHoldingC, setIsHoldingC] = useState(false);
+
   const hasAcademicPaper = nexuses.some(n => n.type === 'academic');
-  
+
+  // Keyboard handling moved to parent component
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'c' || e.key === 'C') && !isHoldingC) {
+        console.log('🔗 Multi-connection mode ACTIVE - Click nodes to select');
+        setIsHoldingC(true);
+      } else if (e.key === 'Escape') {
+        console.log('❌ Cancelled connection mode');
+        setIsHoldingC(false);
+        clearConnectionMode();
+      } else if ((e.key === 'Delete' || e.key === 'x' || e.key === 'X') && selectedId) {
+        // Handle deletion of selected node or nexus
+        console.log('🗑️ Delete key pressed for:', selectedId);
+
+        // Check if selected is a nexus
+        const selectedNexus = nexuses.find(n => n.id === selectedId);
+        if (selectedNexus) {
+          // Count descendant nodes for confirmation
+          const countDescendants = (parentId: string): number => {
+            return Object.values(nodes).filter(n => n.parentId === parentId).reduce((count, node) => {
+              return count + 1 + countDescendants(node.id);
+            }, 0);
+          };
+          const nodeCount = countDescendants(selectedId);
+
+          const confirmed = window.confirm(
+            `Delete this conversation and all ${nodeCount} nodes?\n\nThis action cannot be undone.`
+          );
+
+          if (confirmed) {
+            console.log('✅ User confirmed nexus deletion');
+            deleteConversation(selectedId);
+          } else {
+            console.log('❌ User cancelled nexus deletion');
+          }
+        } else {
+          // It's a regular node - delete without confirmation
+          const selectedNode = nodes[selectedId];
+          if (selectedNode) {
+            console.log('🗑️ Deleting node:', selectedId);
+            deleteNode(selectedId);
+          }
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'c' || e.key === 'C') {
+        console.log('🔗 C key released');
+        setIsHoldingC(false);
+
+        // Create connection if 2+ nodes selected
+        if (selectedNodesForConnection.length >= 2) {
+          console.log('✨ Creating multi-connection with', selectedNodesForConnection.length, 'nodes');
+          createMultiConnection(selectedNodesForConnection);
+        } else if (selectedNodesForConnection.length === 1) {
+          console.log('⚠️ Only 1 node selected - need at least 2');
+          clearConnectionMode();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isHoldingC, selectedNodesForConnection, createMultiConnection, clearConnectionMode, selectedId, nexuses, nodes, deleteNode, deleteConversation]);
+
   useEffect(() => {
     console.log('🔵 useEffect running, attempting connection...');
     const socket = io('http://localhost:3001');
-    
+
     socket.on('connect', () => {
       console.log('🟢 Connected to WebSocket server');
       socket.emit('join_portal', 'default-portal');
       console.log('📍 Joined default-portal');
     });
-    
+
     socket.on('nodeCreated', (data) => {
       console.log('📥 Received node from WebSocket:', data);
       addNodeFromWebSocket(data);
     });
-    
+
     socket.on('nexusCreated', (data) => {
       console.log('📥 Received nexus from WebSocket:', data);
       addNexusFromWebSocket(data);
     });
-    
+
     (window as any).socket = socket;
-    
+
     return () => {
       socket.disconnect();
     };
   }, [addNodeFromWebSocket, addNexusFromWebSocket]);
-  
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
       <ReplyModal />
       <ContentOverlay />
+      <ConnectionModeHint isHoldingC={isHoldingC} selectedCount={selectedNodesForConnection.length} />
       {hasAcademicPaper && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-        <Scene />
+        <Scene isHoldingC={isHoldingC} />
         <OrbitControls enableDamping dampingFactor={0.05} />
       </Canvas>
     </div>

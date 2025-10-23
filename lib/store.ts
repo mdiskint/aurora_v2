@@ -22,6 +22,7 @@ interface CanvasStore {
   quotedText: string | null;
   connectionModeNodeA: string | null;
   connectionModeActive: boolean;
+  selectedNodesForConnection: string[];
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
@@ -37,9 +38,11 @@ interface CanvasStore {
   setIsAnimatingCamera: (isAnimating: boolean) => void;
   setShowReplyModal: (show: boolean) => void;
   setQuotedText: (text: string | null) => void;
-   startConnectionMode: (nodeId: string) => void;     // ← ADD THIS
-  clearConnectionMode: () => void;  
-  createConnection: (nodeAId: string, nodeBId: string) => void;                  // ← ADD THIS
+   startConnectionMode: (nodeId: string) => void;
+  clearConnectionMode: () => void;
+  createConnection: (nodeAId: string, nodeBId: string) => void;
+  addNodeToConnection: (nodeId: string) => void;
+  createMultiConnection: (nodeIds: string[]) => void;
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
@@ -49,6 +52,7 @@ interface CanvasStore {
   toggleActivateConversation: (nexusId: string) => void;
   getActivatedConversations: () => Nexus[];
   deleteConversation: (nexusId: string) => void;
+  deleteNode: (nodeId: string) => void;
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
 }
@@ -65,6 +69,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   activatedConversations: [],
   connectionModeNodeA: null,
   connectionModeActive: false,
+  selectedNodesForConnection: [],
 
   // 💾 SAVE TO LOCALSTORAGE
   saveToLocalStorage: () => {
@@ -431,12 +436,17 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   
   addNode: (content: string, parentId: string, quotedText?: string) => {
     let newNodeId = '';
-    
+    let isConnectionNodeParent = false;
+
     set((state) => {
       newNodeId = `node-${Date.now()}`;
-      
+
       const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
       const siblingIndex = siblings.length;
+
+      // Check if parent is a connection node (Socratic mode)
+      const parentNode = state.nodes[parentId];
+      isConnectionNodeParent = parentNode?.isConnectionNode || false;
       
       let position: [number, number, number];
       
@@ -558,10 +568,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
       console.log('📤 Broadcasting node creation:', newNodeId);
     }
-    
-    setTimeout(() => {
-      get().selectNode(newNodeId, false);
-    }, 100);
+
+    // CRITICAL: Don't auto-select user answer nodes during Socratic mode
+    // The Socratic modal handles selection to keep focus on connection node
+    if (!isConnectionNodeParent) {
+      setTimeout(() => {
+        get().selectNode(newNodeId, false);
+      }, 100);
+    } else {
+      console.log('💭 Socratic mode: Skipping auto-selection of user answer node to preserve connection node focus');
+    }
   },
 
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => {
@@ -737,15 +753,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   addAIMessage: (content: string, parentId: string) => {
     let newNodeId = '';
-    
+    let isConnectionNodeParent = false;
+
     set((state) => {
       newNodeId = `ai-${Date.now()}`;
-      
+
       const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
       const siblingIndex = siblings.length;
-      
+
       const parentNode = state.nodes[parentId];
       if (!parentNode) return state;
+
+      // Check if parent is a connection node (Socratic mode)
+      isConnectionNodeParent = parentNode.isConnectionNode || false;
       
       const nexus = get().getNexusForNode(parentId);
       if (!nexus) return state;
@@ -818,22 +838,34 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
-    
-    setTimeout(() => {
-      get().selectNode(newNodeId, true);
-    }, 600);
-    
+
+    // CRITICAL: Don't auto-select AI nodes during Socratic mode
+    // The Socratic modal handles selection to keep focus on connection node
+    if (!isConnectionNodeParent) {
+      setTimeout(() => {
+        get().selectNode(newNodeId, true);
+      }, 600);
+    } else {
+      console.log('💭 Socratic mode: Skipping auto-selection of AI node to preserve connection node focus');
+    }
+
     return newNodeId;
   },
 
   selectNode: (id: string | null, showOverlay: boolean = true) => {
     const state = get();
-    
+
     const newPreviousId = (id !== state.selectedId) ? state.selectedId : state.previousId;
-    
-    console.log(`🎯 Selected: ${id}, Previous: ${newPreviousId}, showOverlay: ${showOverlay}`);
-    
-    set({ 
+
+    const timestamp = Date.now();
+    console.log(`🎯 ${timestamp} STORE: selectNode(${id}, showOverlay=${showOverlay})`);
+    console.log(`   Previous: ${newPreviousId}, Current modal state:`, {
+      showReplyModal: state.showReplyModal,
+      showContentOverlay: state.showContentOverlay
+    });
+    console.trace('Stack trace:');
+
+    set({
       selectedId: id,
       previousId: newPreviousId,
       showContentOverlay: showOverlay,
@@ -850,6 +882,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   setShowReplyModal: (show: boolean) => {
+    const timestamp = Date.now();
+    console.log(`🕐 ${timestamp} STORE: setShowReplyModal(${show})`);
+    console.trace('Stack trace:');
     set({ showReplyModal: show });
   },
 
@@ -871,9 +906,29 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   clearConnectionMode: () => {
     console.log('❌ Connection mode cancelled');
-    set({ 
+    set({
       connectionModeActive: false,
-      connectionModeNodeA: null 
+      connectionModeNodeA: null,
+      selectedNodesForConnection: []
+    });
+  },
+
+  addNodeToConnection: (nodeId: string) => {
+    set((state) => {
+      const alreadySelected = state.selectedNodesForConnection.includes(nodeId);
+      if (alreadySelected) {
+        // Deselect if already selected
+        console.log('🔗 Deselected node:', nodeId);
+        return {
+          selectedNodesForConnection: state.selectedNodesForConnection.filter(id => id !== nodeId)
+        };
+      } else {
+        // Add to selection
+        console.log('🔗 Selected node:', nodeId, '(Total:', state.selectedNodesForConnection.length + 1, ')');
+        return {
+          selectedNodesForConnection: [...state.selectedNodesForConnection, nodeId]
+        };
+      }
     });
   },
 
@@ -952,6 +1007,119 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     console.log('📤 Broadcasting connection node to backend');
   }
 },
+
+  createMultiConnection: (nodeIds: string[]) => {
+    console.log('🔗 Creating multi-connection node for', nodeIds.length, 'nodes');
+
+    // Validate minimum 2 nodes
+    if (nodeIds.length < 2) {
+      console.error('❌ Need at least 2 nodes to create a connection');
+      return;
+    }
+
+    let newConnectionNodeId = '';
+
+    set((state) => {
+      // Get all nodes
+      const nodes = nodeIds.map(id => state.nodes[id]).filter(Boolean);
+
+      if (nodes.length < 2) {
+        console.error('❌ Not enough valid nodes found');
+        return state;
+      }
+
+      // Generate new node ID
+      newConnectionNodeId = `connection-${Date.now()}`;
+
+      // Calculate centroid position (average of all positions)
+      const sumX = nodes.reduce((sum, node) => sum + node.position[0], 0);
+      const sumY = nodes.reduce((sum, node) => sum + node.position[1], 0);
+      const sumZ = nodes.reduce((sum, node) => sum + node.position[2], 0);
+
+      const centroidX = sumX / nodes.length;
+      const centroidY = sumY / nodes.length;
+      const centroidZ = sumZ / nodes.length;
+
+      // Find the nexus (parent) position
+      const parentId = nodes[0].parentId;
+      const parentNexus = state.nexuses.find(n => n.id === parentId);
+      const nexusPos = parentNexus ? parentNexus.position : [0, 0, 0];
+
+      // Calculate direction from nexus to centroid
+      const dirX = centroidX - nexusPos[0];
+      const dirY = centroidY - nexusPos[1];
+      const dirZ = centroidZ - nexusPos[2];
+
+      // Normalize direction vector
+      const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+      const normX = length > 0 ? dirX / length : 0;
+      const normY = length > 0 ? dirY / length : 0;
+      const normZ = length > 0 ? dirZ / length : 0;
+
+      // Calculate distance from nexus to centroid, then add extra distance
+      const extraDistance = 3;
+      const totalDistance = length + extraDistance;
+
+      // Position star radially outward from nexus
+      const position: [number, number, number] = [
+        nexusPos[0] + normX * totalDistance,
+        nexusPos[1] + normY * totalDistance,
+        nexusPos[2] + normZ * totalDistance
+      ];
+
+      console.log(`✨ Multi-connection node position: [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+      console.log(`   Nexus: [${nexusPos[0]}, ${nexusPos[1]}, ${nexusPos[2]}], Distance: ${totalDistance.toFixed(2)}`);
+
+      // Create the new connection node
+      const newNode: Node = {
+        id: newConnectionNodeId,
+        position,
+        title: `Connection ${new Date().toLocaleTimeString()}`,
+        content: '', // Empty - user will fill it in
+        parentId: nodes[0].parentId, // Use first node's parent
+        children: [],
+        isConnectionNode: true,
+        connectionNodes: nodeIds, // Store all connected node IDs
+      };
+
+      const updatedNodes = { ...state.nodes, [newConnectionNodeId]: newNode };
+
+      console.log('✅ Multi-connection node created:', newConnectionNodeId, 'connecting', nodeIds.length, 'nodes');
+
+      return {
+        nodes: updatedNodes,
+        selectedId: newConnectionNodeId, // Select the new node
+        selectedNodesForConnection: [], // Clear selection
+        connectionModeActive: false, // Exit connection mode
+        showContentOverlay: false, // Ensure modal takes precedence
+      };
+    });
+
+    // Save to localStorage
+    get().saveToLocalStorage();
+
+    // Open the reply modal for the user to write about the connection
+    setTimeout(() => {
+      get().setShowReplyModal(true);
+    }, 100);
+
+    // Emit to backend via WebSocket
+    const socket = (window as any).socket;
+    if (socket) {
+      const newNode = get().nodes[newConnectionNodeId];
+      socket.emit('create_node', {
+        portalId: 'default-portal',
+        id: newNode.id,
+        position: newNode.position,
+        title: newNode.title,
+        content: newNode.content,
+        parentId: newNode.parentId,
+        isConnectionNode: true,
+        connectionNodes: nodeIds,
+      });
+      console.log('📤 Broadcasting multi-connection node to backend');
+    }
+  },
 
   getNodeLevel: (nodeId: string) => {
 
@@ -1077,26 +1245,57 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   deleteConversation: (nexusId: string) => {
     set((state) => {
       console.log(`🗑️ Deleting conversation: ${nexusId}`);
-      
+
+      // Helper function to recursively get all descendant node IDs
+      const getAllDescendants = (parentId: string, nodes: { [id: string]: Node }): string[] => {
+        const descendants: string[] = [];
+        Object.keys(nodes).forEach(nodeId => {
+          if (nodes[nodeId].parentId === parentId) {
+            descendants.push(nodeId);
+            // Recursively get children of this node
+            descendants.push(...getAllDescendants(nodeId, nodes));
+          }
+        });
+        return descendants;
+      };
+
       // Remove the nexus
       const updatedNexuses = state.nexuses.filter(n => n.id !== nexusId);
-      
-      // Remove all nodes associated with this nexus
+
+      // Get all descendant nodes recursively
+      const descendantIds = getAllDescendants(nexusId, state.nodes);
+      console.log(`🗑️ Found ${descendantIds.length} descendant nodes to delete`);
+
+      // Remove all descendant nodes
       const updatedNodes = { ...state.nodes };
+      descendantIds.forEach(nodeId => {
+        delete updatedNodes[nodeId];
+      });
+
+      // Also remove any connection nodes that reference deleted nodes
       Object.keys(updatedNodes).forEach(nodeId => {
-        if (updatedNodes[nodeId].parentId === nexusId) {
-          delete updatedNodes[nodeId];
+        const node = updatedNodes[nodeId];
+        if (node.isConnectionNode && node.connectionNodes) {
+          // Check if any connected nodes were deleted
+          const hasDeletedConnection = node.connectionNodes.some(connId =>
+            connId === nexusId || descendantIds.includes(connId)
+          );
+          if (hasDeletedConnection) {
+            delete updatedNodes[nodeId];
+          }
         }
       });
-      
+
       // Remove from activated conversations
       const updatedActivated = state.activatedConversations.filter(id => id !== nexusId);
-      
-      // Clear selection if we're deleting the selected nexus
-      const updatedSelectedId = state.selectedId === nexusId ? null : state.selectedId;
-      
-      console.log(`✅ Deleted conversation ${nexusId}`);
-      
+
+      // Clear selection if we're deleting the selected nexus or any of its descendants
+      const isSelectedDeleted = state.selectedId === nexusId ||
+                                (state.selectedId && descendantIds.includes(state.selectedId));
+      const updatedSelectedId = isSelectedDeleted ? null : state.selectedId;
+
+      console.log(`✅ Deleted conversation ${nexusId} and ${descendantIds.length} nodes`);
+
       return {
         nexuses: updatedNexuses,
         nodes: updatedNodes,
@@ -1106,6 +1305,83 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       };
     });
     
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+  },
+
+  deleteNode: (nodeId: string) => {
+    set((state) => {
+      console.log(`🗑️ Deleting node: ${nodeId}`);
+
+      const nodeToDelete = state.nodes[nodeId];
+      if (!nodeToDelete) {
+        console.warn(`⚠️ Node ${nodeId} not found`);
+        return state;
+      }
+
+      // Helper function to recursively get all descendant node IDs
+      const getAllDescendants = (parentId: string, nodes: { [id: string]: Node }): string[] => {
+        const descendants: string[] = [];
+        Object.keys(nodes).forEach(nId => {
+          if (nodes[nId].parentId === parentId) {
+            descendants.push(nId);
+            // Recursively get children of this node
+            descendants.push(...getAllDescendants(nId, nodes));
+          }
+        });
+        return descendants;
+      };
+
+      // Get all descendant nodes recursively
+      const descendantIds = getAllDescendants(nodeId, state.nodes);
+      console.log(`🗑️ Found ${descendantIds.length} descendant nodes to delete`);
+
+      // Remove the node and all its descendants
+      const updatedNodes = { ...state.nodes };
+      delete updatedNodes[nodeId];
+      descendantIds.forEach(id => {
+        delete updatedNodes[id];
+      });
+
+      // Remove node from parent's children array
+      const parentId = nodeToDelete.parentId;
+      if (parentId && updatedNodes[parentId]) {
+        updatedNodes[parentId] = {
+          ...updatedNodes[parentId],
+          children: updatedNodes[parentId].children.filter(id => id !== nodeId)
+        };
+      }
+
+      // Also remove any connection nodes that reference this deleted node
+      const allDeletedIds = [nodeId, ...descendantIds];
+      Object.keys(updatedNodes).forEach(nId => {
+        const node = updatedNodes[nId];
+        if (node.isConnectionNode && node.connectionNodes) {
+          // Check if any connected nodes were deleted
+          const hasDeletedConnection = node.connectionNodes.some(connId =>
+            allDeletedIds.includes(connId)
+          );
+          if (hasDeletedConnection) {
+            delete updatedNodes[nId];
+          }
+        }
+      });
+
+      // Clear selection if we're deleting the selected node or any of its descendants
+      const isSelectedDeleted = state.selectedId === nodeId ||
+                                (state.selectedId && descendantIds.includes(state.selectedId));
+      const updatedSelectedId = isSelectedDeleted ? null : state.selectedId;
+
+      console.log(`✅ Deleted node ${nodeId} and ${descendantIds.length} descendants`);
+
+      return {
+        nodes: updatedNodes,
+        selectedId: updatedSelectedId,
+        showContentOverlay: updatedSelectedId === null ? false : state.showContentOverlay,
+        showReplyModal: updatedSelectedId === null ? false : state.showReplyModal
+      };
+    });
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
   },

@@ -9,6 +9,6 @@ export interface Node {
   videoUrl?: string;
   audioUrl?: string;
   isAI?: boolean;
-  connectionNodes?: [string, string];  // ← ADD THIS: IDs of the two nodes this connection bridges
+  connectionNodes?: string[];  // IDs of the nodes this connection bridges (2+)
   isConnectionNode?: boolean;          // ← ADD THIS: Flag to identify connection nodes
 }
