@@ -139,7 +139,7 @@ export default function ContentOverlay() {
           {/* Header */}
           <div className="p-6 border-b border-cyan-500/30 flex items-start justify-between flex-shrink-0">
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-cyan-400 mb-2">
+              <h2 className={`text-2xl font-bold mb-2 ${(node?.isSynthesis) ? 'text-cyan-300' : 'text-cyan-400'}`}>
                 {selectedItem.title || 'Untitled'}
               </h2>
               <div className="flex items-center gap-4">

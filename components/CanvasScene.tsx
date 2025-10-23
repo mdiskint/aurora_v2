@@ -786,11 +786,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
           haloType = 'alternate';
         }
         
-       // Special rendering for connection nodes
+       // Special rendering for connection nodes and synthesis nodes
 let Geometry;
 
-
-if (node.isConnectionNode) {
+if (node.isSynthesis) {
+  // Synthesis nodes get gem-like icosahedron shape
+  Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
+} else if (node.isConnectionNode) {
   // Connection nodes get a star-like dodecahedron shape
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
 } else {
@@ -867,11 +869,11 @@ if (node.isConnectionNode) {
       >
         {Geometry}
         <meshStandardMaterial
-          color={baseColor}
+          color={node.isSynthesis ? "#00FFFF" : baseColor}
           metalness={1.0}
           roughness={0.0}
-          emissive={baseColor}
-          emissiveIntensity={0.3}
+          emissive={node.isSynthesis ? "#00FFFF" : baseColor}
+          emissiveIntensity={node.isSynthesis ? 0.8 : 0.3}
           envMapIntensity={3.0}
         />
       </mesh>

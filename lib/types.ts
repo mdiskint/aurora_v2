@@ -10,5 +10,6 @@ export interface Node {
   audioUrl?: string;
   isAI?: boolean;
   connectionNodes?: string[];  // IDs of the nodes this connection bridges (2+)
-  isConnectionNode?: boolean;          // ← ADD THIS: Flag to identify connection nodes
+  isConnectionNode?: boolean;  // Flag to identify connection nodes
+  isSynthesis?: boolean;       // Flag to identify synthesis/insight nodes
 }

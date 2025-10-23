@@ -13,6 +13,7 @@ export default function ReplyModal() {
   const nodes = useCanvasStore((state) => state.nodes);
   const addNode = useCanvasStore((state) => state.addNode);
   const addAIMessage = useCanvasStore((state) => state.addAIMessage);
+  const addSynthesisNode = useCanvasStore((state) => state.addSynthesisNode);
   const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
@@ -194,7 +195,54 @@ export default function ReplyModal() {
     }
   };
   
-  const handleClose = () => {
+  const handleClose = async () => {
+    // Check if we're ending a Socratic exploration
+    if (isExistingConnectionNode && selectedId) {
+      const connectionNodeId = selectedId;
+      console.log('💎 Ending Socratic exploration - generating synthesis...');
+
+      // Gather all Socratic conversation history
+      const children = Object.values(nodes).filter(n => n.parentId === connectionNodeId);
+      const conversationHistory = children.map(child => ({
+        role: child.isAI ? 'assistant' : 'user',
+        content: child.content
+      }));
+
+      // Add the initial question
+      conversationHistory.unshift({
+        role: 'assistant',
+        content: selectedContent
+      });
+
+      try {
+        // Call API for synthesis
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{
+              role: 'user',
+              content: `Synthesize this Socratic exploration into key insights, connections, and suggested next steps:\n\nConversation:\n${conversationHistory.map((msg, idx) => `${idx + 1}. ${msg.role}: ${msg.content}`).join('\n\n')}\n\nProvide:\n1. Key insights discovered\n2. Connections between ideas\n3. Suggested next questions or areas to explore\n\nBe concise but comprehensive.`
+            }],
+            mode: 'synthesis'
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get synthesis');
+
+        const data = await response.json();
+        const synthesis = data.response;
+
+        // Create synthesis node
+        console.log('💎 Creating synthesis node...');
+        addSynthesisNode(synthesis, connectionNodeId);
+      } catch (error) {
+        console.error('❌ Failed to generate synthesis:', error);
+        alert('Failed to generate synthesis. The exploration will end without a summary.');
+      }
+    }
+
+    // Close modal
     setContent('');
     setShowReplyModal(false);
     setQuotedText(null);

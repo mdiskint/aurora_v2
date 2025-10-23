@@ -33,6 +33,7 @@ interface CanvasStore {
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
+  addSynthesisNode: (content: string, parentId: string) => string;
   selectNode: (id: string | null, showOverlay?: boolean) => void;
   setShowContentOverlay: (show: boolean) => void;
   setIsAnimatingCamera: (isAnimating: boolean) => void;
@@ -848,6 +849,98 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     } else {
       console.log('💭 Socratic mode: Skipping auto-selection of AI node to preserve connection node focus');
     }
+
+    return newNodeId;
+  },
+
+  addSynthesisNode: (content: string, parentId: string) => {
+    let newNodeId = '';
+
+    set((state) => {
+      newNodeId = `synthesis-${Date.now()}`;
+
+      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
+      const siblingIndex = siblings.length;
+
+      const parentNode = state.nodes[parentId];
+      if (!parentNode) return state;
+
+      const nexus = get().getNexusForNode(parentId);
+      if (!nexus) return state;
+
+      const nexusPos = nexus.position;
+      const directionX = parentNode.position[0] - nexusPos[0];
+      const directionY = parentNode.position[1] - nexusPos[1];
+      const directionZ = parentNode.position[2] - nexusPos[2];
+
+      const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
+      const normDirX = directionX / dirLength;
+      const normDirY = directionY / dirLength;
+      const normDirZ = directionZ / dirLength;
+
+      const baseDistance = 3;
+      const distanceIncrement = 0.8;
+      const distance = baseDistance + (siblingIndex * distanceIncrement);
+
+      const turnsPerNode = 0.3;
+      const helixRadius = 1.5;
+      const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
+
+      const upX = 0, upY = 1, upZ = 0;
+
+      let rightX = normDirY * upZ - normDirZ * upY;
+      let rightY = normDirZ * upX - normDirX * upZ;
+      let rightZ = normDirX * upY - normDirY * upX;
+      const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
+      rightX /= rightLength;
+      rightY /= rightLength;
+      rightZ /= rightLength;
+
+      const upPerpX = normDirY * rightZ - normDirZ * rightY;
+      const upPerpY = normDirZ * rightX - normDirX * rightZ;
+      const upPerpZ = normDirX * rightY - normDirY * rightX;
+
+      const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
+      const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
+      const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
+
+      const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
+      const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
+      const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+
+      const position: [number, number, number] = [x, y, z];
+
+      const newNode: Node = {
+        id: newNodeId,
+        position,
+        title: `💎 Synthesis ${new Date().toLocaleTimeString()}`,
+        content,
+        parentId,
+        children: [],
+        isSynthesis: true,
+      };
+
+      const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
+
+      if (state.nodes[parentId]) {
+        updatedNodes[parentId] = {
+          ...state.nodes[parentId],
+          children: [...state.nodes[parentId].children, newNodeId],
+        };
+      }
+
+      console.log(`💎 Synthesis node created: ${newNodeId}`);
+
+      return { nodes: updatedNodes };
+    });
+
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+
+    // Select the synthesis node to show it
+    setTimeout(() => {
+      get().selectNode(newNodeId, true);
+    }, 600);
 
     return newNodeId;
   },
