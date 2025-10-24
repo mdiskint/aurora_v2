@@ -1077,10 +1077,10 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   
   // Save to localStorage
   get().saveToLocalStorage();
-  
-  // Open the reply modal for the user to write about the connection
+
+  // Open the unified modal for the user to interact with the connection
   setTimeout(() => {
-    get().setShowReplyModal(true);
+    get().setShowContentOverlay(true);
   }, 100);
   
   // Emit to backend via WebSocket
@@ -1191,9 +1191,9 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     // Save to localStorage
     get().saveToLocalStorage();
 
-    // Open the reply modal for the user to write about the connection
+    // Open the unified modal for the user to interact with the connection
     setTimeout(() => {
-      get().setShowReplyModal(true);
+      get().setShowContentOverlay(true);
     }, 100);
 
     // Emit to backend via WebSocket

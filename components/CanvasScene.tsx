@@ -1,11 +1,10 @@
 'use client';
 import SectionNavigator from './SectionNavigator';
-import ContentOverlay from './ContentOverlay';
+import UnifiedNodeModal from './UnifiedNodeModal';
 import { useState, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Line, Text3D, Html } from '@react-three/drei';
 import { useCanvasStore } from '@/lib/store';
-import ReplyModal from './ReplyModal';
 import CreateNexusModal from './CreateNexusModal';
 import * as THREE from 'three';
 import { useCameraAnimation } from '@/lib/useCameraAnimation';
@@ -414,7 +413,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const createConnection = useCanvasStore((state) => state.createConnection);
   const selectedNodesForConnection = useCanvasStore((state) => state.selectedNodesForConnection);
   const addNodeToConnection = useCanvasStore((state) => state.addNodeToConnection);
-  const setShowReplyModal = useCanvasStore((state) => state.setShowReplyModal);
+  const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
 
   useCameraAnimation();
   
@@ -832,10 +831,10 @@ if (node.isSynthesis) {
             if (node.isConnectionNode && node.content?.trim()) {
               console.log('💭 Opening Socratic exploration for connection node:', node.id);
               selectNode(node.id);
-              setShowReplyModal(true);
+              setShowContentOverlay(true);
             } else {
               selectNode(node.id);
-              setShowReplyModal(true);
+              setShowContentOverlay(true);
             }
           }
         }}
@@ -865,7 +864,7 @@ if (node.isSynthesis) {
             }
           } else {
             selectNode(node.id);
-            setShowReplyModal(true);
+            setShowContentOverlay(true);
           }
         }}
       >
@@ -1129,8 +1128,7 @@ export default function CanvasScene() {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
-      <ReplyModal />
-      <ContentOverlay />
+      <UnifiedNodeModal />
       <ConnectionModeHint isHoldingC={isHoldingC} selectedCount={selectedNodesForConnection.length} />
       {hasUniverse && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
