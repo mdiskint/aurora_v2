@@ -403,7 +403,6 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const selectedId = useCanvasStore((state) => state.selectedId);
-  const previousId = useCanvasStore((state) => state.previousId);
   const getNodeLevel = useCanvasStore((state) => state.getNodeLevel);
   const getNexusForNode = useCanvasStore((state) => state.getNexusForNode);
   const startConnectionMode = useCanvasStore((state) => state.startConnectionMode);
@@ -416,9 +415,8 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
 
   useCameraAnimation();
-  
+
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
-  const previousMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const nextMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const alternateMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const sparkleMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial[]>>(new Map());
@@ -426,27 +424,25 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const nodeArray = Object.values(nodes);
   
   const getGlowNodes = () => {
-    const glowNodes = { 
+    const glowNodes = {
       selected: null as string | null,
-      previous: null as string | null,
       next: null as string | null,
-      alternate: null as string | null 
+      alternate: null as string | null
     };
-    
+
     if (!selectedId) return glowNodes;
-    
+
     const allNodes = Object.values(nodes);
     glowNodes.selected = selectedId;
-    glowNodes.previous = previousId;
-    
-    console.log(`🎨 Glow States - Selected: ${selectedId}, Previous: ${previousId}`);
+
+    console.log(`🎨 Glow States - Selected: ${selectedId}, Next: calculating...`);
     
     const selectedNexus = nexuses.find(n => n.id === selectedId);
     
     if (selectedNexus) {
       const l1Nodes = allNodes.filter(n => n.parentId === selectedNexus.id);
       if (l1Nodes.length >= 1) {
-        glowNodes.next = l1Nodes[0].id !== previousId ? l1Nodes[0].id : (l1Nodes.length > 1 ? l1Nodes[1].id : null);
+        glowNodes.next = l1Nodes[0].id;
       }
     } else if (nodes[selectedId]) {
       const currentNode = nodes[selectedId];
@@ -618,51 +614,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
               })}
             </>
           )}
-          
-          {glowNodes.previous === nexus.id && (
-            <>
-              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial 
-                  ref={(mat) => {
-                    if (mat) previousMaterialsRef.current.set(nexus.id, mat);
-                  }}
-                  color="#FFFFFF"
-                  transparent
-                  opacity={0.7}
-                />
-              </mesh>
-              
-              {Array.from({ length: 30 }).map((_, i) => {
-                const angle = (Math.random() * Math.PI * 2);
-                const sparkleRadius = 2.4 + Math.random() * 0.3;
-                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                const size = 0.04 + Math.random() * 0.06;
-                
-                return (
-                  <mesh key={`sparkle-prev-${i}`} position={[x, y, z]}>
-                    <sphereGeometry args={[size, 6, 6]} />
-                    <meshBasicMaterial 
-                      ref={(mat) => {
-                        if (mat) {
-                          if (!sparkleMaterialsRef.current.has(nexus.id)) {
-                            sparkleMaterialsRef.current.set(nexus.id, []);
-                          }
-                          sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
-                        }
-                      }}
-                      color="#FFFFFF"
-                      transparent
-                      opacity={0.7}
-                    />
-                  </mesh>
-                );
-              })}
-            </>
-          )}
-          
+
           {glowNodes.next === nexus.id && (
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
@@ -774,9 +726,6 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
         } else if (glowNodes.selected === node.id) {
           haloColor = "#FFFF00";
           haloType = 'selected';
-        } else if (glowNodes.previous === node.id) {
-          haloColor = "#FFFFFF";
-          haloType = 'previous';
         } else if (glowNodes.next === node.id) {
           haloColor = "#00FFFF";
           haloType = 'next';
@@ -883,13 +832,11 @@ if (node.isSynthesis) {
   <>
   <mesh position={node.position} rotation={[Math.PI / 2, 0, 0]}>
   <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
-  <meshBasicMaterial 
+  <meshBasicMaterial
     ref={(mat) => {
       if (mat && haloType) {
         if (haloType === 'selected') {
           selectedMaterialsRef.current.set(node.id, mat);
-        } else if (haloType === 'previous') {
-          previousMaterialsRef.current.set(node.id, mat);
         } else if (haloType === 'next') {
           nextMaterialsRef.current.set(node.id, mat);
         } else if (haloType === 'alternate') {
@@ -899,7 +846,7 @@ if (node.isSynthesis) {
     }}
     color={haloColor}
     transparent
-    opacity={haloType === 'selected' ? 0.8 : haloType === 'previous' ? 0.7 : 0.9}
+    opacity={haloType === 'selected' ? 0.8 : 0.9}
   />
 </mesh>
                 {Array.from({ length: 20 }).map((_, i) => {
@@ -924,7 +871,7 @@ if (node.isSynthesis) {
                         }}
                         color={haloColor}
                         transparent
-                        opacity={haloType === 'selected' ? 0.8 : haloType === 'previous' ? 0.7 : 0.9}
+                        opacity={haloType === 'selected' ? 0.8 : 0.9}
                       />
                     </mesh>
                   );

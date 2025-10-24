@@ -15,7 +15,6 @@ interface CanvasStore {
   nexuses: Nexus[];
   nodes: { [id: string]: Node };
   selectedId: string | null;
-  previousId: string | null;
   showContentOverlay: boolean;
   isAnimatingCamera: boolean;
   showReplyModal: boolean;
@@ -62,7 +61,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   nexuses: [],
   nodes: {},
   selectedId: null,
-  previousId: null,
   showContentOverlay: false,
   isAnimatingCamera: false,
   showReplyModal: false,
@@ -217,11 +215,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           };
         });
         
-        set({ 
+        set({
           nexuses: [nexus],
           nodes: newNodes,
-          selectedId: null,
-          previousId: null
+          selectedId: null
         });
         
         // 💾 SAVE TO LOCALSTORAGE
@@ -237,11 +234,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   loadAcademicPaperFromData: (data: any) => {
     console.log('📚 Loading academic paper from uploaded data');
     
-    set({ 
-      nexuses: [], 
+    set({
+      nexuses: [],
       nodes: {},
       selectedId: null,
-      previousId: null,
       showContentOverlay: false
     });
 
@@ -948,11 +944,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   selectNode: (id: string | null, showOverlay: boolean = true) => {
     const state = get();
 
-    const newPreviousId = (id !== state.selectedId) ? state.selectedId : state.previousId;
-
     const timestamp = Date.now();
     console.log(`🎯 ${timestamp} STORE: selectNode(${id}, showOverlay=${showOverlay})`);
-    console.log(`   Previous: ${newPreviousId}, Current modal state:`, {
+    console.log(`   Current modal state:`, {
       showReplyModal: state.showReplyModal,
       showContentOverlay: state.showContentOverlay
     });
@@ -960,7 +954,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     set({
       selectedId: id,
-      previousId: newPreviousId,
       showContentOverlay: showOverlay,
       isAnimatingCamera: showOverlay
     });
