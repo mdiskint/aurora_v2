@@ -21,59 +21,81 @@ export default function Navigation() {
       padding: '0 40px',
       zIndex: 1000,
     }}>
-      {/* Aurora Logo */}
-      <button
+      {/* Left Section - Reserved for Create Nexus button from CanvasScene */}
+      <div style={{ flex: '0 0 150px' }}>
+        {/* Create Nexus button will appear here from CanvasScene */}
+      </div>
+
+      {/* Center Section - Aurora Logo (Absolutely positioned for true centering) */}
+      <div
         onClick={() => router.push('/chat')}
         style={{
-          background: 'none',
-          border: 'none',
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
           cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}
-      >
-        <div style={{
-          fontSize: '32px',
+          fontSize: '28px',
           fontWeight: 'bold',
-          background: 'linear-gradient(135deg, #00FFD4 0%, #9333EA 100%)',
+          background: 'linear-gradient(90deg, #00ff87, #60efff, #b967ff, #ff61d8)',
+          backgroundClip: 'text',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          letterSpacing: '2px',
-        }}>
-          Aurora
-        </div>
-      </button>
-
-      {/* Memories Button */}
-      <button
-        onClick={() => router.push('/memories')}
-        style={{
-          padding: '12px 24px',
-          background: 'rgba(147, 51, 234, 0.2)',
-          border: '2px solid #9333EA',
-          borderRadius: '8px',
-          color: '#00FFD4',
-          fontSize: '16px',
-          fontWeight: 'bold',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
+          letterSpacing: '0.15em',
+          filter: 'drop-shadow(0 0 15px rgba(96, 239, 255, 0.4)) drop-shadow(0 0 20px rgba(0, 255, 135, 0.3))',
+          transition: 'all 0.3s ease',
+          userSelect: 'none',
+          animation: 'aurora-shimmer 8s ease-in-out infinite',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(147, 51, 234, 0.4)';
-          e.currentTarget.style.transform = 'scale(1.05)';
+          e.currentTarget.style.filter = 'drop-shadow(0 0 25px rgba(96, 239, 255, 0.6)) drop-shadow(0 0 30px rgba(0, 255, 135, 0.5))';
+          e.currentTarget.style.transform = 'translateX(-50%) scale(1.05)';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'rgba(147, 51, 234, 0.2)';
-          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.filter = 'drop-shadow(0 0 15px rgba(96, 239, 255, 0.4)) drop-shadow(0 0 20px rgba(0, 255, 135, 0.3))';
+          e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
         }}
       >
-        <span style={{ fontSize: '20px' }}>🧠</span>
-        Memories
-      </button>
+        AURORA
+      </div>
+
+      <style jsx>{`
+        @keyframes aurora-shimmer {
+          0%, 100% { filter: hue-rotate(0deg); }
+          50% { filter: hue-rotate(20deg); }
+        }
+      `}</style>
+
+      {/* Right Section - Memories Button */}
+      <div style={{ flex: '0 0 150px', display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={() => router.push('/memories')}
+          style={{
+            padding: '12px 24px',
+            background: 'rgba(147, 51, 234, 0.2)',
+            border: '2px solid #9333EA',
+            borderRadius: '8px',
+            color: '#00FFD4',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(147, 51, 234, 0.4)';
+            e.currentTarget.style.transform = 'scale(1.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(147, 51, 234, 0.2)';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          <span style={{ fontSize: '20px' }}>🧠</span>
+          Memories
+        </button>
+      </div>
     </div>
   );
 }

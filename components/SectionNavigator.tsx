@@ -52,6 +52,36 @@ export default function SectionNavigator() {
     selectNode(id, true);
   };
 
+  // Helper function to get meaningful node label
+  const getNodeLabel = (node: any) => {
+    console.log('🏷️ getNodeLabel called for node:', node.id);
+    console.log('   - Has title?', !!node.title, node.title);
+    console.log('   - Has content?', !!node.content);
+    if (node.content) {
+      console.log('   - Content preview:', node.content.substring(0, 100));
+    }
+
+    // PRIORITIZE CONTENT: Use first ~50 characters of content if available
+    if (node.content && node.content.trim()) {
+      const preview = node.content.trim().substring(0, 50);
+      const result = preview + (node.content.length > 50 ? '...' : '');
+      console.log('   ✅ Returning content preview:', result);
+      return result;
+    }
+
+    // Fallback to title if content is empty (but skip generic timestamp titles)
+    if (node.title && !node.title.startsWith('Reply ')) {
+      console.log('   ✅ Returning title:', node.title);
+      return node.title;
+    }
+
+    // Last resort: timestamp
+    const timestamp = parseInt(node.id.split('-')[1]) || Date.now();
+    const result = `Node ${new Date(timestamp).toLocaleTimeString()}`;
+    console.log('   ✅ Returning timestamp fallback:', result);
+    return result;
+  };
+
   return (
     <div 
       style={{
@@ -119,36 +149,42 @@ export default function SectionNavigator() {
         )}
 
         {/* Child Nodes */}
-        {childNodes.map((node) => (
-          <div
-            key={node.id}
-            onClick={() => handleClick(node.id)}
-            style={{
-              padding: '8px 12px',
-              marginBottom: '6px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              backgroundColor: selectedId === node.id 
-                ? 'rgba(147, 51, 234, 0.3)' 
-                : 'transparent',
-              border: selectedId === node.id 
-                ? '2px solid #9333EA'
-                : nextId === node.id
-                ? '2px solid #00E5FF'
-                : '2px solid transparent',
-              color: selectedId === node.id 
-                ? '#FFD700' 
-                : nextId === node.id
-                ? '#00E5FF'
-                : '#D1D5DB',
-              transition: 'all 0.2s',
-              fontSize: '12px',
-              fontWeight: selectedId === node.id ? 'bold' : 'normal',
-            }}
-          >
-            {node.title}
-          </div>
-        ))}
+        {childNodes.map((node) => {
+          const label = getNodeLabel(node);
+          console.log('📝 Rendering node:', node.id, 'with label:', label);
+          return (
+            <div
+              key={node.id}
+              onClick={() => handleClick(node.id)}
+              style={{
+                padding: '8px 12px',
+                marginBottom: '6px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                backgroundColor: selectedId === node.id
+                  ? 'rgba(147, 51, 234, 0.3)'
+                  : 'transparent',
+                border: selectedId === node.id
+                  ? '2px solid #9333EA'
+                  : nextId === node.id
+                  ? '2px solid #00E5FF'
+                  : '2px solid transparent',
+                color: selectedId === node.id
+                  ? '#FFD700'
+                  : nextId === node.id
+                  ? '#00E5FF'
+                  : '#D1D5DB',
+                transition: 'all 0.2s',
+                fontSize: '12px',
+                fontWeight: selectedId === node.id ? 'bold' : 'normal',
+                wordBreak: 'break-word',
+                lineHeight: '1.4',
+              }}
+            >
+              {label}
+            </div>
+          );
+        })}
       </div>
 
       {/* Paper Upload Button */}
