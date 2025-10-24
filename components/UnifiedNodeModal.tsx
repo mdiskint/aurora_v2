@@ -43,6 +43,49 @@ export default function UnifiedNodeModal() {
   const nexus = selectedId ? nexuses.find((n) => n.id === selectedId) : null;
   const selectedItem = node || nexus;
 
+  // For connection nodes, build content from all connected nodes
+  const getConnectionContent = () => {
+    if (!node?.isConnectionNode || !node.connectionNodes) {
+      console.log('❌ Not a connection node or no connectionNodes:', {
+        isConnectionNode: node?.isConnectionNode,
+        connectionNodes: node?.connectionNodes
+      });
+      return node?.content || '';
+    }
+
+    console.log('🔗 Connection node detected:', {
+      nodeId: node.id,
+      connectionNodes: node.connectionNodes,
+      nodeCount: node.connectionNodes.length
+    });
+
+    const connectedNodes = node.connectionNodes
+      .map(id => {
+        const foundNode = nodes[id];
+        console.log(`  Looking up node ${id}:`, foundNode ? '✅ Found' : '❌ Not found');
+        return foundNode;
+      })
+      .filter(Boolean);
+
+    console.log('📦 Connected nodes found:', connectedNodes.length);
+
+    if (connectedNodes.length === 0) {
+      console.log('⚠️ No connected nodes found, falling back to node content');
+      return node?.content || '';
+    }
+
+    const combined = connectedNodes.map((n, idx) => {
+      const label = n.title || `Node ${idx + 1}`;
+      console.log(`  Node ${idx + 1}: ${label.substring(0, 30)}...`);
+      return `━━━ ${label} ━━━\n${n.content}`;
+    }).join('\n\n');
+
+    console.log('✅ Combined content length:', combined.length);
+    return combined;
+  };
+
+  const displayContent = node?.isConnectionNode ? getConnectionContent() : (selectedItem?.content || '');
+
   console.log('🎨 UnifiedNodeModal render:', {
     selectedId,
     hasNode: !!node,
@@ -50,17 +93,31 @@ export default function UnifiedNodeModal() {
     showContentOverlay,
     actionMode,
     isConnectionNode: node?.isConnectionNode,
+    displayContentLength: displayContent?.length,
+    selectedItemContentLength: selectedItem?.content?.length,
   });
 
   // Initialize edited content when selection changes
   useEffect(() => {
+    console.log('📝 useEffect for content initialization triggered:', {
+      hasSelectedItem: !!selectedItem,
+      hasTextareaRef: !!textareaRef.current,
+      displayContentLength: displayContent?.length,
+      isConnectionNode: node?.isConnectionNode,
+    });
+
     if (selectedItem && textareaRef.current) {
-      const content = selectedItem.content || '';
+      const content = displayContent;
+      console.log('✍️ Setting textarea content:', {
+        contentLength: content.length,
+        contentPreview: content.substring(0, 100)
+      });
       setEditedContent(content);
       setHasUnsavedChanges(false);
       textareaRef.current.value = content;
+      console.log('✅ Textarea value set, length:', textareaRef.current.value.length);
     }
-  }, [selectedId, selectedItem]);
+  }, [selectedId, selectedItem, displayContent]);
 
   // Auto-save on node switch
   useEffect(() => {
@@ -179,7 +236,7 @@ export default function UnifiedNodeModal() {
 
   // 💬 USER REPLY
   const handleUserReply = () => {
-    if (!inputContent.trim()) return;
+    if (!inputContent.trim() || !selectedId) return;
 
     const content = quotedText
       ? `> ${quotedText}\n\n${inputContent.trim()}`
@@ -202,7 +259,7 @@ export default function UnifiedNodeModal() {
     setIsLoadingAI(true);
 
     try {
-      const contextContent = selectedItem?.content || '';
+      const contextContent = displayContent || '';
       const fullPrompt = `Context from selected node:\n"${contextContent}"\n\nUser question: ${inputContent.trim()}`;
 
       const response = await fetch('/api/chat', {
@@ -218,7 +275,7 @@ export default function UnifiedNodeModal() {
 
       const data = await response.json();
       const combinedContent = `You: ${inputContent.trim()}\n\nClaude: ${data.response}`;
-      addNode(combinedContent, selectedId, true);
+      addNode(combinedContent, selectedId);
 
       setInputContent('');
       setActionMode(null);
@@ -237,17 +294,12 @@ export default function UnifiedNodeModal() {
   const handleExploreTogether = async () => {
     if (!selectedId) return;
 
-    // If this is a connection node, use connection analysis
-    if (node?.isConnectionNode) {
-      handleConnectionAnalysis();
-      return;
-    }
-
-    // Otherwise, start Socratic exploration
+    // Start Socratic exploration (works for both regular nodes and connection nodes)
     setIsLoadingAI(true);
 
     try {
-      const contextContent = selectedItem?.content || '';
+      // Use displayContent to get all connected nodes' content for connection nodes
+      const contextContent = displayContent;
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -467,9 +519,10 @@ export default function UnifiedNodeModal() {
   if (!selectedItem || !showContentOverlay) return null;
 
   const isConnectionNode = node?.isConnectionNode || false;
-  const shouldShowUserReplyButton = !isConnectionNode;
-  const shouldShowAskAIButton = !isConnectionNode;
-  const shouldShowExploreButton = true; // Always show
+  // Show all three buttons for both regular nodes and connection nodes
+  const shouldShowUserReplyButton = true;
+  const shouldShowAskAIButton = true;
+  const shouldShowExploreButton = true;
 
   console.log('🔘 Button section render - DETAILED:', {
     isConnectionNode,
@@ -555,8 +608,9 @@ export default function UnifiedNodeModal() {
               {isExplorePage && selectedItem ? (
                 <div className="relative h-full flex flex-col">
                   <textarea
+                    key={selectedId}
                     ref={textareaRef}
-                    defaultValue={editedContent}
+                    defaultValue={displayContent}
                     onChange={handleContentChange}
                     onMouseUp={handleTextSelection}
                     className="w-full flex-1 bg-slate-950/50 text-gray-200 border border-cyan-500/20 rounded-lg p-4
@@ -575,7 +629,7 @@ export default function UnifiedNodeModal() {
                   className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap"
                   onMouseUp={handleTextSelection}
                 >
-                  {selectedItem.content || 'No content available.'}
+                  {displayContent || 'No content available.'}
                 </div>
               )}
             </div>
@@ -670,48 +724,34 @@ export default function UnifiedNodeModal() {
             {/* Action Buttons Row */}
             {!socraticQuestion && (
               <div className="p-4 flex gap-3">
-
-                {/* For regular nodes and nexus, show all 3 buttons */}
-                {!isConnectionNode ? (
-                  <>
-                    <button
-                      onClick={() => setActionMode('user-reply')}
-                      disabled={actionMode === 'user-reply'}
-                      className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                        ${actionMode === 'user-reply'
-                          ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
-                          : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
-                    >
-                      💬 User Reply
-                    </button>
-                    <button
-                      onClick={() => setActionMode('ask-ai')}
-                      disabled={actionMode === 'ask-ai' || isLoadingAI}
-                      className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                        ${actionMode === 'ask-ai'
-                          ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
-                          : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
-                    >
-                      🤖 Ask AI
-                    </button>
-                    <button
-                      onClick={handleExploreTogether}
-                      disabled={isLoadingAI}
-                      className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
-                    >
-                      💭 Explore Together
-                    </button>
-                  </>
-                ) : (
-                  /* For connection nodes, only show Explore Together */
-                  <button
-                    onClick={handleExploreTogether}
-                    disabled={isLoadingAI}
-                    className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
-                  >
-                    💭 Explore Together
-                  </button>
-                )}
+                {/* Show all 3 buttons for both regular nodes and connection nodes */}
+                <button
+                  onClick={() => setActionMode('user-reply')}
+                  disabled={actionMode === 'user-reply'}
+                  className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                    ${actionMode === 'user-reply'
+                      ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
+                      : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
+                >
+                  💬 User Reply
+                </button>
+                <button
+                  onClick={() => setActionMode('ask-ai')}
+                  disabled={actionMode === 'ask-ai' || isLoadingAI}
+                  className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                    ${actionMode === 'ask-ai'
+                      ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
+                      : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
+                >
+                  🤖 Ask AI
+                </button>
+                <button
+                  onClick={handleExploreTogether}
+                  disabled={isLoadingAI}
+                  className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                >
+                  💭 Explore This Idea
+                </button>
               </div>
             )}
           </div>
