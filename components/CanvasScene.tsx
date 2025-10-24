@@ -1037,8 +1037,8 @@ export default function CanvasScene() {
         console.log('❌ Cancelled connection mode');
         setIsHoldingC(false);
         clearConnectionMode();
-      } else if ((e.key === 'Delete' || e.key === 'x' || e.key === 'X') && selectedId) {
-        // Handle deletion of selected node or nexus
+      } else if (e.key === 'Delete' && selectedId) {
+        // Handle deletion of selected node or nexus (Delete key only, not 'x')
         console.log('🗑️ Delete key pressed for:', selectedId);
 
         // Check if selected is a nexus

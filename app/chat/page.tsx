@@ -3,8 +3,6 @@
 import dynamic from 'next/dynamic';
 import ChatInterface from '@/components/ChatInterface';
 import Navigation from '@/components/Navigation';
-import ContentOverlay from '@/components/ContentOverlay';
-import ReplyModal from '@/components/ReplyModal';
 
 const CanvasScene = dynamic(() => import('@/components/CanvasScene'), {
   ssr: false,
@@ -14,9 +12,9 @@ export default function ChatPage() {
   return (
     <>
       <Navigation />
-      <div style={{ 
-        width: '100vw', 
-        height: '100vh', 
+      <div style={{
+        width: '100vw',
+        height: '100vh',
         position: 'relative',
         background: '#000'
       }}>
@@ -25,10 +23,8 @@ export default function ChatPage() {
 
         {/* Chat Interface */}
         <ChatInterface />
-        
-        {/* Add these overlays */}
-        <ContentOverlay />
-        <ReplyModal />
+
+        {/* UnifiedNodeModal is rendered in CanvasScene */}
       </div>
     </>
   );

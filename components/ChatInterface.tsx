@@ -140,8 +140,17 @@ export default function ChatInterface() {
 
     // 🧠 Build full context
     const fullContext = buildConversationContext();
-    
-    const updatedHistory = [...conversationHistory, { role: 'user' as const, content: actualPrompt }];
+
+    // 🌌 IMPORTANT: For Explore commands, send to API but don't save to state
+    // We need to send at least one message to API for processing
+    const messagesForAPI = [...conversationHistory, { role: 'user' as const, content: actualPrompt }];
+
+    // Only update state history for non-spatial mode
+    const updatedHistory = isSpatialMode
+      ? conversationHistory  // Keep state unchanged for Explore commands
+      : messagesForAPI;      // Update state for regular messages
+
+    console.log(isSpatialMode ? '🌌 Explore command - sending to API but NOT saving to state' : '💬 Regular message - adding to state');
 
     try {
       const response = await fetch('/api/chat', {
@@ -149,8 +158,8 @@ export default function ChatInterface() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          messages: updatedHistory,
+        body: JSON.stringify({
+          messages: messagesForAPI,  // Always send messages to API
           mode: isSpatialMode ? 'spatial' : 'standard',
           conversationContext: fullContext,
         }),
@@ -168,6 +177,16 @@ export default function ChatInterface() {
         console.log('✨ AI-generated universe detected!', data.spatialData);
 
         const { nexusTitle, nexusContent, nodes } = data.spatialData;
+
+        // 🔍 DEBUG: Log what we received from backend
+        console.log('📦 spatialData received:', {
+          nexusTitle: nexusTitle,
+          nexusContent: nexusContent.substring(0, 50) + '...',
+          nodeCount: nodes.length,
+          firstNode: nodes[0]?.content.substring(0, 50) + '...',
+          nodesPreview: nodes.map((n: any, idx: number) => `Node ${idx + 1}: ${n.content.substring(0, 30)}...`)
+        });
+        console.log('🔍 Does nexusContent match first node?', nexusContent === nodes[0]?.content);
 
         // Step 1: Create nexus
         createChatNexus(nexusTitle, actualPrompt, nexusContent);
@@ -188,17 +207,19 @@ export default function ChatInterface() {
         console.log('✅ Found nexus in store:', chatNexus.id);
 
         // Step 3: Create all child nodes
-        for (const node of nodes) {
-          console.log('✅ Creating node:', node.content.substring(0, 50));
+        console.log(`🔄 Creating ${nodes.length} child nodes...`);
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
+          console.log(`✅ Creating node ${i + 1}/${nodes.length}:`, node.content.substring(0, 50) + '...');
           addNode(node.content, chatNexus.id);
           await new Promise(resolve => setTimeout(resolve, 50));
         }
 
         console.log('✅ Universe created with', nodes.length, 'nodes');
 
-        // Update conversation history
-        const finalHistory = [...updatedHistory, { role: 'assistant' as const, content: data.response }];
-        setConversationHistory(finalHistory);
+        // 🌌 Don't update conversation history for Explore commands
+        // The universe structure IS the conversation, not a message exchange
+        console.log('🌌 Explore command complete - conversation history unchanged');
 
         // Don't create regular chat response - universe creation is complete
       } else {

@@ -2,9 +2,7 @@
 
 import { useRef, useState } from 'react';
 import CanvasScene from '@/components/CanvasScene';
-import ContentOverlay from '@/components/ContentOverlay';
 import SectionNavigator from '@/components/SectionNavigator';
-import ReplyModal from '@/components/ReplyModal';
 import { useCanvasStore } from '@/lib/store';
 
 export default function ExplorePage() {
@@ -162,11 +160,10 @@ export default function ExplorePage() {
       <CanvasScene />
 
       {/* UI Overlays - Only show when paper is loaded */}
+      {/* UnifiedNodeModal is rendered in CanvasScene */}
       {hasPaper && (
         <>
-          <ContentOverlay />
           <SectionNavigator />
-          <ReplyModal />
         </>
       )}
     </div>

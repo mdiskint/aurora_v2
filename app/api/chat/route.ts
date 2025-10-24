@@ -59,6 +59,53 @@ export async function POST(request: NextRequest) {
 
       console.log('🎯 Topic for universe:', userTopic);
 
+      // 🔍 CHECK FOR MANUAL MODE: User provided ** structure
+      if (userTopic.includes('**')) {
+        console.log('✋ MANUAL MODE: Parsing ** delimiters');
+        console.log('📝 Raw input:', userTopic);
+
+        const sections = userTopic.split('**').filter(s => s.trim());
+        console.log('📊 Split sections:', sections.length, sections);
+
+        if (sections.length < 2) {
+          console.error('❌ Invalid ** format: need at least nexus title and one node');
+          return NextResponse.json(
+            { error: 'Manual mode requires at least: **Nexus Title **Node 1 content' },
+            { status: 400 }
+          );
+        }
+
+        // First section = Nexus ONLY
+        const nexusSection = sections[0].trim();
+        // Remaining sections = Nodes ONLY (excludes first section)
+        const nodeSections = sections.slice(1);
+
+        console.log('🏛️ Nexus section (index 0):', nexusSection);
+        console.log('📦 Node sections (index 1+):', nodeSections);
+
+        const spatialData = {
+          nexusTitle: nexusSection.substring(0, 50), // First 50 chars for title
+          nexusContent: nexusSection, // Full first section for content
+          nodes: nodeSections.map((content, idx) => {
+            console.log(`   Node ${idx + 1}:`, content.substring(0, 50) + '...');
+            return { content: content.trim() };
+          })
+        };
+
+        console.log('✅ Parsed manual structure:');
+        console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
+        console.log(`   - Nodes: ${spatialData.nodes.length}`);
+        console.log('   - Nexus appears in nodes? NO (using slice(1))');
+
+        return NextResponse.json({
+          response: `Created manual universe with ${spatialData.nodes.length} nodes`,
+          spatialData
+        });
+      }
+
+      // 🤖 AI MODE: Generate structure automatically
+      console.log('🤖 AI MODE: Generating universe structure');
+
       const spatialPrompt = `User wants to explore: "${userTopic}"
 
 Generate a comprehensive universe structure with:
