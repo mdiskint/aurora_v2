@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 import SectionNavigator from './SectionNavigator';
 import UnifiedNodeModal from './UnifiedNodeModal';
 import { useState, useRef, useEffect } from 'react';
@@ -10,9 +11,9 @@ import * as THREE from 'three';
 import { useCameraAnimation } from '@/lib/useCameraAnimation';
 import { io } from 'socket.io-client';
 
-function RotatingConnectionNode({ node, size, baseColor, onClick }: any) {
+function RotatingConnectionNode({ node, size, baseColor, onClick, scale = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
-  
+
   // Rotate the mesh every frame
   useFrame(() => {
     if (meshRef.current) {
@@ -20,10 +21,13 @@ function RotatingConnectionNode({ node, size, baseColor, onClick }: any) {
       meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
     }
   });
-  
+
+  // Meta-inspiration nodes are 1.5x larger
+  const finalSize = size * 0.5 * scale;
+
   return (
     <mesh ref={meshRef} position={node.position} onClick={onClick}>
-      <dodecahedronGeometry args={[size * 0.5, 0]} />
+      <dodecahedronGeometry args={[finalSize, 0]} />
       <meshStandardMaterial
         color="#FFD700" // Golden color for connection nodes!
         metalness={1.0}
@@ -72,18 +76,65 @@ function ConnectionLines() {
   return (
     <>
       {nodeArray.map((node, idx) => {
-        // Special handling for connection nodes - draw to BOTH inspiration nodes
+        // Special handling for connection nodes - draw to connected nodes
         if (node.isConnectionNode && node.connectionNodes) {
-          const [nodeAId, nodeBId] = node.connectionNodes;
-          const nodeA = nodes[nodeAId];
-          const nodeB = nodes[nodeBId];
-          
-          if (!nodeA || !nodeB) return null;
-          
           const pulseProgress = pulseStates[node.id] || Math.random();
           const hue = (pulseProgress + idx * 0.15) % 1;
           const rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
-          
+
+          // Meta-inspiration nodes: draw to ALL connected items (nexus + nodes)
+          const isMetaNode = node.id.startsWith('meta-inspiration');
+          if (isMetaNode) {
+            return (
+              <group key={node.id}>
+                {node.connectionNodes.map((connectedId, connIdx) => {
+                  // First item is nexus, rest are nodes
+                  const connectedNexus = nexuses.find(n => n.id === connectedId);
+                  const connectedNode = nodes[connectedId];
+                  const connectedItem = connectedNexus || connectedNode;
+
+                  if (!connectedItem) return null;
+
+                  return (
+                    <React.Fragment key={`meta-line-${connectedId}`}>
+                      <Line
+                        points={[node.position, connectedItem.position]}
+                        color={rainbowColor}
+                        lineWidth={2}
+                        transparent
+                        opacity={0.5}
+                      />
+                      {/* Pulse on some lines */}
+                      {connIdx % 3 === 0 && (() => {
+                        const pulseX = node.position[0] + (connectedItem.position[0] - node.position[0]) * pulseProgress;
+                        const pulseY = node.position[1] + (connectedItem.position[1] - node.position[1]) * pulseProgress;
+                        const pulseZ = node.position[2] + (connectedItem.position[2] - node.position[2]) * pulseProgress;
+
+                        return (
+                          <mesh position={[pulseX, pulseY, pulseZ]}>
+                            <sphereGeometry args={[0.12, 16, 16]} />
+                            <meshBasicMaterial
+                              color={rainbowColor}
+                              transparent
+                              opacity={0.6}
+                            />
+                          </mesh>
+                        );
+                      })()}
+                    </React.Fragment>
+                  );
+                })}
+              </group>
+            );
+          }
+
+          // Regular 2-node connection
+          const [nodeAId, nodeBId] = node.connectionNodes;
+          const nodeA = nodes[nodeAId];
+          const nodeB = nodes[nodeBId];
+
+          if (!nodeA || !nodeB) return null;
+
           return (
             <group key={node.id}>
               {/* Line from connection node to Node A */}
@@ -94,7 +145,7 @@ function ConnectionLines() {
                 transparent
                 opacity={0.5}
               />
-              
+
               {/* Line from connection node to Node B */}
               <Line
                 points={[node.position, nodeB.position]}
@@ -103,17 +154,17 @@ function ConnectionLines() {
                 transparent
                 opacity={0.5}
               />
-              
+
               {/* Pulse on line to Node A */}
               {idx % 2 === 0 && (() => {
                 const pulseX = node.position[0] + (nodeA.position[0] - node.position[0]) * pulseProgress;
                 const pulseY = node.position[1] + (nodeA.position[1] - node.position[1]) * pulseProgress;
                 const pulseZ = node.position[2] + (nodeA.position[2] - node.position[2]) * pulseProgress;
-                
+
                 return (
                   <mesh position={[pulseX, pulseY, pulseZ]}>
                     <sphereGeometry args={[0.12, 16, 16]} />
-                    <meshBasicMaterial 
+                    <meshBasicMaterial
                       color={rainbowColor}
                       transparent
                       opacity={0.6}
@@ -121,17 +172,17 @@ function ConnectionLines() {
                   </mesh>
                 );
               })()}
-              
+
               {/* Pulse on line to Node B */}
               {idx % 2 === 1 && (() => {
                 const pulseX = node.position[0] + (nodeB.position[0] - node.position[0]) * pulseProgress;
                 const pulseY = node.position[1] + (nodeB.position[1] - node.position[1]) * pulseProgress;
                 const pulseZ = node.position[2] + (nodeB.position[2] - node.position[2]) * pulseProgress;
-                
+
                 return (
                   <mesh position={[pulseX, pulseY, pulseZ]}>
                     <sphereGeometry args={[0.12, 16, 16]} />
-                    <meshBasicMaterial 
+                    <meshBasicMaterial
                       color={rainbowColor}
                       transparent
                       opacity={0.6}
@@ -410,6 +461,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const connectionModeActive = useCanvasStore((state) => state.connectionModeActive);
   const connectionModeNodeA = useCanvasStore((state) => state.connectionModeNodeA);
   const createConnection = useCanvasStore((state) => state.createConnection);
+  const createMetaInspirationNode = useCanvasStore((state) => state.createMetaInspirationNode);
   const selectedNodesForConnection = useCanvasStore((state) => state.selectedNodesForConnection);
   const addNodeToConnection = useCanvasStore((state) => state.addNodeToConnection);
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
@@ -420,7 +472,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const nextMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const alternateMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const sparkleMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial[]>>(new Map());
-  
+
+  // Double-click detection for nexus meshes
+  const lastNexusClickRef = useRef<{ nexusId: string | null; timestamp: number }>({
+    nexusId: null,
+    timestamp: 0
+  });
+
   const nodeArray = Object.values(nodes);
   
   const getGlowNodes = () => {
@@ -506,6 +564,24 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
             position={nexus.position}
             onClick={(e) => {
               e.stopPropagation();
+
+              // Check for double-click on nexus (creates meta-inspiration node)
+              const now = Date.now();
+              const lastClick = lastNexusClickRef.current;
+              const isDoubleClick =
+                lastClick.nexusId === nexus.id &&
+                (now - lastClick.timestamp) < 300;
+
+              if (isDoubleClick && !isHoldingC && !connectionModeActive) {
+                console.log('🌌 DOUBLE-CLICK detected on nexus:', nexus.id);
+                createMetaInspirationNode(nexus.id);
+                // Reset click tracking after double-click
+                lastNexusClickRef.current = { nexusId: null, timestamp: 0 };
+                return;
+              }
+
+              // Update last click tracking
+              lastNexusClickRef.current = { nexusId: nexus.id, timestamp: now };
 
               // NEW: Multi-node connection mode (hold C)
               if (isHoldingC) {
@@ -751,11 +827,12 @@ if (node.isSynthesis) {
        return (
   <group key={node.id}>
     {node.isConnectionNode ? (
-      // Render rotating golden star for connection nodes
+      // Render rotating golden star for connection nodes (1.5x larger for meta-inspiration nodes)
       <RotatingConnectionNode
         node={node}
         size={size}
         baseColor={baseColor}
+        scale={node.id.startsWith('meta-inspiration') ? 1.5 : 1}
         onClick={(e: any) => {
           e.stopPropagation();
 

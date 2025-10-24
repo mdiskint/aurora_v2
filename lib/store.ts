@@ -43,6 +43,7 @@ interface CanvasStore {
   createConnection: (nodeAId: string, nodeBId: string) => void;
   addNodeToConnection: (nodeId: string) => void;
   createMultiConnection: (nodeIds: string[]) => void;
+  createMetaInspirationNode: (nexusId: string) => void;
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
@@ -444,12 +445,39 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       // Check if parent is a connection node (Socratic mode)
       const parentNode = state.nodes[parentId];
       isConnectionNodeParent = parentNode?.isConnectionNode || false;
-      
+
       let position: [number, number, number];
-      
-      const parentNexus = state.nexuses.find(n => n.id === parentId);
-      
-      if (parentNexus) {
+
+      // SPECIAL CASE: Meta-inspiration node (vertical spiral positioning)
+      if (parentNode && parentNode.id.startsWith('meta-inspiration')) {
+        console.log('🌌 Adding node to meta-inspiration node - using vertical spiral');
+
+        const metaPos = parentNode.position;
+        const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // 137.5 degrees
+
+        // Base parameters for vertical spiral
+        const baseRadius = 2.0;
+        const radiusIncrement = 0.3;
+        const radius = baseRadius + (siblingIndex * radiusIncrement);
+
+        // Vertical spacing
+        const yIncrement = 1.5;
+        const y = metaPos[1] + (siblingIndex * yIncrement);
+
+        // Spiral angle
+        const angle = siblingIndex * goldenAngle;
+
+        // Position in horizontal plane around the meta-star
+        const x = metaPos[0] + Math.cos(angle) * radius;
+        const z = metaPos[2] + Math.sin(angle) * radius;
+
+        position = [x, y, z];
+        console.log(`🌌 Meta-gyre child ${siblingIndex}: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}], radius: ${radius.toFixed(2)}`);
+      } else {
+        // Normal positioning logic
+        const parentNexus = state.nexuses.find(n => n.id === parentId);
+
+        if (parentNexus) {
         const nexusPos = parentNexus.position;
         const baseRadius = 6;
         const radiusIncrement = 0.4;
@@ -524,8 +552,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         
         position = [x, y, z];
         console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+        }
       }
-      
+
       const newNode: Node = {
         id: newNodeId,
         position,
@@ -1204,6 +1233,111 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         connectionNodes: nodeIds,
       });
       console.log('📤 Broadcasting multi-connection node to backend');
+    }
+  },
+
+  createMetaInspirationNode: (nexusId: string) => {
+    console.log('🌌 Creating meta-inspiration node for nexus:', nexusId);
+
+    let newMetaNodeId = '';
+
+    set((state) => {
+      // Find the nexus
+      const nexus = state.nexuses.find(n => n.id === nexusId);
+      if (!nexus) {
+        console.error('❌ Nexus not found:', nexusId);
+        return state;
+      }
+
+      // Get ALL nodes in this universe (all nodes with this nexus as parent or grandparent)
+      const allUniverseNodes = Object.values(state.nodes).filter(node => {
+        // Check if direct child of nexus
+        if (node.parentId === nexusId) return true;
+
+        // Check if grandchild (child of a node that's a child of nexus)
+        const parent = state.nodes[node.parentId];
+        if (parent && parent.parentId === nexusId) return true;
+
+        // Check if great-grandchild, etc. (walk up the tree)
+        let current = node;
+        let depth = 0;
+        const maxDepth = 10; // Prevent infinite loops
+        while (current.parentId && depth < maxDepth) {
+          if (current.parentId === nexusId) return true;
+          current = state.nodes[current.parentId];
+          if (!current) break;
+          depth++;
+        }
+
+        return false;
+      });
+
+      const nodeIds = allUniverseNodes.map(n => n.id);
+      console.log(`✨ Found ${nodeIds.length} nodes in universe`);
+
+      if (nodeIds.length === 0) {
+        console.log('⚠️ No nodes in universe, creating empty meta-node');
+      }
+
+      // Generate new node ID
+      newMetaNodeId = `meta-inspiration-${Date.now()}`;
+
+      // Position: Directly ABOVE nexus (same X/Z, Y + 6)
+      const position: [number, number, number] = [
+        nexus.position[0],
+        nexus.position[1] + 6,
+        nexus.position[2]
+      ];
+
+      console.log(`✨ Meta-inspiration node position: [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+      console.log(`   Nexus: [${nexus.position[0]}, ${nexus.position[1]}, ${nexus.position[2]}]`);
+
+      // Create the new meta-inspiration node
+      const newNode: Node = {
+        id: newMetaNodeId,
+        position,
+        title: `Meta: ${nexus.title}`,
+        content: '', // Empty - will be filled by AI or user
+        parentId: nexusId, // Parent is the nexus
+        children: [],
+        isConnectionNode: true, // Reuse connection node logic
+        connectionNodes: [nexusId, ...nodeIds], // Include nexus ID + all node IDs
+      };
+
+      const updatedNodes = { ...state.nodes, [newMetaNodeId]: newNode };
+
+      console.log('✅ Meta-inspiration node created:', newMetaNodeId, 'covering', nodeIds.length + 1, 'items');
+
+      return {
+        nodes: updatedNodes,
+        selectedId: newMetaNodeId, // Select the new node
+        showContentOverlay: false, // Will open modal after camera animation
+      };
+    });
+
+    // Save to localStorage
+    get().saveToLocalStorage();
+
+    // Open the unified modal for the user to interact
+    setTimeout(() => {
+      get().setShowContentOverlay(true);
+    }, 100);
+
+    // Emit to backend via WebSocket
+    const socket = (window as any).socket;
+    if (socket) {
+      const newNode = get().nodes[newMetaNodeId];
+      socket.emit('create_node', {
+        portalId: 'default-portal',
+        id: newNode.id,
+        position: newNode.position,
+        title: newNode.title,
+        content: newNode.content,
+        parentId: newNode.parentId,
+        isConnectionNode: true,
+        connectionNodes: newNode.connectionNodes,
+      });
+      console.log('📤 Broadcasting meta-inspiration node to backend');
     }
   },
 

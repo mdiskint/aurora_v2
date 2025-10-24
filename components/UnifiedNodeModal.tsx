@@ -21,6 +21,7 @@ export default function UnifiedNodeModal() {
   const addNode = useCanvasStore((state) => state.addNode);
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
   const quotedText = useCanvasStore((state) => state.quotedText);
+  const createMetaInspirationNode = useCanvasStore((state) => state.createMetaInspirationNode);
 
   // Content editing state
   const [editedContent, setEditedContent] = useState('');
@@ -56,30 +57,52 @@ export default function UnifiedNodeModal() {
     console.log('🔗 Connection node detected:', {
       nodeId: node.id,
       connectionNodes: node.connectionNodes,
-      nodeCount: node.connectionNodes.length
+      nodeCount: node.connectionNodes.length,
+      isMetaInspiration: node.id.startsWith('meta-inspiration')
     });
 
-    const connectedNodes = node.connectionNodes
-      .map(id => {
+    const contentParts: string[] = [];
+
+    // For meta-inspiration nodes, first element is the nexus ID
+    const isMetaNode = node.id.startsWith('meta-inspiration');
+    if (isMetaNode && node.connectionNodes.length > 0) {
+      const nexusId = node.connectionNodes[0];
+      const nexus = nexuses.find(n => n.id === nexusId);
+      if (nexus) {
+        console.log('  🌌 Found nexus:', nexus.title);
+        contentParts.push(`━━━ NEXUS: ${nexus.title} ━━━\n${nexus.content}`);
+      }
+
+      // Remaining items are nodes
+      for (let i = 1; i < node.connectionNodes.length; i++) {
+        const nodeId = node.connectionNodes[i];
+        const foundNode = nodes[nodeId];
+        if (foundNode) {
+          const label = foundNode.title || `Node ${i}`;
+          console.log(`  Node ${i}: ${label.substring(0, 30)}...`);
+          contentParts.push(`━━━ ${label} ━━━\n${foundNode.content}`);
+        }
+      }
+    } else {
+      // Regular connection node - all items are nodes
+      node.connectionNodes.forEach((id, idx) => {
         const foundNode = nodes[id];
-        console.log(`  Looking up node ${id}:`, foundNode ? '✅ Found' : '❌ Not found');
-        return foundNode;
-      })
-      .filter(Boolean);
+        if (foundNode) {
+          const label = foundNode.title || `Node ${idx + 1}`;
+          console.log(`  Node ${idx + 1}: ${label.substring(0, 30)}...`);
+          contentParts.push(`━━━ ${label} ━━━\n${foundNode.content}`);
+        }
+      });
+    }
 
-    console.log('📦 Connected nodes found:', connectedNodes.length);
+    console.log('📦 Content parts found:', contentParts.length);
 
-    if (connectedNodes.length === 0) {
-      console.log('⚠️ No connected nodes found, falling back to node content');
+    if (contentParts.length === 0) {
+      console.log('⚠️ No content parts found, falling back to node content');
       return node?.content || '';
     }
 
-    const combined = connectedNodes.map((n, idx) => {
-      const label = n.title || `Node ${idx + 1}`;
-      console.log(`  Node ${idx + 1}: ${label.substring(0, 30)}...`);
-      return `━━━ ${label} ━━━\n${n.content}`;
-    }).join('\n\n');
-
+    const combined = contentParts.join('\n\n');
     console.log('✅ Combined content length:', combined.length);
     return combined;
   };
@@ -329,6 +352,22 @@ export default function UnifiedNodeModal() {
       console.error('❌ Failed to start Socratic exploration:', error);
       setIsLoadingAI(false);
     }
+  };
+
+  // 🌌 EXPLORE ENTIRE UNIVERSE
+  const handleExploreUniverse = () => {
+    if (!nexus) {
+      console.error('❌ Cannot explore universe - not a nexus');
+      return;
+    }
+
+    console.log('🌌 Creating meta-inspiration node for nexus:', nexus.id);
+    createMetaInspirationNode(nexus.id);
+
+    // Close modal and select the new meta-inspiration node
+    setTimeout(() => {
+      selectNode(selectedId, false);
+    }, 200);
   };
 
   // Handle Socratic answer submission
@@ -723,35 +762,52 @@ export default function UnifiedNodeModal() {
 
             {/* Action Buttons Row */}
             {!socraticQuestion && (
-              <div className="p-4 flex gap-3">
-                {/* Show all 3 buttons for both regular nodes and connection nodes */}
-                <button
-                  onClick={() => setActionMode('user-reply')}
-                  disabled={actionMode === 'user-reply'}
-                  className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                    ${actionMode === 'user-reply'
-                      ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
-                      : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
-                >
-                  💬 User Reply
-                </button>
-                <button
-                  onClick={() => setActionMode('ask-ai')}
-                  disabled={actionMode === 'ask-ai' || isLoadingAI}
-                  className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                    ${actionMode === 'ask-ai'
-                      ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
-                      : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
-                >
-                  🤖 Ask AI
-                </button>
-                <button
-                  onClick={handleExploreTogether}
-                  disabled={isLoadingAI}
-                  className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
-                >
-                  💭 Explore This Idea
-                </button>
+              <div className="p-4 space-y-3">
+                {/* First row: 3 standard buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setActionMode('user-reply')}
+                    disabled={actionMode === 'user-reply'}
+                    className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                      ${actionMode === 'user-reply'
+                        ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
+                        : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
+                  >
+                    💬 User Reply
+                  </button>
+                  <button
+                    onClick={() => setActionMode('ask-ai')}
+                    disabled={actionMode === 'ask-ai' || isLoadingAI}
+                    className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                      ${actionMode === 'ask-ai'
+                        ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
+                        : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
+                  >
+                    🤖 Ask AI
+                  </button>
+                  <button
+                    onClick={handleExploreTogether}
+                    disabled={isLoadingAI}
+                    className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                  >
+                    💭 Explore This Idea
+                  </button>
+                </div>
+
+                {/* Second row: Explore Entire Universe button (only for nexuses) */}
+                {nexus && (
+                  <button
+                    onClick={handleExploreUniverse}
+                    disabled={isLoadingAI}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600/20 to-purple-600/20
+                             hover:from-indigo-600/30 hover:to-purple-600/30
+                             border-2 border-indigo-500/50 text-indigo-300 rounded-lg transition-all
+                             flex items-center justify-center gap-2 font-medium disabled:opacity-50
+                             shadow-lg shadow-indigo-500/10"
+                  >
+                    🌌 Explore Entire Universe
+                  </button>
+                )}
               </div>
             )}
           </div>
