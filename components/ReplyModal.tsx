@@ -8,6 +8,8 @@ export default function ReplyModal() {
   const [content, setContent] = useState('');
   const [isAIMode, setIsAIMode] = useState(false);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
+  const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
   const selectedId = useCanvasStore((state) => state.selectedId);
   const showReplyModal = useCanvasStore((state) => state.showReplyModal);
   const quotedText = useCanvasStore((state) => state.quotedText);
@@ -35,6 +37,9 @@ export default function ReplyModal() {
   const isExistingConnectionNode = selectedNode?.isConnectionNode && !!selectedNode?.content.trim();
   const isConnectionNode = isNewConnectionNode;
 
+  // Check if we're in single-node Socratic exploration mode
+  const isSingleNodeSocratic = !!socraticQuestion && socraticRootId === selectedId;
+
   // DEEP DEBUG logging
   const timestamp = Date.now();
   console.log(`🎨 ${timestamp} RENDER ReplyModal:`, {
@@ -42,9 +47,19 @@ export default function ReplyModal() {
     isExistingConnectionNode,
     selectedNodeType: selectedNode?.isConnectionNode ? 'connection' : 'regular',
     selectedId,
-    isConnectionNode: selectedNode?.isConnectionNode,
-    hasContent: !!selectedNode?.content.trim(),
+    selectedNode: selectedNode ? {
+      id: selectedNode.id,
+      isAI: selectedNode.isAI,
+      isConnectionNode: selectedNode.isConnectionNode,
+      isSynthesis: selectedNode.isSynthesis,
+      hasContent: !!selectedNode.content,
+    } : null,
+    isConnectionNode,
     isNewConnectionNode,
+    isSingleNodeSocratic,
+    socraticQuestion,
+    socraticRootId,
+    shouldShowExploreButton: !isConnectionNode && !isExistingConnectionNode && !isSingleNodeSocratic,
     timestamp
   });
   const connectedNodes = selectedNode?.isConnectionNode && selectedNode?.connectionNodes
@@ -58,7 +73,47 @@ export default function ReplyModal() {
   } else if (selectedId && nodes[selectedId]) {
     selectedContent = nodes[selectedId].content;
   }
-  
+
+  const handleExploreThisIdea = async () => {
+    if (!selectedId || !selectedContent) return;
+
+    console.log('💭 Starting single-node Socratic exploration for:', selectedId);
+    setIsLoadingAI(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: `You are conducting a Socratic exploration of this idea:\n\n"${selectedContent}"\n\nGenerate ONE thoughtful Socratic question that helps the user explore this idea more deeply. The question should probe assumptions, implications, or connections. Just the question, nothing else.`
+          }],
+          mode: 'socratic'
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to get AI response');
+
+      const data = await response.json();
+      const firstQuestion = data.response;
+
+      console.log('✅ First Socratic question generated:', firstQuestion);
+
+      // Set up Socratic exploration state
+      setSocraticQuestion(firstQuestion);
+      setSocraticRootId(selectedId);
+      setContent('');
+      setIsLoadingAI(false);
+
+      // Modal stays open to show the question
+    } catch (error) {
+      console.error('❌ Failed to start Socratic exploration:', error);
+      setIsLoadingAI(false);
+      alert('Failed to start exploration. Please try again.');
+    }
+  };
+
   const handleSubmit = async () => {
     if (!selectedId) return;
 
@@ -226,6 +281,74 @@ export default function ReplyModal() {
         setIsLoadingAI(false);
         alert('Failed to get AI response. Please try again.');
       }
+    } else if (isSingleNodeSocratic) {
+      // SINGLE-NODE SOCRATIC MODE: User is answering the current question
+      if (!content.trim()) return;
+
+      console.log('💭 Single-node Socratic answer:', content);
+
+      // 1. Create user's answer as child of root node
+      addNode(content, socraticRootId!, quotedText || undefined);
+
+      // 2. Clear input and show loading
+      setContent('');
+      setQuotedText(null);
+      setIsLoadingAI(true);
+
+      // 3. Build conversation history from root node's children
+      const children = Object.values(nodes).filter(n => n.parentId === socraticRootId);
+      const conversationHistory = children.map(child => ({
+        role: child.isAI ? 'assistant' : 'user',
+        content: child.content
+      }));
+
+      // Add current answer to history
+      conversationHistory.push({
+        role: 'user',
+        content: content
+      });
+
+      // 4. Get AI follow-up question
+      console.log('🤖 Getting follow-up Socratic question...');
+      const socraticPrompt = `You are conducting a Socratic exploration of this idea:\n\n"${selectedContent}"\n\nConversation so far:\nInitial question: ${socraticQuestion}\nUser's answer: ${content}\n\nGenerate ONE follow-up question that deepens the exploration. Build on the user's answer and probe deeper. Just the question, nothing else.`;
+
+      // Async call to keep modal open
+      (async () => {
+        try {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: socraticPrompt }],
+              mode: 'socratic'
+            }),
+          });
+
+          if (!response.ok) throw new Error('Failed to get AI response');
+
+          const data = await response.json();
+          const followUpQuestion = data.response;
+
+          console.log('✅ Follow-up question:', followUpQuestion);
+
+          // 5. Create AI question node as child of root node
+          addAIMessage(followUpQuestion, socraticRootId!);
+
+          // 6. Update current question in state
+          setSocraticQuestion(followUpQuestion);
+          setIsLoadingAI(false);
+
+          console.log('✅ New question ready - modal updated');
+        } catch (error) {
+          console.error('❌ Failed to generate follow-up question:', error);
+          setIsLoadingAI(false);
+          // On error, close modal and reset
+          setSocraticQuestion(null);
+          setSocraticRootId(null);
+          setShowReplyModal(false);
+          selectNode(null);
+        }
+      })();
     } else {
       // Normal behavior: create a child node
       addNode(content, selectedId, quotedText || undefined);
@@ -237,10 +360,10 @@ export default function ReplyModal() {
   };
   
   const handleClose = async () => {
-    // Check if we're ending a Socratic exploration
+    // Check if we're ending a connection node Socratic exploration
     if (isExistingConnectionNode && selectedId) {
       const connectionNodeId = selectedId;
-      console.log('💎 Ending Socratic exploration - generating synthesis...');
+      console.log('💎 Ending connection node Socratic exploration - generating synthesis...');
 
       // Gather all Socratic conversation history
       const children = Object.values(nodes).filter(n => n.parentId === connectionNodeId);
@@ -283,6 +406,55 @@ export default function ReplyModal() {
       }
     }
 
+    // Check if we're ending a single-node Socratic exploration
+    if (isSingleNodeSocratic && socraticRootId) {
+      console.log('💎 Ending single-node Socratic exploration - generating synthesis...');
+
+      // Gather all Q&A history from the root node's children
+      const children = Object.values(nodes).filter(n => n.parentId === socraticRootId);
+      const conversationHistory = children.map(child => ({
+        role: child.isAI ? 'assistant' : 'user',
+        content: child.content
+      }));
+
+      // Add the initial question
+      conversationHistory.unshift({
+        role: 'assistant',
+        content: socraticQuestion || 'Initial question'
+      });
+
+      try {
+        // Call API for synthesis
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{
+              role: 'user',
+              content: `Synthesize this Socratic exploration of the idea "${selectedContent}" into key insights:\n\nConversation:\n${conversationHistory.map((msg, idx) => `${idx + 1}. ${msg.role}: ${msg.content}`).join('\n\n')}\n\nProvide:\n1. Key insights discovered\n2. Deeper understanding gained\n3. Suggested next questions or areas to explore\n\nBe concise but comprehensive.`
+            }],
+            mode: 'synthesis'
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get synthesis');
+
+        const data = await response.json();
+        const synthesis = data.response;
+
+        // Create synthesis node as child of root
+        console.log('💎 Creating synthesis node...');
+        addSynthesisNode(synthesis, socraticRootId);
+      } catch (error) {
+        console.error('❌ Failed to generate synthesis:', error);
+        alert('Failed to generate synthesis. The exploration will end without a summary.');
+      }
+
+      // Reset single-node Socratic state
+      setSocraticQuestion(null);
+      setSocraticRootId(null);
+    }
+
     // Close modal
     setContent('');
     setShowReplyModal(false);
@@ -321,46 +493,79 @@ export default function ReplyModal() {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ color: (isConnectionNode || isExistingConnectionNode) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA', marginBottom: '8px', fontSize: '24px' }}>
-          {isExistingConnectionNode ? '💭 Socratic Exploration' : isConnectionNode ? '🔗 Explore Connection Together' : isAIMode ? '🤖 Ask AI' : 'Reply to Node'}
+        <h2 style={{ color: (isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA', marginBottom: '8px', fontSize: '24px' }}>
+          {isExistingConnectionNode ? '💭 Socratic Exploration (Connection)' : isConnectionNode ? '🔗 Explore Connection Together' : isSingleNodeSocratic ? '💭 Socratic Exploration' : isAIMode ? '🤖 Ask AI' : 'Reply to Node'}
         </h2>
 
-        {/* AI Mode Toggle - Only for regular nodes */}
-        {!isConnectionNode && !isExistingConnectionNode && (
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '12px' }}>
+        {/* AI Mode Toggle & Explore Button - Only for regular nodes */}
+        {!isConnectionNode && !isExistingConnectionNode && !isSingleNodeSocratic && (
+          <>
+            <div style={{ marginBottom: '16px', display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setIsAIMode(false)}
+                style={{
+                  flex: 1,
+                  padding: '8px 16px',
+                  backgroundColor: !isAIMode ? '#9333EA' : '#374151',
+                  color: !isAIMode ? '#fff' : '#9ca3af',
+                  border: `2px solid ${!isAIMode ? '#9333EA' : '#4B5563'}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: !isAIMode ? 'bold' : 'normal',
+                  fontSize: '14px',
+                }}
+              >
+                💬 User Reply
+              </button>
+              <button
+                onClick={() => setIsAIMode(true)}
+                style={{
+                  flex: 1,
+                  padding: '8px 16px',
+                  backgroundColor: isAIMode ? '#00E5FF' : '#374151',
+                  color: isAIMode ? '#000' : '#9ca3af',
+                  border: `2px solid ${isAIMode ? '#00E5FF' : '#4B5563'}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: isAIMode ? 'bold' : 'normal',
+                  fontSize: '14px',
+                }}
+              >
+                🤖 Ask AI
+              </button>
+            </div>
+
+            {/* Explore This Idea Button */}
             <button
-              onClick={() => setIsAIMode(false)}
+              onClick={handleExploreThisIdea}
+              disabled={isLoadingAI}
               style={{
-                flex: 1,
-                padding: '8px 16px',
-                backgroundColor: !isAIMode ? '#9333EA' : '#374151',
-                color: !isAIMode ? '#fff' : '#9ca3af',
-                border: `2px solid ${!isAIMode ? '#9333EA' : '#4B5563'}`,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: !isAIMode ? 'bold' : 'normal',
-                fontSize: '14px',
+                width: '100%',
+                marginBottom: '16px',
+                padding: '12px 16px',
+                backgroundColor: isLoadingAI ? '#6b7280' : 'rgba(255, 215, 0, 0.1)',
+                border: '2px solid #FFD700',
+                borderRadius: '8px',
+                color: '#FFD700',
+                cursor: isLoadingAI ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+                fontSize: '15px',
+                fontWeight: 'bold',
+              }}
+              onMouseEnter={(e) => {
+                if (!isLoadingAI) {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 215, 0, 0.2)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isLoadingAI) {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 215, 0, 0.1)';
+                }
               }}
             >
-              💬 User Reply
+              {isLoadingAI ? '🤖 Starting exploration...' : '💭 Explore This Idea'}
             </button>
-            <button
-              onClick={() => setIsAIMode(true)}
-              style={{
-                flex: 1,
-                padding: '8px 16px',
-                backgroundColor: isAIMode ? '#00E5FF' : '#374151',
-                color: isAIMode ? '#000' : '#9ca3af',
-                border: `2px solid ${isAIMode ? '#00E5FF' : '#4B5563'}`,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: isAIMode ? 'bold' : 'normal',
-                fontSize: '14px',
-              }}
-            >
-              🤖 Ask AI
-            </button>
-          </div>
+          </>
         )}
 
         {/* Show the Socratic question for existing connection nodes */}
@@ -389,6 +594,54 @@ export default function ReplyModal() {
               fontStyle: 'italic',
             }}>
               {selectedContent}
+            </div>
+          </div>
+        )}
+
+        {/* Show the Socratic question for single-node exploration */}
+        {isSingleNodeSocratic && socraticQuestion && (
+          <div style={{
+            backgroundColor: '#374151',
+            padding: '20px',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            border: '2px solid #FFD700',
+          }}>
+            <div style={{
+              color: '#FFD700',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              marginBottom: '12px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              Exploring:
+            </div>
+            <div style={{
+              color: '#9ca3af',
+              fontSize: '14px',
+              marginBottom: '12px',
+              fontStyle: 'italic',
+            }}>
+              "{selectedContent.slice(0, 100)}{selectedContent.length > 100 ? '...' : ''}"
+            </div>
+            <div style={{
+              color: '#FFD700',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              marginBottom: '12px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              Question:
+            </div>
+            <div style={{
+              color: 'white',
+              fontSize: '18px',
+              lineHeight: '1.6',
+              fontStyle: 'italic',
+            }}>
+              {socraticQuestion}
             </div>
           </div>
         )}
@@ -467,6 +720,8 @@ export default function ReplyModal() {
           placeholder={
             isExistingConnectionNode
               ? "Type your answer to continue the Socratic exploration..."
+              : isSingleNodeSocratic
+              ? "Type your answer to continue exploring this idea..."
               : isConnectionNode
               ? "(Optional) Add context or questions to guide the exploration... Or click 'Explore Together' to let AI start!"
               : isAIMode
@@ -480,7 +735,7 @@ export default function ReplyModal() {
             fontSize: '16px',
             backgroundColor: '#374151',
             color: 'white',
-            border: (isConnectionNode || isExistingConnectionNode) ? '2px solid #FFD700' : isAIMode ? '2px solid #00E5FF' : '2px solid #9333EA',
+            border: (isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '2px solid #FFD700' : isAIMode ? '2px solid #00E5FF' : '2px solid #9333EA',
             borderRadius: '8px',
             marginBottom: '16px',
             resize: 'vertical',
@@ -493,16 +748,16 @@ export default function ReplyModal() {
             onClick={handleClose}
             style={{
               padding: '10px 20px',
-              backgroundColor: isExistingConnectionNode ? '#dc2626' : '#4b5563',
+              backgroundColor: (isExistingConnectionNode || isSingleNodeSocratic) ? '#dc2626' : '#4b5563',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
-              fontWeight: isExistingConnectionNode ? 'bold' : 'normal',
+              fontWeight: (isExistingConnectionNode || isSingleNodeSocratic) ? 'bold' : 'normal',
             }}
           >
-            {isExistingConnectionNode ? '🛑 End Exploration' : 'Cancel'}
+            {(isExistingConnectionNode || isSingleNodeSocratic) ? '🛑 End Exploration' : 'Cancel'}
           </button>
 
           <button
@@ -513,9 +768,9 @@ export default function ReplyModal() {
               backgroundColor: isLoadingAI
                 ? '#6b7280'
                 : (isConnectionNode || content.trim())
-                ? ((isConnectionNode || isExistingConnectionNode) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA')
+                ? ((isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA')
                 : '#6b7280',
-              color: (isConnectionNode || isExistingConnectionNode) ? '#000' : isAIMode ? '#000' : 'white',
+              color: (isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '#000' : isAIMode ? '#000' : 'white',
               border: 'none',
               borderRadius: '8px',
               cursor: (isConnectionNode || content.trim()) && !isLoadingAI ? 'pointer' : 'not-allowed',
@@ -525,6 +780,8 @@ export default function ReplyModal() {
           >
             {isLoadingAI
               ? '🤖 AI is thinking...'
+              : isSingleNodeSocratic
+              ? '💬 Answer'
               : isExistingConnectionNode
               ? '💬 Answer'
               : isConnectionNode

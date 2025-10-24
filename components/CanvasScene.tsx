@@ -835,6 +835,7 @@ if (node.isSynthesis) {
               setShowReplyModal(true);
             } else {
               selectNode(node.id);
+              setShowReplyModal(true);
             }
           }
         }}
@@ -864,6 +865,7 @@ if (node.isSynthesis) {
             }
           } else {
             selectNode(node.id);
+            setShowReplyModal(true);
           }
         }}
       >
