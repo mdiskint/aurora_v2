@@ -929,7 +929,7 @@ function Controls() {
 
   return (
     <>
-      <div style={{ position: 'absolute', top: 90, left: 40, zIndex: 1000 }}>
+      <div style={{ position: 'absolute', top: 19, left: 40, zIndex: 1000 }}>
         {nexuses.length < 3 && (
           <button
             onClick={() => setShowCreateModal(true)}
