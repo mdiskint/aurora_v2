@@ -6,6 +6,8 @@ import { useCanvasStore } from '@/lib/store';
 
 export default function ReplyModal() {
   const [content, setContent] = useState('');
+  const [isAIMode, setIsAIMode] = useState(false);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
   const selectedId = useCanvasStore((state) => state.selectedId);
   const showReplyModal = useCanvasStore((state) => state.showReplyModal);
   const quotedText = useCanvasStore((state) => state.quotedText);
@@ -185,6 +187,45 @@ export default function ReplyModal() {
           selectNode(null);
         }
       })();
+    } else if (isAIMode) {
+      // AI MODE: Ask AI about selected node
+      if (!content.trim()) return;
+
+      console.log('🤖 AI Mode - Getting AI response for node:', selectedId);
+      setIsLoadingAI(true);
+
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{
+              role: 'user',
+              content: `You are Aurora AI. The user is exploring a node with this content:\n\n"${selectedContent}"\n\nThe user asks: ${content}\n\nProvide a thoughtful, insightful response that helps them explore this idea further.`
+            }],
+            mode: 'reply'
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get AI response');
+
+        const data = await response.json();
+        console.log('✅ AI response received');
+
+        // Create AI response as child node
+        addAIMessage(data.response, selectedId);
+
+        setContent('');
+        setIsLoadingAI(false);
+        setIsAIMode(false); // Reset AI mode
+        setShowReplyModal(false);
+        setQuotedText(null);
+        selectNode(null);
+      } catch (error) {
+        console.error('❌ AI reply failed:', error);
+        setIsLoadingAI(false);
+        alert('Failed to get AI response. Please try again.');
+      }
     } else {
       // Normal behavior: create a child node
       addNode(content, selectedId, quotedText || undefined);
@@ -280,9 +321,47 @@ export default function ReplyModal() {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ color: (isConnectionNode || isExistingConnectionNode) ? '#FFD700' : '#9333EA', marginBottom: '8px', fontSize: '24px' }}>
-          {isExistingConnectionNode ? '💭 Socratic Exploration' : isConnectionNode ? '🔗 Explore Connection Together' : 'Reply to Node'}
+        <h2 style={{ color: (isConnectionNode || isExistingConnectionNode) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA', marginBottom: '8px', fontSize: '24px' }}>
+          {isExistingConnectionNode ? '💭 Socratic Exploration' : isConnectionNode ? '🔗 Explore Connection Together' : isAIMode ? '🤖 Ask AI' : 'Reply to Node'}
         </h2>
+
+        {/* AI Mode Toggle - Only for regular nodes */}
+        {!isConnectionNode && !isExistingConnectionNode && (
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '12px' }}>
+            <button
+              onClick={() => setIsAIMode(false)}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                backgroundColor: !isAIMode ? '#9333EA' : '#374151',
+                color: !isAIMode ? '#fff' : '#9ca3af',
+                border: `2px solid ${!isAIMode ? '#9333EA' : '#4B5563'}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: !isAIMode ? 'bold' : 'normal',
+                fontSize: '14px',
+              }}
+            >
+              💬 User Reply
+            </button>
+            <button
+              onClick={() => setIsAIMode(true)}
+              style={{
+                flex: 1,
+                padding: '8px 16px',
+                backgroundColor: isAIMode ? '#00E5FF' : '#374151',
+                color: isAIMode ? '#000' : '#9ca3af',
+                border: `2px solid ${isAIMode ? '#00E5FF' : '#4B5563'}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: isAIMode ? 'bold' : 'normal',
+                fontSize: '14px',
+              }}
+            >
+              🤖 Ask AI
+            </button>
+          </div>
+        )}
 
         {/* Show the Socratic question for existing connection nodes */}
         {isExistingConnectionNode && (
@@ -390,6 +469,8 @@ export default function ReplyModal() {
               ? "Type your answer to continue the Socratic exploration..."
               : isConnectionNode
               ? "(Optional) Add context or questions to guide the exploration... Or click 'Explore Together' to let AI start!"
+              : isAIMode
+              ? "What would you like to explore about this node? Ask AI anything..."
               : "Type your reply..."
           }
           style={{
@@ -399,7 +480,7 @@ export default function ReplyModal() {
             fontSize: '16px',
             backgroundColor: '#374151',
             color: 'white',
-            border: (isConnectionNode || isExistingConnectionNode) ? '2px solid #FFD700' : '2px solid #9333EA',
+            border: (isConnectionNode || isExistingConnectionNode) ? '2px solid #FFD700' : isAIMode ? '2px solid #00E5FF' : '2px solid #9333EA',
             borderRadius: '8px',
             marginBottom: '16px',
             resize: 'vertical',
@@ -426,21 +507,31 @@ export default function ReplyModal() {
 
           <button
             onClick={handleSubmit}
-            disabled={!isConnectionNode && !content.trim()}
+            disabled={!isConnectionNode && !content.trim() && !isLoadingAI}
             style={{
               padding: '10px 20px',
-              backgroundColor: (isConnectionNode || content.trim())
-                ? ((isConnectionNode || isExistingConnectionNode) ? '#FFD700' : '#9333EA')
+              backgroundColor: isLoadingAI
+                ? '#6b7280'
+                : (isConnectionNode || content.trim())
+                ? ((isConnectionNode || isExistingConnectionNode) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA')
                 : '#6b7280',
-              color: (isConnectionNode || isExistingConnectionNode) ? '#000' : 'white',
+              color: (isConnectionNode || isExistingConnectionNode) ? '#000' : isAIMode ? '#000' : 'white',
               border: 'none',
               borderRadius: '8px',
-              cursor: (isConnectionNode || content.trim()) ? 'pointer' : 'not-allowed',
+              cursor: (isConnectionNode || content.trim()) && !isLoadingAI ? 'pointer' : 'not-allowed',
               fontSize: '16px',
               fontWeight: 'bold',
             }}
           >
-            {isExistingConnectionNode ? '💬 Answer' : isConnectionNode ? '✨ Explore Together' : 'Submit Reply'}
+            {isLoadingAI
+              ? '🤖 AI is thinking...'
+              : isExistingConnectionNode
+              ? '💬 Answer'
+              : isConnectionNode
+              ? '✨ Explore Together'
+              : isAIMode
+              ? '🤖 Ask AI'
+              : 'Submit Reply'}
           </button>
         </div>
       </div>

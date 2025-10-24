@@ -99,13 +99,13 @@ export default function ChatInterface() {
     if (!message.trim()) return;
 
     const userMessage = message.trim();
-    setMessage('');
-    setIsLoading(true);
-    setError(null);
-
     const explorePattern = /^explore:\s*/i;
     const isSpatialMode = explorePattern.test(userMessage);
     const cleanMessage = userMessage.replace(explorePattern, '').trim();
+
+    setMessage('');
+    setIsLoading(true);
+    setError(null);
 
     console.log(isSpatialMode ? '🌌 SPATIAL MODE DETECTED' : '💬 Standard chat mode');
     console.log('🎯 isFirstMessage:', isFirstMessage);
@@ -163,57 +163,44 @@ export default function ChatInterface() {
       const data = await response.json();
       console.log('🔍 Backend response:', data);
 
-      if (data.mode === 'spatial' && data.spatialData) {
-        console.log('✨ Processing spatial response:', data.spatialData);
-        
+      // 🌌 AI UNIVERSE CREATION: Check for spatialData in response
+      if (data.spatialData) {
+        console.log('✨ AI-generated universe detected!', data.spatialData);
+
+        const { nexusTitle, nexusContent, nodes } = data.spatialData;
+
+        // Step 1: Create nexus
+        createChatNexus(nexusTitle, actualPrompt, nexusContent);
+        console.log('✅ Created nexus:', nexusTitle);
+        setIsFirstMessage(false);
+
+        // Step 2: Wait for nexus to be created in state
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Get the newly created nexus from store
+        const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
+
+        if (!chatNexus) {
+          console.error('❌ Failed to find created nexus');
+          throw new Error('Nexus creation failed');
+        }
+
+        console.log('✅ Found nexus in store:', chatNexus.id);
+
+        // Step 3: Create all child nodes
+        for (const node of nodes) {
+          console.log('✅ Creating node:', node.content.substring(0, 50));
+          addNode(node.content, chatNexus.id);
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        console.log('✅ Universe created with', nodes.length, 'nodes');
+
+        // Update conversation history
         const finalHistory = [...updatedHistory, { role: 'assistant' as const, content: data.response }];
         setConversationHistory(finalHistory);
 
-        if (isFirstMessage) {
-          const firstSection = data.spatialData.nodes[0];
-          const remainingSections = data.spatialData.nodes.slice(1);
-
-          setSpatialSections(data.spatialData.nodes);
-          setShowSpatialNavigator(true);
-          
-          const nexusTitle = title !== 'Chat' ? title : (firstSection?.title || 'Spatial Exploration');
-          const cleanPromptMessage = actualPrompt.length > 200 
-            ? "Parse and spatially organize the provided document." 
-            : actualPrompt;
-          const nexusContent = `${cleanPromptMessage}\n\n**${firstSection?.title || 'Introduction'}**\n\n${firstSection?.content || 'Spatial exploration starting point'}`;
-
-          createChatNexus(nexusTitle, cleanPromptMessage, nexusContent);
-          setIsFirstMessage(false);
-          
-          setTimeout(() => {
-            const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
-            
-            if (chatNexus) {
-              remainingSections.forEach((node: any, index: number) => {
-                const nodeContent = `${node.title}\n\n${node.content}`;
-                setTimeout(() => {
-                  addNode(nodeContent, chatNexus.id);
-                }, index * 100);
-              });
-            }
-          }, 300);
-        } else {
-          // 🧠 Reply to selected
-          const parentId = selectedId || currentParentId;
-          
-          console.log('🎯 Replying to:', parentId);
-          
-          if (!parentId) {
-            throw new Error('No parent node found');
-          }
-
-          data.spatialData.nodes.forEach((node: any, index: number) => {
-            const nodeContent = `${node.title}\n\n${node.content}`;
-            setTimeout(() => {
-              addNode(nodeContent, parentId);
-            }, index * 100);
-          });
-        }
+        // Don't create regular chat response - universe creation is complete
       } else {
         // Standard response
         const aiResponse = data.response;
@@ -333,7 +320,10 @@ export default function ChatInterface() {
             cursor: isLoading || !message.trim() ? 'not-allowed' : 'pointer',
           }}
         >
-          {isLoading ? 'Claude is thinking...' : (isSpatialModeActive ? '🌌 Explore in 3D Space' : 'Send Message')}
+          {isLoading
+            ? (isSpatialModeActive ? '✨ Generating universe...' : 'Claude is thinking...')
+            : (isSpatialModeActive ? '🌌 Explore in 3D Space' : 'Send Message')
+          }
         </button>
       </div>
 

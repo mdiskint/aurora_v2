@@ -1023,7 +1023,8 @@ export default function CanvasScene() {
 
   const [isHoldingC, setIsHoldingC] = useState(false);
 
-  const hasAcademicPaper = nexuses.some(n => n.type === 'academic');
+  // Show section navigator for any universe with nexuses
+  const hasUniverse = nexuses.length > 0;
 
   // Keyboard handling moved to parent component
   useEffect(() => {
@@ -1129,7 +1130,7 @@ export default function CanvasScene() {
       <ReplyModal />
       <ContentOverlay />
       <ConnectionModeHint isHoldingC={isHoldingC} selectedCount={selectedNodesForConnection.length} />
-      {hasAcademicPaper && <SectionNavigator />}
+      {hasUniverse && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
         <Scene isHoldingC={isHoldingC} />
         <OrbitControls enableDamping dampingFactor={0.05} />

@@ -10,29 +10,41 @@ export default function SectionNavigator() {
   const selectNode = useCanvasStore((state) => state.selectNode);
   const exportToWordDoc = useCanvasStore((state) => state.exportToWordDoc);
 
-  // Get the academic paper nexus (first one)
-  const nexus = nexuses[0];
-  if (!nexuses.length) return null;
+  // Get current nexus (selected or most recent chat/paper nexus)
+  let nexus = selectedId ? nexuses.find(n => n.id === selectedId) : null;
 
-  // Get all L1 nodes (children of the nexus)
-  const l1Nodes = Object.values(nodes)
+  // If selected item is a node, find its parent nexus
+  if (!nexus && selectedId && nodes[selectedId]) {
+    const parentId = nodes[selectedId].parentId;
+    nexus = nexuses.find(n => n.id === parentId) || null;
+  }
+
+  // Fallback to most recent nexus (chat or paper)
+  if (!nexus) {
+    nexus = nexuses.find(n => n.id.startsWith('chat-') || n.id.startsWith('l1-')) || nexuses[0];
+  }
+
+  if (!nexuses.length || !nexus) return null;
+
+  // Get all child nodes of current nexus
+  const childNodes = Object.values(nodes)
     .filter(node => node.parentId === nexus?.id)
     .sort((a, b) => {
-      // Sort by the index in the id (l1-0, l1-1, etc.)
-      const aIndex = parseInt(a.id.split('-')[1]);
-      const bIndex = parseInt(b.id.split('-')[1]);
-      return aIndex - bIndex;
+      // Sort by creation time (timestamp in ID)
+      const aTime = parseInt(a.id.split('-')[1]) || 0;
+      const bTime = parseInt(b.id.split('-')[1]) || 0;
+      return aTime - bTime;
     });
 
   // Determine next in sequence
   let nextId: string | null = null;
-  
-  if (selectedId === nexus?.id && l1Nodes.length > 0) {
-    nextId = l1Nodes[0].id;
+
+  if (selectedId === nexus?.id && childNodes.length > 0) {
+    nextId = childNodes[0].id;
   } else if (selectedId && nodes[selectedId]) {
-    const currentIndex = l1Nodes.findIndex(n => n.id === selectedId);
-    if (currentIndex >= 0 && currentIndex < l1Nodes.length - 1) {
-      nextId = l1Nodes[currentIndex + 1].id;
+    const currentIndex = childNodes.findIndex(n => n.id === selectedId);
+    if (currentIndex >= 0 && currentIndex < childNodes.length - 1) {
+      nextId = childNodes[currentIndex + 1].id;
     }
   }
 
@@ -59,19 +71,19 @@ export default function SectionNavigator() {
         flexDirection: 'column',
       }}
     >
-      <div style={{ 
-        color: '#9333EA', 
-        fontWeight: 'bold', 
+      <div style={{
+        color: '#9333EA',
+        fontWeight: 'bold',
         marginBottom: '12px',
         fontSize: '14px',
         textTransform: 'uppercase',
         letterSpacing: '0.05em'
       }}>
-        Paper Sections
+        Sections
       </div>
 
-      <div style={{ 
-        overflowY: 'auto', 
+      <div style={{
+        overflowY: 'auto',
         flex: 1,
         paddingRight: '8px'
       }}>
@@ -84,16 +96,16 @@ export default function SectionNavigator() {
               marginBottom: '8px',
               borderRadius: '6px',
               cursor: 'pointer',
-              backgroundColor: selectedId === nexus.id 
-                ? 'rgba(147, 51, 234, 0.3)' 
+              backgroundColor: selectedId === nexus.id
+                ? 'rgba(147, 51, 234, 0.3)'
                 : 'transparent',
-              border: selectedId === nexus.id 
+              border: selectedId === nexus.id
                 ? '2px solid #9333EA'
                 : nextId === nexus.id
                 ? '2px solid #00E5FF'
                 : '2px solid transparent',
-              color: selectedId === nexus.id 
-                ? '#FFD700' 
+              color: selectedId === nexus.id
+                ? '#FFD700'
                 : nextId === nexus.id
                 ? '#00E5FF'
                 : 'white',
@@ -106,8 +118,8 @@ export default function SectionNavigator() {
           </div>
         )}
 
-        {/* L1 Sections */}
-        {l1Nodes.map((node) => (
+        {/* Child Nodes */}
+        {childNodes.map((node) => (
           <div
             key={node.id}
             onClick={() => handleClick(node.id)}
