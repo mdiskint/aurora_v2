@@ -14,6 +14,7 @@ export default function UnifiedNodeModal() {
   const nodes = useCanvasStore((state) => state.nodes);
   const nexuses = useCanvasStore((state) => state.nexuses);
   const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
+  const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
   const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
   const updateNexusContent = useCanvasStore((state) => state.updateNexusContent);
   const selectNode = useCanvasStore((state) => state.selectNode);
@@ -33,6 +34,9 @@ export default function UnifiedNodeModal() {
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
+
+  // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
+  const isSocraticModeActive = useRef(false);
 
   // Find selected node or nexus
   const node = selectedId ? nodes[selectedId] : null;
@@ -76,12 +80,43 @@ export default function UnifiedNodeModal() {
   }, [selectedId]);
 
   // Reset action mode when modal closes or selection changes
+  // CRITICAL: Don't clear Socratic state if we're still on the same root node during exploration
   useEffect(() => {
-    setActionMode(null);
-    setInputContent('');
-    setSocraticQuestion(null);
-    setSocraticRootId(null);
-  }, [selectedId, showContentOverlay]);
+    console.log('🔄 useEffect triggered:', {
+      showContentOverlay,
+      selectedId,
+      socraticRootId,
+      hasSocraticQuestion: !!socraticQuestion,
+      isSocraticModeActive: isSocraticModeActive.current
+    });
+
+    // CRITICAL FIX: Check the ref for immediate protection (prevents async state race conditions)
+    if (isSocraticModeActive.current) {
+      console.log('💭 Socratic mode ACTIVE (via ref) - PRESERVING all state');
+      return; // Don't clear ANYTHING during active Socratic exploration
+    }
+
+    // Check state-based Socratic mode as backup
+    if (socraticRootId) {
+      console.log('💭 Active Socratic exploration (via state) - PRESERVING question state');
+      // Only clear if we navigate to a DIFFERENT node that's not the root
+      if (selectedId && selectedId !== socraticRootId) {
+        console.log('🔀 Navigating away from Socratic root - clearing state');
+        setSocraticQuestion(null);
+        setSocraticRootId(null);
+        setActionMode(null);
+        setInputContent('');
+      }
+      return;
+    }
+
+    // Not in Socratic mode - normal clearing logic
+    if (!showContentOverlay) {
+      console.log('❌ Modal closing (no Socratic mode) - clearing action mode');
+      setActionMode(null);
+      setInputContent('');
+    }
+  }, [selectedId, showContentOverlay, socraticRootId, socraticQuestion]);
 
   // Debug render tracking
   useEffect(() => {
@@ -92,11 +127,13 @@ export default function UnifiedNodeModal() {
         isNexus: !!nexus,
         isConnectionNode: node?.isConnectionNode,
         actionMode,
-        socraticQuestion: !!socraticQuestion,
-        showContentOverlay
+        socraticQuestion: socraticQuestion ? socraticQuestion.substring(0, 50) + '...' : null,
+        socraticRootId,
+        showContentOverlay,
+        willShowSocraticSection: !!socraticQuestion
       });
     }
-  }, [showContentOverlay, selectedId, actionMode, socraticQuestion, node, nexus]);
+  }, [showContentOverlay, selectedId, actionMode, socraticQuestion, socraticRootId, node, nexus]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
@@ -227,6 +264,11 @@ export default function UnifiedNodeModal() {
       if (!response.ok) throw new Error('Failed to start exploration');
 
       const data = await response.json();
+
+      // Set ref IMMEDIATELY (before state updates)
+      isSocraticModeActive.current = true;
+      console.log('🔒 Socratic mode ref set to TRUE - state protected');
+
       setSocraticQuestion(data.response);
       setSocraticRootId(selectedId);
       setInputContent('');
@@ -241,23 +283,24 @@ export default function UnifiedNodeModal() {
   const handleSocraticAnswer = async () => {
     if (!inputContent.trim() || !socraticRootId || !socraticQuestion) return;
 
+    console.log('💭 Starting Socratic answer submission...');
+    console.log('   Root ID:', socraticRootId);
+    console.log('   Current question:', socraticQuestion.substring(0, 50) + '...');
+    console.log('   Current selectedId:', selectedId);
+
+    const userAnswerText = inputContent.trim();
     setIsLoadingAI(true);
 
     try {
-      // Create user answer node
-      const userAnswer = `Q: ${socraticQuestion}\n\nA: ${inputContent.trim()}`;
-      addNode(userAnswer, socraticRootId);
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Get AI's next question
+      // Get AI's next question FIRST (before creating nodes)
+      console.log('🤖 Requesting next Socratic question from AI...');
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: `Previous question: "${socraticQuestion}"\nUser's answer: "${inputContent.trim()}"\n\nGenerate the NEXT Socratic question to continue the exploration. Keep it concise.`
+            content: `Previous question: "${socraticQuestion}"\nUser's answer: "${userAnswerText}"\n\nGenerate the NEXT Socratic question to continue the exploration. Keep it concise.`
           }],
           mode: 'socratic'
         }),
@@ -266,15 +309,38 @@ export default function UnifiedNodeModal() {
       if (!response.ok) throw new Error('Failed to continue exploration');
 
       const data = await response.json();
+      const nextQuestion = data.response;
+      console.log('✅ Received next question:', nextQuestion.substring(0, 50) + '...');
 
-      // Create AI question node
-      const nextQuestion = `Next Question:\n${data.response}`;
-      addNode(nextQuestion, socraticRootId, true);
+      // CRITICAL: Keep ref TRUE to protect state during node creation
+      isSocraticModeActive.current = true;
+      console.log('🔒 Socratic mode ref STILL TRUE - continuing protection');
 
-      // Update for next round
-      setSocraticQuestion(data.response);
+      // NOW update state FIRST before creating any nodes
+      console.log('🔄 Updating Socratic state with new question BEFORE creating nodes');
+      setSocraticQuestion(nextQuestion);
       setInputContent('');
       setIsLoadingAI(false);
+
+      // THEN create the nodes (this will trigger auto-selection but state is already updated)
+      const userAnswer = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}`;
+      console.log('📝 Creating user answer node...');
+      addNode(userAnswer, socraticRootId);
+
+      const nextQuestionNode = `Next Question:\n${nextQuestion}`;
+      console.log('📝 Creating AI question node...');
+      addNode(nextQuestionNode, socraticRootId);
+
+      // CRITICAL FIX: addNode calls selectNode(newId, false) which CLOSES the modal
+      // We need to force it back open and select the root node
+      setTimeout(() => {
+        console.log('🔓 Forcing modal to stay open and selecting root node');
+        selectNode(socraticRootId, true);
+        setShowContentOverlay(true);
+      }, 100);
+
+      console.log('✅ Socratic exploration continuing - state updated, nodes created');
+      console.log('   New question in state:', nextQuestion.substring(0, 30));
     } catch (error) {
       console.error('❌ Failed to continue Socratic dialogue:', error);
       setIsLoadingAI(false);
@@ -317,8 +383,13 @@ export default function UnifiedNodeModal() {
 
       const data = await response.json();
 
-      // Create synthesis node
-      addNode(`💎 Synthesis:\n${data.response}`, socraticRootId, false, true);
+      // Create synthesis node using the special synthesis node creator
+      const { addSynthesisNode } = useCanvasStore.getState();
+      addSynthesisNode(data.response, socraticRootId);
+
+      // CRITICAL: Clear the ref to allow normal state clearing
+      isSocraticModeActive.current = false;
+      console.log('🔓 Socratic mode ref set to FALSE - exploration ended');
 
       setSocraticQuestion(null);
       setSocraticRootId(null);
@@ -337,12 +408,12 @@ export default function UnifiedNodeModal() {
 
   // Connection analysis (for connection nodes)
   const handleConnectionAnalysis = async () => {
-    if (!node?.isConnectionNode || !node.connectionData) return;
+    if (!node?.isConnectionNode || !node.connectionNodes || node.connectionNodes.length < 2) return;
 
     setIsLoadingAI(true);
 
     try {
-      const { sourceId, targetId } = node.connectionData;
+      const [sourceId, targetId] = node.connectionNodes;
       const sourceNode = nodes[sourceId];
       const targetNode = nodes[targetId];
 
@@ -598,15 +669,8 @@ export default function UnifiedNodeModal() {
 
             {/* Action Buttons Row */}
             {!socraticQuestion && (
-              <div
-                className="p-4 flex gap-3"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  width: '100%',
-                  border: '2px solid red' // DEBUG: Temporary border to see container
-                }}
-              >
+              <div className="p-4 flex gap-3">
+
                 {/* For regular nodes and nexus, show all 3 buttons */}
                 {!isConnectionNode ? (
                   <>
@@ -617,7 +681,6 @@ export default function UnifiedNodeModal() {
                         ${actionMode === 'user-reply'
                           ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
                           : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
-                      style={{ border: '2px solid green' }} // DEBUG
                     >
                       💬 User Reply
                     </button>
@@ -628,7 +691,6 @@ export default function UnifiedNodeModal() {
                         ${actionMode === 'ask-ai'
                           ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
                           : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
-                      style={{ border: '2px solid blue' }} // DEBUG
                     >
                       🤖 Ask AI
                     </button>
@@ -636,7 +698,6 @@ export default function UnifiedNodeModal() {
                       onClick={handleExploreTogether}
                       disabled={isLoadingAI}
                       className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
-                      style={{ border: '2px solid orange' }} // DEBUG
                     >
                       💭 Explore Together
                     </button>
@@ -647,7 +708,6 @@ export default function UnifiedNodeModal() {
                     onClick={handleExploreTogether}
                     disabled={isLoadingAI}
                     className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
-                    style={{ border: '2px solid orange' }} // DEBUG
                   >
                     💭 Explore Together
                   </button>
