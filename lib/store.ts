@@ -43,7 +43,7 @@ interface CanvasStore {
   createConnection: (nodeAId: string, nodeBId: string) => void;
   addNodeToConnection: (nodeId: string) => void;
   createMultiConnection: (nodeIds: string[]) => void;
-  createMetaInspirationNode: (nexusId: string) => void;
+  createMetaInspirationNode: (nexusId: string) => string;
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
@@ -506,52 +506,96 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       } else {
         const parentNode = state.nodes[parentId];
         if (!parentNode) return state;
-        
+
         const nexus = get().getNexusForNode(parentId);
         if (!nexus) return state;
-        
+
         const nexusPos = nexus.position;
         const directionX = parentNode.position[0] - nexusPos[0];
         const directionY = parentNode.position[1] - nexusPos[1];
         const directionZ = parentNode.position[2] - nexusPos[2];
-        
+
         const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-        const normDirX = directionX / dirLength;
-        const normDirY = directionY / dirLength;
-        const normDirZ = directionZ / dirLength;
-        
-        const baseDistance = 3;
-        const distanceIncrement = 0.8;
-        const distance = baseDistance + (siblingIndex * distanceIncrement);
-        
-        const turnsPerNode = 0.3;
-        const helixRadius = 1.5;
-        const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-        
-        const upX = 0, upY = 1, upZ = 0;
-        
-        let rightX = normDirY * upZ - normDirZ * upY;
-        let rightY = normDirZ * upX - normDirX * upZ;
-        let rightZ = normDirX * upY - normDirY * upX;
-        const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-        rightX /= rightLength;
-        rightY /= rightLength;
-        rightZ /= rightLength;
-        
-        const upPerpX = normDirY * rightZ - normDirZ * rightY;
-        const upPerpY = normDirZ * rightX - normDirX * rightZ;
-        const upPerpZ = normDirX * rightY - normDirY * rightX;
-        
-        const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-        const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-        const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-        
-        const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-        const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-        const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-        
-        position = [x, y, z];
-        console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+
+        // Guard against zero-length direction vector
+        if (dirLength < 0.001) {
+          console.warn('⚠️ addNode: Parent at same position as nexus, using simple offset');
+          position = [
+            parentNode.position[0] + 2,
+            parentNode.position[1] + 1,
+            parentNode.position[2] + 2
+          ];
+        } else {
+          const normDirX = directionX / dirLength;
+          const normDirY = directionY / dirLength;
+          const normDirZ = directionZ / dirLength;
+
+          const baseDistance = 3;
+          const distanceIncrement = 0.8;
+          const distance = baseDistance + (siblingIndex * distanceIncrement);
+
+          const turnsPerNode = 0.3;
+          const helixRadius = 1.5;
+          const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
+
+          const upX = 0, upY = 1, upZ = 0;
+
+          let rightX = normDirY * upZ - normDirZ * upY;
+          let rightY = normDirZ * upX - normDirX * upZ;
+          let rightZ = normDirX * upY - normDirY * upX;
+          const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
+
+          // Guard against zero-length right vector (happens with vertical directions)
+          if (rightLength < 0.001) {
+            console.warn('⚠️ addNode: Right vector is zero-length, using alternative axis');
+            rightX = 1;
+            rightY = 0;
+            rightZ = 0;
+          } else {
+            rightX /= rightLength;
+            rightY /= rightLength;
+            rightZ /= rightLength;
+          }
+
+          const upPerpX = normDirY * rightZ - normDirZ * rightY;
+          const upPerpY = normDirZ * rightX - normDirX * rightZ;
+          const upPerpZ = normDirX * rightY - normDirY * rightX;
+
+          const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
+          const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
+          const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
+
+          const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
+          const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
+          const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+
+          position = [x, y, z];
+          console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+        }
+      }
+      }
+
+      // CRITICAL: Validate position for NaN values before creating node
+      if (isNaN(position[0]) || isNaN(position[1]) || isNaN(position[2])) {
+        console.error('❌ CRITICAL: Position contains NaN values!', {
+          position,
+          parentId,
+          siblingIndex,
+          parentNode: state.nodes[parentId]
+        });
+
+        // Use fallback position near parent or at origin
+        const parentNode = state.nodes[parentId];
+        if (parentNode && !isNaN(parentNode.position[0])) {
+          position = [
+            parentNode.position[0] + 2,
+            parentNode.position[1] + 1,
+            parentNode.position[2] + 2
+          ];
+          console.log('🔧 Using fallback position near parent:', position);
+        } else {
+          position = [0, 1, 0];
+          console.log('🔧 Using absolute fallback position:', position);
         }
       }
 
@@ -888,10 +932,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const siblingIndex = siblings.length;
 
       const parentNode = state.nodes[parentId];
-      if (!parentNode) return state;
+      if (!parentNode) {
+        console.error('❌ addSynthesisNode: Parent node not found:', parentId);
+        return state;
+      }
 
       const nexus = get().getNexusForNode(parentId);
-      if (!nexus) return state;
+      if (!nexus) {
+        console.error('❌ addSynthesisNode: Nexus not found for parent:', parentId);
+        return state;
+      }
 
       const nexusPos = nexus.position;
       const directionX = parentNode.position[0] - nexusPos[0];
@@ -899,6 +949,40 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const directionZ = parentNode.position[2] - nexusPos[2];
 
       const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
+
+      // CRITICAL: Check for zero-length direction vector (parent at same position as nexus)
+      if (dirLength < 0.001) {
+        console.warn('⚠️ Parent node is at same position as nexus, using fallback positioning');
+        // Use simple offset from parent for synthesis node
+        const fallbackX = parentNode.position[0] + 2;
+        const fallbackY = parentNode.position[1] + 1;
+        const fallbackZ = parentNode.position[2] + 2;
+
+        const position: [number, number, number] = [fallbackX, fallbackY, fallbackZ];
+        console.log(`💎 Synthesis node FALLBACK position: [${fallbackX.toFixed(2)}, ${fallbackY.toFixed(2)}, ${fallbackZ.toFixed(2)}]`);
+
+        const newNode: Node = {
+          id: newNodeId,
+          position,
+          title: `💎 Synthesis ${new Date().toLocaleTimeString()}`,
+          content,
+          parentId,
+          children: [],
+          isSynthesis: true,
+        };
+
+        const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
+
+        if (state.nodes[parentId]) {
+          updatedNodes[parentId] = {
+            ...state.nodes[parentId],
+            children: [...state.nodes[parentId].children, newNodeId],
+          };
+        }
+
+        return { nodes: updatedNodes };
+      }
+
       const normDirX = directionX / dirLength;
       const normDirY = directionY / dirLength;
       const normDirZ = directionZ / dirLength;
@@ -917,9 +1001,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       let rightY = normDirZ * upX - normDirX * upZ;
       let rightZ = normDirX * upY - normDirY * upX;
       const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-      rightX /= rightLength;
-      rightY /= rightLength;
-      rightZ /= rightLength;
+
+      // CRITICAL: Check for zero-length right vector
+      if (rightLength < 0.001) {
+        console.warn('⚠️ Right vector is zero-length, using alternative axis');
+        // Use alternative axis if right vector is degenerate
+        const altX = 1, altY = 0, altZ = 0;
+        rightX = altX;
+        rightY = altY;
+        rightZ = altZ;
+      } else {
+        rightX /= rightLength;
+        rightY /= rightLength;
+        rightZ /= rightLength;
+      }
 
       const upPerpX = normDirY * rightZ - normDirZ * rightY;
       const upPerpY = normDirZ * rightX - normDirX * rightZ;
@@ -929,11 +1024,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
       const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
 
-      const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-      const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-      const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+      let x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
+      let y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
+      let z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+
+      // CRITICAL: Validate final position for NaN
+      if (isNaN(x) || isNaN(y) || isNaN(z)) {
+        console.error('❌ Calculated position contains NaN, using fallback');
+        x = parentNode.position[0] + 2;
+        y = parentNode.position[1] + 1;
+        z = parentNode.position[2] + 2;
+      }
 
       const position: [number, number, number] = [x, y, z];
+      console.log(`💎 Synthesis node position: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
 
       const newNode: Node = {
         id: newNodeId,
@@ -1310,18 +1414,11 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
       return {
         nodes: updatedNodes,
-        selectedId: newMetaNodeId, // Select the new node
-        showContentOverlay: false, // Will open modal after camera animation
       };
     });
 
     // Save to localStorage
     get().saveToLocalStorage();
-
-    // Open the unified modal for the user to interact
-    setTimeout(() => {
-      get().setShowContentOverlay(true);
-    }, 100);
 
     // Emit to backend via WebSocket
     const socket = (window as any).socket;
@@ -1339,6 +1436,8 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       });
       console.log('📤 Broadcasting meta-inspiration node to backend');
     }
+
+    return newMetaNodeId;
   },
 
   getNodeLevel: (nodeId: string) => {

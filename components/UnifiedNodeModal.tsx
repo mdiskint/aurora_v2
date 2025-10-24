@@ -362,12 +362,13 @@ export default function UnifiedNodeModal() {
     }
 
     console.log('🌌 Creating meta-inspiration node for nexus:', nexus.id);
-    createMetaInspirationNode(nexus.id);
+    const metaNodeId = createMetaInspirationNode(nexus.id);
+    console.log('✅ Meta-node created:', metaNodeId);
 
-    // Close modal and select the new meta-inspiration node
+    // Animate camera to new meta-node and open modal
     setTimeout(() => {
-      selectNode(selectedId, false);
-    }, 200);
+      selectNode(metaNodeId, true);
+    }, 100);
   };
 
   // Handle Socratic answer submission

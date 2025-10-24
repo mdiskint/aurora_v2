@@ -574,7 +574,14 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
 
               if (isDoubleClick && !isHoldingC && !connectionModeActive) {
                 console.log('🌌 DOUBLE-CLICK detected on nexus:', nexus.id);
-                createMetaInspirationNode(nexus.id);
+                const metaNodeId = createMetaInspirationNode(nexus.id);
+                console.log('✅ Meta-node created via double-click:', metaNodeId);
+
+                // Animate camera to new meta-node and open modal
+                setTimeout(() => {
+                  selectNode(metaNodeId, true);
+                }, 100);
+
                 // Reset click tracking after double-click
                 lastNexusClickRef.current = { nexusId: null, timestamp: 0 };
                 return;
