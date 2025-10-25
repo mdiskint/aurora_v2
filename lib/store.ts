@@ -29,7 +29,7 @@ interface CanvasStore {
   updateNodeContent: (nodeId: string, newContent: string) => void;
   updateNexusContent: (nexusId: string, newContent: string) => void;
   exportToWordDoc: () => void;
-  addNode: (content: string, parentId: string, quotedText?: string) => void;
+  addNode: (content: string, parentId: string, quotedText?: string) => string;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -651,6 +651,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     } else {
       console.log('💭 Socratic mode: Skipping auto-selection of user answer node to preserve connection node focus');
     }
+
+    return newNodeId;
   },
 
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => {

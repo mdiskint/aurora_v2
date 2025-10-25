@@ -40,6 +40,56 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter
   );
 }
 
+function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, onClick, onPointerEnter, onPointerLeave }: any) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  // Rotate the mesh every frame
+  useFrame(() => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.01; // Rotate on Y axis
+      meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      {geometry}
+      <meshStandardMaterial
+        color={color}
+        metalness={1.0}
+        roughness={0.0}
+        emissive={emissive}
+        emissiveIntensity={emissiveIntensity}
+        envMapIntensity={3.0}
+      />
+    </mesh>
+  );
+}
+
+function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave }: any) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  // Rotate the mesh every frame
+  useFrame(() => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.01; // Rotate on Y axis
+      meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={nexus.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      <sphereGeometry args={[2, 32, 32]} />
+      <meshBasicMaterial
+        color="#00FF9D"
+        wireframe={true}
+        transparent={true}
+        opacity={1}
+      />
+    </mesh>
+  );
+}
+
 function ConnectionLines() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
@@ -564,9 +614,9 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
 
       {nexuses.map((nexus) => (
         <group key={nexus.id}>
-          <mesh
-            position={nexus.position}
-            onClick={(e) => {
+          <RotatingNexus
+            nexus={nexus}
+            onClick={(e: any) => {
               e.stopPropagation();
 
               // Check for double-click on nexus (creates meta-inspiration node)
@@ -614,7 +664,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                 selectNode(nexus.id);
               }
             }}
-            onPointerEnter={(e) => {
+            onPointerEnter={(e: any) => {
               e.stopPropagation();
               if (hoverTimeoutRef.current) {
                 clearTimeout(hoverTimeoutRef.current);
@@ -623,7 +673,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                 setHoveredNode(nexus.id);
               }, 200);
             }}
-            onPointerLeave={(e) => {
+            onPointerLeave={(e: any) => {
               e.stopPropagation();
               if (hoverTimeoutRef.current) {
                 clearTimeout(hoverTimeoutRef.current);
@@ -631,15 +681,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
               }
               setHoveredNode(null);
             }}
-          >
-            <sphereGeometry args={[2, 32, 32]} />
-            <meshBasicMaterial 
-              color="#00FF9D"
-              wireframe={true}
-              transparent={true}
-              opacity={1}
-            />
-          </mesh>
+          />
 
           {/* NEW: Golden glow for nexuses selected in multi-connection mode */}
           {selectedNodesForConnection.includes(nexus.id) && (
@@ -911,10 +953,15 @@ if (node.isSynthesis) {
         }}
       />
     ) : (
-      // Normal node rendering
-      <mesh
-        position={node.position}
-        onClick={(e) => {
+      // Normal node rendering with rotation
+      <RotatingNode
+        node={node}
+        size={size}
+        geometry={Geometry}
+        color={node.isSynthesis ? "#00FFFF" : baseColor}
+        emissive={node.isSynthesis ? "#00FFFF" : baseColor}
+        emissiveIntensity={node.isSynthesis ? 0.8 : 0.3}
+        onClick={(e: any) => {
           e.stopPropagation();
 
           // NEW: Multi-node connection mode (hold C)
@@ -938,7 +985,7 @@ if (node.isSynthesis) {
             setShowContentOverlay(true);
           }
         }}
-        onPointerEnter={(e) => {
+        onPointerEnter={(e: any) => {
           e.stopPropagation();
           if (hoverTimeoutRef.current) {
             clearTimeout(hoverTimeoutRef.current);
@@ -947,7 +994,7 @@ if (node.isSynthesis) {
             setHoveredNode(node.id);
           }, 200);
         }}
-        onPointerLeave={(e) => {
+        onPointerLeave={(e: any) => {
           e.stopPropagation();
           if (hoverTimeoutRef.current) {
             clearTimeout(hoverTimeoutRef.current);
@@ -955,17 +1002,7 @@ if (node.isSynthesis) {
           }
           setHoveredNode(null);
         }}
-      >
-        {Geometry}
-        <meshStandardMaterial
-          color={node.isSynthesis ? "#00FFFF" : baseColor}
-          metalness={1.0}
-          roughness={0.0}
-          emissive={node.isSynthesis ? "#00FFFF" : baseColor}
-          emissiveIntensity={node.isSynthesis ? 0.8 : 0.3}
-          envMapIntensity={3.0}
-        />
-      </mesh>
+      />
     )}
                 {haloColor && (
   <>

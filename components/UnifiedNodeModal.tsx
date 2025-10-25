@@ -35,6 +35,7 @@ export default function UnifiedNodeModal() {
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -215,6 +216,21 @@ export default function UnifiedNodeModal() {
     }
   }, [showContentOverlay, selectedId, actionMode, socraticQuestion, socraticRootId, node, nexus]);
 
+  // Fade-in animation when modal opens
+  useEffect(() => {
+    if (showContentOverlay) {
+      // Reset to invisible
+      setIsVisible(false);
+      // Trigger fade-in after a tiny delay (for CSS transition to work)
+      const timer = setTimeout(() => {
+        setIsVisible(true);
+      }, 10);
+      return () => clearTimeout(timer);
+    } else {
+      setIsVisible(false);
+    }
+  }, [showContentOverlay]);
+
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setHasUnsavedChanges(true);
@@ -298,15 +314,22 @@ export default function UnifiedNodeModal() {
 
       const data = await response.json();
       const combinedContent = `You: ${inputContent.trim()}\n\nClaude: ${data.response}`;
-      addNode(combinedContent, selectedId);
+
+      // Step 1: Wait 300ms after receiving response (moment to breathe)
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Step 2: Create node (camera will animate to it)
+      const newNodeId = addNode(combinedContent, selectedId);
 
       setInputContent('');
       setActionMode(null);
       setIsLoadingAI(false);
 
-      setTimeout(() => {
-        selectNode(selectedId, false);
-      }, 200);
+      // Step 3: Wait for camera animation (800ms) + buffer (300ms) = 1100ms
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      // Step 4: Open modal smoothly
+      selectNode(newNodeId, true);
     } catch (error) {
       console.error('❌ Failed to get AI response:', error);
       setIsLoadingAI(false);
@@ -475,9 +498,12 @@ export default function UnifiedNodeModal() {
 
       const data = await response.json();
 
-      // Create synthesis node using the special synthesis node creator
+      // Step 1: Wait 300ms after receiving synthesis (moment to breathe)
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Step 2: Create synthesis node (camera will animate to it)
       const { addSynthesisNode } = useCanvasStore.getState();
-      addSynthesisNode(data.response, socraticRootId);
+      const synthesisNodeId = addSynthesisNode(data.response, socraticRootId);
 
       // CRITICAL: Clear the ref to allow normal state clearing
       isSocraticModeActive.current = false;
@@ -489,9 +515,11 @@ export default function UnifiedNodeModal() {
       setActionMode(null);
       setIsLoadingAI(false);
 
-      setTimeout(() => {
-        selectNode(selectedId, false);
-      }, 200);
+      // Step 3: Wait for camera animation (800ms) + buffer (300ms) = 1100ms
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      // Step 4: Open modal smoothly
+      selectNode(synthesisNodeId, true);
     } catch (error) {
       console.error('❌ Failed to create synthesis:', error);
       setIsLoadingAI(false);
@@ -586,13 +614,17 @@ export default function UnifiedNodeModal() {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000]"
+        className={`fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] transition-opacity duration-200 ${
+          isVisible ? 'opacity-100' : 'opacity-0'
+        }`}
         onClick={handleClose}
       />
 
       {/* Modal */}
       <div
-        className="fixed z-[2001]"
+        className={`fixed z-[2001] transition-opacity duration-200 ${
+          isVisible ? 'opacity-100' : 'opacity-0'
+        }`}
         style={{
           top: '50%',
           left: '50%',

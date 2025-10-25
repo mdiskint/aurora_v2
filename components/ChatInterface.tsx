@@ -253,14 +253,19 @@ export default function ChatInterface() {
             throw new Error('No parent node found');
           }
 
-          // 💜 Create ONE node with both prompt and response
+          // Step 1: Wait 300ms after receiving response (moment to breathe)
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          // Step 2: Create ONE node with both prompt and response (camera will animate)
           const combinedContent = `You: ${actualPrompt}\n\nClaude: ${aiResponse}`;
-          addNode(combinedContent, parentId);
-          
-          setTimeout(() => {
-            const { setShowContentOverlay } = useCanvasStore.getState();
-            setShowContentOverlay(true);
-          }, 200);
+          const newNodeId = addNode(combinedContent, parentId);
+
+          // Step 3: Wait for camera animation (800ms) + buffer (300ms) = 1100ms
+          await new Promise(resolve => setTimeout(resolve, 1100));
+
+          // Step 4: Open modal smoothly
+          const { selectNode } = useCanvasStore.getState();
+          selectNode(newNodeId, true);
         }
       }
     } catch (err) {
