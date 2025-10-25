@@ -264,10 +264,14 @@ export default function UnifiedNodeModal() {
       }
     }
 
-    // If in Socratic mode, generate synthesis
+    // Reset Socratic state if in Socratic mode (without creating synthesis)
     if (socraticRootId && socraticQuestion) {
-      handleEndExploration();
-      return;
+      console.log('🚪 Closing modal without synthesis - resetting Socratic state');
+      isSocraticModeActive.current = false;
+      setSocraticQuestion(null);
+      setSocraticRootId(null);
+      setInputContent('');
+      setActionMode(null);
     }
 
     selectNode(selectedId, false);

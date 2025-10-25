@@ -54,15 +54,26 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
   return (
     <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} castShadow receiveShadow>
       {geometry}
-      <meshStandardMaterial
-        color={color}
-        metalness={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.3 : node.nodeType === 'ai-response' ? 0.8 : 1.0}
-        roughness={roughness}
-        emissive={emissive}
-        emissiveIntensity={emissiveIntensity}
-        envMapIntensity={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 1.0 : 3.0}
-        flatShading={false}
-      />
+      {node.nodeType === 'ai-response' ? (
+        // AI responses: Wireframe like nexus
+        <meshBasicMaterial
+          color={color}
+          wireframe={true}
+          transparent={true}
+          opacity={1}
+        />
+      ) : (
+        // All other nodes: Standard material
+        <meshStandardMaterial
+          color={color}
+          metalness={0.8}
+          roughness={roughness}
+          emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+          envMapIntensity={0.5}
+          flatShading={false}
+        />
+      )}
     </mesh>
   );
 }
@@ -860,8 +871,8 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
       {nodeArray.map((node) => {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
-        
-        const baseColor = "#E933FF";
+
+        const baseColor = "#A855F7"; // Bright vibrant purple
 
         let haloColor = null;
         let haloType = null;
@@ -900,7 +911,8 @@ if (node.nodeType === 'synthesis') {
 } else {
   // User replies and Socratic answers: Purple diamond (octahedron)
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = baseColor; // Purple
+  nodeColor = "#A855F7"; // Bright vibrant purple
+  console.log('🟣 User reply node color:', nodeColor, 'nodeType:', node.nodeType, 'id:', node.id);
 }
         
        return (
@@ -969,8 +981,8 @@ if (node.nodeType === 'synthesis') {
         geometry={Geometry}
         color={nodeColor}
         emissive={nodeColor}
-        emissiveIntensity={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.0 : node.nodeType === 'synthesis' ? 0.8 : 0.3}
-        roughness={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.9 : 0.0}
+        emissiveIntensity={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.9 : node.nodeType === 'synthesis' ? 0.8 : 0.3}
+        roughness={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.3 : 0.0}
         onClick={(e: any) => {
           e.stopPropagation();
 
