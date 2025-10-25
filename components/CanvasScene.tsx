@@ -14,11 +14,11 @@ import { io } from 'socket.io-client';
 function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter, onPointerLeave, scale = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
-  // Rotate the mesh every frame
+  // Rotate the mesh every frame (slowed by 1/3)
   useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.01; // Rotate on Y axis
-      meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
+      meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
+      meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
     }
   });
 
@@ -43,11 +43,11 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter
 function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, onClick, onPointerEnter, onPointerLeave }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
-  // Rotate the mesh every frame
+  // Rotate the mesh every frame (slowed by 1/3)
   useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.01; // Rotate on Y axis
-      meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
+      meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
+      meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
     }
   });
 
@@ -69,11 +69,11 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
 function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
-  // Rotate the mesh every frame
+  // Rotate the mesh every frame (slowed by 1/3)
   useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.01; // Rotate on Y axis
-      meshRef.current.rotation.x += 0.005; // Slight X rotation for complexity
+      meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
+      meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
     }
   });
 
