@@ -29,7 +29,7 @@ interface CanvasStore {
   updateNodeContent: (nodeId: string, newContent: string) => void;
   updateNexusContent: (nexusId: string, newContent: string) => void;
   exportToWordDoc: () => void;
-  addNode: (content: string, parentId: string, quotedText?: string) => string;
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis') => string;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -435,7 +435,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
   
-  addNode: (content: string, parentId: string, quotedText?: string) => {
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis') => {
     let newNodeId = '';
     let isConnectionNodeParent = false;
 
@@ -610,6 +610,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         quotedText,
         parentId,
         children: [],
+        nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'), // Default based on context
       };
       
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
@@ -895,6 +896,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         parentId,
         children: [],
         isAI: true,
+        nodeType: 'ai-response',
       };
       
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
@@ -974,6 +976,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           parentId,
           children: [],
           isSynthesis: true,
+          nodeType: 'synthesis',
         };
 
         const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
@@ -1052,6 +1055,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         parentId,
         children: [],
         isSynthesis: true,
+        nodeType: 'synthesis',
       };
 
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
@@ -1198,6 +1202,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       children: [],
       isConnectionNode: true,
       connectionNodes: [nodeAId, nodeBId], // Store both inspiration nodes
+      nodeType: 'socratic-question', // Connection nodes are Socratic questions (golden stars)
     };
     
     const updatedNodes = { ...state.nodes, [newConnectionNodeId]: newNode };
@@ -1308,6 +1313,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         children: [],
         isConnectionNode: true,
         connectionNodes: nodeIds, // Store all connected node IDs
+        nodeType: 'socratic-question', // Multi-connection nodes are also Socratic questions (golden stars)
       };
 
       const updatedNodes = { ...state.nodes, [newConnectionNodeId]: newNode };
@@ -1415,6 +1421,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         children: [],
         isConnectionNode: true, // Reuse connection node logic
         connectionNodes: [nexusId, ...nodeIds], // Include nexus ID + all node IDs
+        nodeType: 'inspiration', // Meta-inspiration nodes are golden stars
       };
 
       const updatedNodes = { ...state.nodes, [newMetaNodeId]: newNode };

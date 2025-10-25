@@ -40,7 +40,7 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter
   );
 }
 
-function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, onClick, onPointerEnter, onPointerLeave }: any) {
+function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, roughness = 0.0, onClick, onPointerEnter, onPointerLeave }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   // Rotate the mesh every frame (slowed by 1/3)
@@ -52,15 +52,16 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
   });
 
   return (
-    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} castShadow receiveShadow>
       {geometry}
       <meshStandardMaterial
         color={color}
-        metalness={1.0}
-        roughness={0.0}
+        metalness={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.3 : node.nodeType === 'ai-response' ? 0.8 : 1.0}
+        roughness={roughness}
         emissive={emissive}
         emissiveIntensity={emissiveIntensity}
-        envMapIntensity={3.0}
+        envMapIntensity={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 1.0 : 3.0}
+        flatShading={false}
       />
     </mesh>
   );
@@ -880,18 +881,26 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
           haloType = 'alternate';
         }
         
-       // Special rendering for connection nodes and synthesis nodes
+       // Geometry selection based on nodeType
 let Geometry;
+let nodeColor = baseColor;
 
-if (node.isSynthesis) {
-  // Synthesis nodes get gem-like icosahedron shape
+if (node.nodeType === 'synthesis') {
+  // Synthesis nodes: Gem-like icosahedron (cyan)
   Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
-} else if (node.isConnectionNode) {
-  // Connection nodes get a star-like dodecahedron shape
+  nodeColor = "#00FFFF";
+} else if (node.nodeType === 'ai-response') {
+  // AI responses: Deep burnt orange sphere (glowing orb of wisdom)
+  Geometry = <sphereGeometry args={[size, 32, 32]} />;
+  nodeColor = "#D2691E"; // Deep burnt orange
+} else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
+  // Inspiration/Socratic questions: Dodecahedron star (gold) - rendered by RotatingConnectionNode
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
+  nodeColor = "#FFD700";
 } else {
-  // Normal nodes get octahedron
+  // User replies and Socratic answers: Purple diamond (octahedron)
   Geometry = <octahedronGeometry args={[size, 0]} />;
+  nodeColor = baseColor; // Purple
 }
         
        return (
@@ -958,9 +967,10 @@ if (node.isSynthesis) {
         node={node}
         size={size}
         geometry={Geometry}
-        color={node.isSynthesis ? "#00FFFF" : baseColor}
-        emissive={node.isSynthesis ? "#00FFFF" : baseColor}
-        emissiveIntensity={node.isSynthesis ? 0.8 : 0.3}
+        color={nodeColor}
+        emissive={nodeColor}
+        emissiveIntensity={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.0 : node.nodeType === 'synthesis' ? 0.8 : 0.3}
+        roughness={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.9 : 0.0}
         onClick={(e: any) => {
           e.stopPropagation();
 

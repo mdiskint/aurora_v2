@@ -211,7 +211,7 @@ export default function ChatInterface() {
         for (let i = 0; i < nodes.length; i++) {
           const node = nodes[i];
           console.log(`✅ Creating node ${i + 1}/${nodes.length}:`, node.content.substring(0, 50) + '...');
-          addNode(node.content, chatNexus.id);
+          addNode(node.content, chatNexus.id, undefined, 'ai-response');
           await new Promise(resolve => setTimeout(resolve, 50));
         }
 
@@ -258,7 +258,7 @@ export default function ChatInterface() {
 
           // Step 2: Create ONE node with both prompt and response (camera will animate)
           const combinedContent = `You: ${actualPrompt}\n\nClaude: ${aiResponse}`;
-          const newNodeId = addNode(combinedContent, parentId);
+          const newNodeId = addNode(combinedContent, parentId, undefined, 'ai-response');
 
           // Step 3: Wait for camera animation (800ms) + buffer (300ms) = 1100ms
           await new Promise(resolve => setTimeout(resolve, 1100));

@@ -319,7 +319,7 @@ export default function UnifiedNodeModal() {
       await new Promise(resolve => setTimeout(resolve, 300));
 
       // Step 2: Create node (camera will animate to it)
-      const newNodeId = addNode(combinedContent, selectedId);
+      const newNodeId = addNode(combinedContent, selectedId, undefined, 'ai-response');
 
       setInputContent('');
       setActionMode(null);
