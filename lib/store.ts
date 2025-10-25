@@ -19,6 +19,7 @@ interface CanvasStore {
   isAnimatingCamera: boolean;
   showReplyModal: boolean;
   quotedText: string | null;
+  hoveredNodeId: string | null;
   connectionModeNodeA: string | null;
   connectionModeActive: boolean;
   selectedNodesForConnection: string[];
@@ -38,6 +39,7 @@ interface CanvasStore {
   setIsAnimatingCamera: (isAnimating: boolean) => void;
   setShowReplyModal: (show: boolean) => void;
   setQuotedText: (text: string | null) => void;
+  setHoveredNode: (id: string | null) => void;
    startConnectionMode: (nodeId: string) => void;
   clearConnectionMode: () => void;
   createConnection: (nodeAId: string, nodeBId: string) => void;
@@ -66,6 +68,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isAnimatingCamera: false,
   showReplyModal: false,
   quotedText: null,
+  hoveredNodeId: null,
   activatedConversations: [],
   connectionModeNodeA: null,
   connectionModeActive: false,
@@ -1113,6 +1116,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   setQuotedText: (text: string | null) => {
     set({ quotedText: text });
+  },
+
+  setHoveredNode: (id: string | null) => {
+    set({ hoveredNodeId: id });
   },
 
   startConnectionMode: (nodeId: string) => {

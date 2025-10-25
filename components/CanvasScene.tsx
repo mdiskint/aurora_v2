@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { useCameraAnimation } from '@/lib/useCameraAnimation';
 import { io } from 'socket.io-client';
 
-function RotatingConnectionNode({ node, size, baseColor, onClick, scale = 1 }: any) {
+function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter, onPointerLeave, scale = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   // Rotate the mesh every frame
@@ -26,7 +26,7 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, scale = 1 }: a
   const finalSize = size * 0.5 * scale;
 
   return (
-    <mesh ref={meshRef} position={node.position} onClick={onClick}>
+    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <dodecahedronGeometry args={[finalSize, 0]} />
       <meshStandardMaterial
         color="#FFD700" // Golden color for connection nodes!
@@ -465,6 +465,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const selectedNodesForConnection = useCanvasStore((state) => state.selectedNodesForConnection);
   const addNodeToConnection = useCanvasStore((state) => state.addNodeToConnection);
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
+  const setHoveredNode = useCanvasStore((state) => state.setHoveredNode);
 
   useCameraAnimation();
 
@@ -478,6 +479,9 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
     nexusId: null,
     timestamp: 0
   });
+
+  // Hover preview timeout
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const nodeArray = Object.values(nodes);
   
@@ -557,7 +561,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
     <>
       <CameraLight />
       <ConnectionLines />
-      
+
       {nexuses.map((nexus) => (
         <group key={nexus.id}>
           <mesh
@@ -609,6 +613,23 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
               } else {
                 selectNode(nexus.id);
               }
+            }}
+            onPointerEnter={(e) => {
+              e.stopPropagation();
+              if (hoverTimeoutRef.current) {
+                clearTimeout(hoverTimeoutRef.current);
+              }
+              hoverTimeoutRef.current = setTimeout(() => {
+                setHoveredNode(nexus.id);
+              }, 200);
+            }}
+            onPointerLeave={(e) => {
+              e.stopPropagation();
+              if (hoverTimeoutRef.current) {
+                clearTimeout(hoverTimeoutRef.current);
+                hoverTimeoutRef.current = null;
+              }
+              setHoveredNode(null);
             }}
           >
             <sphereGeometry args={[2, 32, 32]} />
@@ -871,6 +892,23 @@ if (node.isSynthesis) {
             }
           }
         }}
+        onPointerEnter={(e: any) => {
+          e.stopPropagation();
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+          }
+          hoverTimeoutRef.current = setTimeout(() => {
+            setHoveredNode(node.id);
+          }, 200);
+        }}
+        onPointerLeave={(e: any) => {
+          e.stopPropagation();
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+          setHoveredNode(null);
+        }}
       />
     ) : (
       // Normal node rendering
@@ -899,6 +937,23 @@ if (node.isSynthesis) {
             selectNode(node.id);
             setShowContentOverlay(true);
           }
+        }}
+        onPointerEnter={(e) => {
+          e.stopPropagation();
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+          }
+          hoverTimeoutRef.current = setTimeout(() => {
+            setHoveredNode(node.id);
+          }, 200);
+        }}
+        onPointerLeave={(e) => {
+          e.stopPropagation();
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+          setHoveredNode(null);
         }}
       >
         {Geometry}
