@@ -78,6 +78,43 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
   );
 }
 
+// NEW: Clean user reply node component
+function RotatingUserReplyNode({ node, size, onClick, onPointerEnter, onPointerLeave }: any) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  // Debug log
+  console.log('🟣 RENDERING USER REPLY NODE:', node.id, 'nodeType:', node.nodeType);
+
+  // Rotate the mesh every frame
+  useFrame(() => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.01;
+      meshRef.current.rotation.x += 0.005;
+    }
+  });
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={node.position}
+      onClick={onClick}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      castShadow
+      receiveShadow
+    >
+      <octahedronGeometry args={[size, 0]} />
+      <meshStandardMaterial
+        color="#8B5CF6"
+        emissive="#8B5CF6"
+        emissiveIntensity={1.5}
+        metalness={0.0}
+        roughness={1.0}
+      />
+    </mesh>
+  );
+}
+
 function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
@@ -892,7 +929,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
           haloType = 'alternate';
         }
         
-       // Geometry selection based on nodeType
+       // Geometry selection based on nodeType (user-reply handled separately)
 let Geometry;
 let nodeColor = baseColor;
 
@@ -901,20 +938,19 @@ if (node.nodeType === 'synthesis') {
   Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
   nodeColor = "#00FFFF";
 } else if (node.nodeType === 'ai-response') {
-  // AI responses: Deep burnt orange sphere (glowing orb of wisdom)
+  // AI responses: Deep burnt orange sphere (wireframe)
   Geometry = <sphereGeometry args={[size, 32, 32]} />;
   nodeColor = "#D2691E"; // Deep burnt orange
 } else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
-  // Inspiration/Socratic questions: Dodecahedron star (gold) - rendered by RotatingConnectionNode
+  // Inspiration/Socratic questions: Dodecahedron star (gold)
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
   nodeColor = "#FFD700";
-} else {
-  // User replies and Socratic answers: Purple diamond (octahedron)
-  Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = "#A855F7"; // Bright vibrant purple
-  console.log('🟣 User reply node color:', nodeColor, 'nodeType:', node.nodeType, 'id:', node.id);
 }
-        
+// Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
+
+        // Debug: Log what we're about to render
+        console.log('🎨 RENDERING NODE:', node.id, 'type:', node.nodeType, 'isConnection:', node.isConnectionNode);
+
        return (
   <group key={node.id}>
     {node.isConnectionNode ? (
@@ -973,16 +1009,63 @@ if (node.nodeType === 'synthesis') {
           setHoveredNode(null);
         }}
       />
+    ) : node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? (
+      // User reply nodes: Clean purple diamonds
+      <RotatingUserReplyNode
+        node={node}
+        size={size}
+        onClick={(e: any) => {
+          e.stopPropagation();
+
+          // NEW: Multi-node connection mode (hold C)
+          if (isHoldingC) {
+            console.log('🔗 Adding node to selection:', node.id);
+            addNodeToConnection(node.id);
+          } else if (connectionModeActive) {
+            if (!connectionModeNodeA) {
+              console.log('🔗 Node A selected:', node.id);
+              startConnectionMode(node.id);
+            } else if (connectionModeNodeA === node.id) {
+              console.log('❌ Cancelled - same node clicked');
+              clearConnectionMode();
+            } else {
+              console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
+              createConnection(connectionModeNodeA, node.id);
+              clearConnectionMode();
+            }
+          } else {
+            selectNode(node.id);
+            setShowContentOverlay(true);
+          }
+        }}
+        onPointerEnter={(e: any) => {
+          e.stopPropagation();
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+          }
+          hoverTimeoutRef.current = setTimeout(() => {
+            setHoveredNode(node.id);
+          }, 200);
+        }}
+        onPointerLeave={(e: any) => {
+          e.stopPropagation();
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+          setHoveredNode(null);
+        }}
+      />
     ) : (
-      // Normal node rendering with rotation
+      // All other nodes: AI responses, synthesis, inspiration
       <RotatingNode
         node={node}
         size={size}
         geometry={Geometry}
         color={nodeColor}
         emissive={nodeColor}
-        emissiveIntensity={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.9 : node.nodeType === 'synthesis' ? 0.8 : 0.3}
-        roughness={node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? 0.3 : 0.0}
+        emissiveIntensity={node.nodeType === 'synthesis' ? 0.8 : 0.3}
+        roughness={0.0}
         onClick={(e: any) => {
           e.stopPropagation();
 
