@@ -108,29 +108,43 @@ export async function POST(request: NextRequest) {
 
       const spatialPrompt = `User wants to explore: "${userTopic}"
 
-Generate a comprehensive universe structure with:
-- A central nexus (main topic/title)
-- 4-6 key subtopic nodes
+You have the freedom to create 4-20 total artifacts (1 nexus + 3-19 child nodes).
 
-Format your response as JSON (and ONLY JSON, no other text):
+Assess the topic and decide the optimal number based on:
+- How many distinct subtopics exist naturally?
+- Can the topic be well-covered with fewer nodes, or does it require comprehensive breakdown?
+- Balance breadth (many areas) vs. depth (detailed coverage)
+
+Guidelines for scaling:
+- Simple/narrow topics (e.g., "primary colors", "traffic lights"): 4-6 total (nexus + 3-5 nodes)
+- Medium complexity (e.g., "building a startup", "photosynthesis"): 7-12 total (nexus + 6-11 nodes)
+- Complex/broad topics (e.g., "causes of World War I", "quantum mechanics", "history of philosophy"): 13-20 total (nexus + 12-19 nodes)
+
+Create the optimal number to give users a complete conceptual map without overwhelming or under-serving the topic.
+
+Format your response as VALID JSON (and ONLY JSON, no other text):
 {
-  "nexusTitle": "brief title",
-  "nexusContent": "overview paragraph",
+  "nexusTitle": "brief title (3-7 words)",
+  "nexusContent": "overview paragraph explaining the topic",
   "nodes": [
-    {"content": "Subtopic 1 with detailed explanation"},
-    {"content": "Subtopic 2 with detailed explanation"},
-    {"content": "Subtopic 3 with detailed explanation"}
+    {"content": "Subtopic 1: Title\\n\\nDetailed explanation (2-3 sentences minimum)"},
+    {"content": "Subtopic 2: Title\\n\\nDetailed explanation (2-3 sentences minimum)"},
+    {"content": "Subtopic 3: Title\\n\\nDetailed explanation (2-3 sentences minimum)"}
   ]
 }
 
-Make each node substantive (2-3 sentences minimum). Return ONLY the JSON, nothing else.`;
+IMPORTANT:
+- Return ONLY valid JSON, no markdown code blocks
+- Use \\n for line breaks within strings (NOT literal newlines)
+- Each node should be substantive (2-3 sentences minimum)
+- Create 3-19 nodes based on topic complexity`;
 
       console.log('📤 Sending spatial universe generation prompt...');
 
       const response = await anthropic.messages.create({
         model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 2048,
-        system: 'You are Aurora AI, a universe architect. Generate structured spatial knowledge graphs.',
+        max_tokens: 4096, // Increased to handle up to 19 nodes
+        system: 'You are Aurora AI, a universe architect. Generate structured spatial knowledge graphs with intelligent scaling. Assess topic complexity and create the optimal number of nodes (3-19) to comprehensively map the conceptual space. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       });
 
@@ -142,8 +156,25 @@ Make each node substantive (2-3 sentences minimum). Return ONLY the JSON, nothin
       console.log('📝 Raw AI response:', rawResponse);
 
       try {
-        // Parse the JSON response
-        const spatialData = JSON.parse(rawResponse);
+        // Sanitize JSON: Try parsing as-is first, then with cleanup if needed
+        let spatialData;
+        try {
+          spatialData = JSON.parse(rawResponse);
+        } catch (firstError) {
+          console.log('⚠️ Initial parse failed, attempting cleanup...');
+
+          // Extract JSON from markdown code blocks if present
+          let cleanedResponse = rawResponse.trim();
+          if (cleanedResponse.startsWith('```json')) {
+            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
+          } else if (cleanedResponse.startsWith('```')) {
+            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
+          }
+
+          // Parse the cleaned response
+          spatialData = JSON.parse(cleanedResponse);
+        }
+
         console.log('✅ Successfully parsed spatial JSON:', spatialData);
 
         return NextResponse.json({
