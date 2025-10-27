@@ -68,6 +68,9 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
             padding: '32px',
             maxWidth: '500px',
             width: '90%',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            overflowX: 'hidden',
             color: 'white',
           }}
           onClick={(e) => e.stopPropagation()}
@@ -202,6 +205,9 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
           padding: '32px',
           maxWidth: '500px',
           width: '90%',
+          maxHeight: '80vh',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           color: 'white',
           border: '2px solid rgba(147, 51, 234, 0.5)',
         }}

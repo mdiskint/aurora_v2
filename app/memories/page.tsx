@@ -10,7 +10,7 @@ export default function MemoriesPage() {
   const loadUniverse = useCanvasStore((state) => state.loadUniverse);
   const activatedConversations = useCanvasStore((state) => state.activatedConversations);
   const toggleActivateConversation = useCanvasStore((state) => state.toggleActivateConversation);
-  const deleteConversation = useCanvasStore((state) => state.deleteConversation);
+  // Note: We handle deletion directly via localStorage, not through the store
 
   // Convert universeLibrary to nexuses array for compatibility
   const nexuses = Object.entries(universeLibrary).map(([id, data]) => data.nexuses[0]);
@@ -22,8 +22,24 @@ export default function MemoriesPage() {
 
   // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
   useEffect(() => {
-    console.log('🚀 Memories page loading data from localStorage...');
+    console.log('📚 ==========================================');
+    console.log('📚 MEMORIES PAGE LOADED:', new Date().toLocaleTimeString());
+
+    // Load data from localStorage
+    console.log('📚   Loading universe library from localStorage...');
     useCanvasStore.getState().loadFromLocalStorage();
+
+    // Get current library state after loading
+    const library = useCanvasStore.getState().universeLibrary;
+    console.log('📚   Library has', Object.keys(library).length, 'universes');
+    console.log('📚   Universe IDs:', Object.keys(library));
+
+    // Display each universe
+    Object.entries(library).forEach(([id, universe]: any) => {
+      console.log(`📚   - ${id.substring(0, 30)}...: "${universe.title}" (${universe.nexuses?.length || 0} nexuses, ${Object.keys(universe.nodes || {}).length} nodes)`);
+    });
+
+    console.log('📚 ==========================================');
   }, []);
 
   // Calculate node count for a universe
@@ -78,8 +94,84 @@ export default function MemoriesPage() {
   };
 
   const confirmDelete = () => {
-    if (deleteConfirmId) {
-      deleteConversation(deleteConfirmId);
+    if (!deleteConfirmId) return;
+
+    const universeTitle = nexuses.find(n => n.id === deleteConfirmId)?.title || 'Unknown';
+
+    console.log('🗑️ ==========================================');
+    console.log('🗑️ DELETE BUTTON CLICKED:', deleteConfirmId);
+    console.log('🗑️ Universe title:', universeTitle);
+
+    try {
+      // Load the library from localStorage (NOT from Zustand store)
+      const libraryString = localStorage.getItem('aurora-portal-data');
+      console.log('📚 Loaded from localStorage');
+
+      if (!libraryString) {
+        console.error('❌ No aurora-portal-data found in localStorage');
+        alert('No data found in localStorage!');
+        return;
+      }
+
+      const parsed = JSON.parse(libraryString);
+      const library = parsed.universeLibrary || {};
+
+      console.log('📚 Current library has', Object.keys(library).length, 'universes');
+      console.log('📚 Universe IDs:', Object.keys(library));
+
+      // Check if universe exists
+      if (!library[deleteConfirmId]) {
+        console.error('❌ Universe not found in library:', deleteConfirmId);
+        alert('Universe not found!');
+        return;
+      }
+
+      console.log('✅ Found universe to delete:', library[deleteConfirmId].title);
+
+      // Delete it from the library
+      delete library[deleteConfirmId];
+      console.log('🗑️ Deleted from library object');
+      console.log('📚 Library now has', Object.keys(library).length, 'universes');
+
+      // Save back to localStorage
+      const updatedData = {
+        ...parsed,
+        universeLibrary: library
+      };
+      localStorage.setItem('aurora-portal-data', JSON.stringify(updatedData));
+      console.log('💾 Saved updated library to localStorage');
+
+      // Verify deletion
+      const verifyString = localStorage.getItem('aurora-portal-data');
+      if (verifyString) {
+        const verify = JSON.parse(verifyString);
+        const verifyLibrary = verify.universeLibrary || {};
+        console.log('✅ VERIFIED: Library now has', Object.keys(verifyLibrary).length, 'universes');
+
+        if (verifyLibrary[deleteConfirmId]) {
+          console.error('❌ ERROR: Universe still exists after delete!');
+          alert('Delete failed - universe still in storage!');
+          return;
+        } else {
+          console.log('✅ Confirmed: Universe successfully deleted');
+        }
+      }
+
+      console.log('🗑️ ==========================================');
+
+      // Close modal
+      setDeleteConfirmId(null);
+
+      // Refresh the page to show updated list
+      console.log('🔄 Reloading page to show updated library...');
+      window.location.reload();
+
+    } catch (error) {
+      console.error('❌ ==========================================');
+      console.error('❌ DELETE FAILED:', error);
+      console.error('❌ Error message:', (error as Error).message);
+      console.error('❌ ==========================================');
+      alert('Failed to delete universe. Check console for details.');
       setDeleteConfirmId(null);
     }
   };

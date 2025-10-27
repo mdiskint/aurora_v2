@@ -104,7 +104,7 @@ function buildFullHistoryPrompt(
   nexus: { title: string; content: string },
   nodeDescriptions: string[]
 ): string {
-  return `Create a narrative markdown document from this conversation universe.
+  return `Create a detailed bullet-point document from this conversation universe.
 
 Universe Title: "${nexus.title}"
 Universe Context: ${nexus.content}
@@ -114,20 +114,46 @@ Structure your document like this:
 # ${nexus.title}
 
 ## Executive Summary
-Write 2-3 paragraphs summarizing the entire exploration journey and key discoveries.
+- [Key insight 1 from the exploration]
+- [Key insight 2 from the exploration]
+- [Key insight 3 from the exploration]
 
-## The Journey
-Create a flowing narrative that tells the story of this exploration chronologically.
-Show how questions led to insights, how ideas connected, and how understanding deepened.
-Write in engaging prose, not bullet points.
+## The Exploration Journey
+- [Major topic or phase 1]
+  - [Key finding or insight]
+  - [Supporting detail]
+  - [Supporting detail]
+- [Major topic or phase 2]
+  - [Key finding or insight]
+  - [Supporting detail]
+  - [Supporting detail]
+- [Major topic or phase 3]
+  - [Key finding or insight]
+  - [Supporting detail]
 
-## Key Connections
-Identify and explain the most important connections between ideas that emerged.
-Show how disparate concepts came together to create new understanding.
+## Key Connections & Insights
+- [Connection between ideas A and B]
+  - [What this reveals]
+  - [Why this matters]
+  - [Implication or application]
+- [Connection between ideas C and D]
+  - [What this reveals]
+  - [Why this matters]
+- [Emergent pattern or theme]
+  - [How it manifests]
+  - [Significance]
 
 ## Conclusions & Recommendations
-Provide clear, actionable conclusions and recommendations based on the exploration.
-Number your recommendations for clarity.
+- [Recommendation 1]
+  - [Specific action item]
+  - [Expected outcome]
+  - [Timeline or priority]
+- [Recommendation 2]
+  - [Specific action item]
+  - [Expected outcome]
+- [Recommendation 3]
+  - [Specific action item]
+  - [Expected outcome]
 
 ---
 
@@ -137,16 +163,17 @@ ${nodeDescriptions.join('\n\n')}
 ---
 
 Guidelines:
-- Write in flowing, professional prose
-- Use headers and subheaders for structure
-- Emphasize key insights with **bold** or _italic_
-- Tell a story - this is a narrative, not a transcript
-- Focus on the intellectual journey and discoveries
-- Make it readable and engaging
-- Keep it concise but comprehensive
-- Use markdown formatting effectively
+- Use ONLY bullet points and sub-bullets - NO prose paragraphs
+- Use clear hierarchical structure with proper indentation
+- Main bullets (-) for primary points
+- Sub-bullets (  -) indented with 2 spaces for supporting details
+- Keep bullets concise and scannable
+- Use **bold** for emphasis on key terms
+- Organize chronologically in The Journey section
+- Focus on actionable insights and recommendations
+- Use markdown formatting: -, spaces for indentation
 
-Generate the complete document now:`;
+Generate the complete bullet-point document now:`;
 }
 
 function buildAnalysisOnlyPrompt(
@@ -167,7 +194,7 @@ function buildAnalysisOnlyPrompt(
     `- ${n.semanticTitle || 'Insight'}: ${n.content.slice(0, 300)}`
   ).join('\n');
 
-  return `Create a concise analysis document focusing on final insights and recommendations.
+  return `Create a concise bullet-point analysis document focusing on deliverables and actionable insights.
 
 Universe Title: "${nexus.title}"
 Universe Context: ${nexus.content}
@@ -177,20 +204,46 @@ Structure your document like this:
 # ${nexus.title} - Analysis
 
 ## Executive Summary
-Write 1-2 paragraphs summarizing the key insights and recommendations.
+- [Top insight 1]
+- [Top insight 2]
+- [Top insight 3]
 
 ## Key Insights
-Identify 3-5 main discoveries from this exploration.
-Use ### subheaders for each insight.
-Explain why each insight matters.
+### [Insight Category 1]
+- [Main discovery or finding]
+  - [Supporting detail or evidence]
+  - [Why this matters]
+  - [Practical implication]
+
+### [Insight Category 2]
+- [Main discovery or finding]
+  - [Supporting detail or evidence]
+  - [Why this matters]
+
+### [Insight Category 3]
+- [Main discovery or finding]
+  - [Supporting detail or evidence]
 
 ## Important Connections
-Explain how different ideas relate and reinforce each other.
-Show the emergent patterns that weren't obvious initially.
+- [How concept A relates to concept B]
+  - [What this connection reveals]
+  - [Why this matters]
+  - [Emergent pattern or opportunity]
+- [How concept C relates to concept D]
+  - [What this connection reveals]
+  - [Practical application]
 
 ## Recommendations & Next Steps
-Provide clear, numbered, actionable recommendations.
-Focus on practical next steps and implementation.
+- [Immediate action 1]
+  - [Specific implementation step]
+  - [Expected result]
+  - [Timeline or priority]
+- [Strategic recommendation 2]
+  - [Specific implementation step]
+  - [Expected result]
+- [Long-term recommendation 3]
+  - [Specific implementation step]
+  - [Expected result]
 
 ---
 
@@ -206,14 +259,17 @@ ${insightsList || 'None'}
 ---
 
 Guidelines:
-- Focus on deliverables, not the exploration process
-- Write in clear, professional prose
-- Be concise but thorough
-- Use markdown formatting effectively
-- Number recommendations for clarity
-- Make it actionable
+- Use ONLY bullet points and sub-bullets - NO prose paragraphs
+- Use clear hierarchical structure with proper indentation
+- Main bullets (-) for primary points
+- Sub-bullets (  -) indented with 2 spaces for supporting details
+- Use ### for insight category subheadings
+- Focus on deliverables and actionable items
+- Keep bullets concise and scannable
+- Make recommendations specific and implementable
+- Use markdown formatting: -, spaces for indentation
 
-Generate the complete analysis document now:`;
+Generate the complete bullet-point analysis document now:`;
 }
 
 function parseMarkdownToStructured(markdown: string, title: string) {

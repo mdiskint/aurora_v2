@@ -69,11 +69,53 @@ export function exportToPDF(data: ExportData) {
 
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
-  const summaryLines = doc.splitTextToSize(data.summary, maxWidth);
-  summaryLines.forEach((line: string) => {
-    checkNewPage(7);
-    doc.text(line, marginLeft, yPosition);
-    yPosition += 7;
+
+  // Parse summary for bullet points
+  const summaryLinesArray = data.summary.split('\n');
+  summaryLinesArray.forEach((line: string) => {
+    if (!line.trim()) {
+      yPosition += 3;
+      return;
+    }
+
+    // Main bullet
+    if (line.match(/^-\s+/)) {
+      checkNewPage(7);
+      const bulletText = line.substring(2).trim();
+      doc.text('•', marginLeft + 2, yPosition);
+      const wrappedLines = doc.splitTextToSize(bulletText, maxWidth - 7);
+      wrappedLines.forEach((wrapped: string, idx: number) => {
+        if (idx > 0) checkNewPage(7);
+        doc.text(wrapped, marginLeft + 7, yPosition);
+        yPosition += 7;
+      });
+    }
+    // Sub-bullet
+    else if (line.match(/^\s{2,}-\s+/)) {
+      checkNewPage(7);
+      const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+      const indentLevel = Math.floor(leadingSpaces / 2);
+      const indent = marginLeft + 7 + (indentLevel * 5);
+      const bulletText = line.trim().substring(2).trim();
+      doc.setFontSize(9);
+      doc.text('◦', indent, yPosition);
+      doc.setFontSize(11);
+      const wrappedLines = doc.splitTextToSize(bulletText, maxWidth - (indent - marginLeft) - 5);
+      wrappedLines.forEach((wrapped: string, idx: number) => {
+        if (idx > 0) checkNewPage(7);
+        doc.text(wrapped, indent + 5, yPosition);
+        yPosition += 7;
+      });
+    }
+    // Regular text
+    else {
+      const textLines = doc.splitTextToSize(line.trim(), maxWidth);
+      textLines.forEach((textLine: string) => {
+        checkNewPage(7);
+        doc.text(textLine, marginLeft, yPosition);
+        yPosition += 7;
+      });
+    }
   });
   yPosition += 10;
 
@@ -96,17 +138,89 @@ export function exportToPDF(data: ExportData) {
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
 
-    // Split content by paragraphs
-    const paragraphs = section.content.split('\n\n');
-    paragraphs.forEach(paragraph => {
-      const contentLines = doc.splitTextToSize(paragraph.trim(), maxWidth);
-      contentLines.forEach((line: string) => {
+    // Parse content line by line for bullet handling
+    const lines = section.content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Skip empty lines
+      if (!line.trim()) {
+        yPosition += 3;
+        continue;
+      }
+
+      // Check for H3 heading (###)
+      if (line.trim().startsWith('### ')) {
+        checkNewPage(10);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(line.trim().substring(4), marginLeft, yPosition);
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        yPosition += 8;
+        continue;
+      }
+
+      // Check for main bullet (starts with -, not indented)
+      if (line.match(/^-\s+/)) {
         checkNewPage(7);
-        doc.text(line, marginLeft, yPosition);
+        const bulletText = line.substring(2).trim();
+        const bulletX = marginLeft + 2;
+        const textX = marginLeft + 7;
+        const availableWidth = maxWidth - 7;
+
+        // Render bullet point
+        doc.text('•', bulletX, yPosition);
+
+        // Wrap and render bullet text
+        const wrappedLines = doc.splitTextToSize(bulletText, availableWidth);
+        wrappedLines.forEach((wrappedLine: string, idx: number) => {
+          if (idx > 0) checkNewPage(7);
+          doc.text(wrappedLine, textX, yPosition);
+          yPosition += 7;
+        });
+        continue;
+      }
+
+      // Check for sub-bullet (starts with spaces then -)
+      if (line.match(/^\s{2,}-\s+/)) {
+        checkNewPage(7);
+        const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+        const indentLevel = Math.floor(leadingSpaces / 2);
+        const baseIndent = marginLeft + 7;
+        const indent = baseIndent + (indentLevel * 5);
+        const bulletX = indent;
+        const textX = indent + 5;
+        const availableWidth = maxWidth - (indent - marginLeft) - 5;
+
+        const bulletText = line.trim().substring(2).trim();
+
+        // Render sub-bullet with smaller symbol
+        doc.setFontSize(9);
+        doc.text('◦', bulletX, yPosition);
+        doc.setFontSize(11);
+
+        // Wrap and render sub-bullet text
+        const wrappedLines = doc.splitTextToSize(bulletText, availableWidth);
+        wrappedLines.forEach((wrappedLine: string, idx: number) => {
+          if (idx > 0) checkNewPage(7);
+          doc.text(wrappedLine, textX, yPosition);
+          yPosition += 7;
+        });
+        continue;
+      }
+
+      // Regular text (not a bullet)
+      checkNewPage(7);
+      const textLines = doc.splitTextToSize(line.trim(), maxWidth);
+      textLines.forEach((textLine: string) => {
+        checkNewPage(7);
+        doc.text(textLine, marginLeft, yPosition);
         yPosition += 7;
       });
-      yPosition += 5; // Space between paragraphs
-    });
+      yPosition += 3;
+    }
 
     yPosition += 10; // Space after section
   });

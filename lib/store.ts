@@ -2,6 +2,172 @@ import { create } from 'zustand';
 import { Node } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 
+// 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
+if (typeof window !== 'undefined') {
+  (window as any).auroraDebug = {
+    showLibrary: () => {
+      const data = localStorage.getItem('aurora-portal-data');
+      if (!data) {
+        console.log('📚 No aurora-portal-data found in localStorage');
+        return;
+      }
+      const parsed = JSON.parse(data);
+      const library = parsed.universeLibrary || {};
+      console.log('📚 ==========================================');
+      console.log('📚 AURORA LIBRARY');
+      console.log('📚   Total universes:', Object.keys(library).length);
+      console.table(Object.entries(library).map(([id, data]: any) => ({
+        id: id.substring(0, 20) + '...',
+        title: data.title,
+        nexuses: data.nexuses?.length || 0,
+        nodes: Object.keys(data.nodes || {}).length,
+        modified: new Date(data.lastModified).toLocaleString()
+      })));
+      console.log('📚 ==========================================');
+      return library;
+    },
+    clearLibrary: () => {
+      localStorage.removeItem('aurora-portal-data');
+      console.log('🗑️ Library cleared from localStorage');
+    },
+    showActive: () => {
+      // Note: This function needs to be called after the store is created
+      // It will be updated after store creation to have proper access
+      console.log('⚠️ Store access not yet available - will be enabled after store creation');
+      console.log('   Try refreshing the page or check back in a moment');
+    },
+    dumpRaw: () => {
+      const data = localStorage.getItem('aurora-portal-data');
+      if (!data) {
+        console.log('No data found');
+        return null;
+      }
+      const parsed = JSON.parse(data);
+      console.log('Raw aurora-portal-data:', parsed);
+      return parsed;
+    },
+    checkQuota: () => {
+      console.log('💾 ==========================================');
+      console.log('💾 LOCALSTORAGE QUOTA CHECK');
+      console.log('💾 ==========================================');
+
+      try {
+        // Calculate total localStorage size
+        let totalSize = 0;
+        let auroraSize = 0;
+
+        for (let key in localStorage) {
+          if (localStorage.hasOwnProperty(key)) {
+            const itemSize = localStorage.getItem(key)?.length || 0;
+            totalSize += itemSize + key.length;
+
+            if (key === 'aurora-portal-data') {
+              auroraSize = itemSize;
+            }
+          }
+        }
+
+        // Convert to human-readable format
+        const formatBytes = (bytes: number) => {
+          if (bytes < 1024) return bytes + ' B';
+          if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+          return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        };
+
+        // Typical localStorage limit is 5-10 MB (varies by browser)
+        // We'll use 5MB as conservative estimate
+        const estimatedLimit = 5 * 1024 * 1024; // 5MB in bytes
+        const percentUsed = (totalSize / estimatedLimit * 100).toFixed(2);
+        const auroraPercent = (auroraSize / estimatedLimit * 100).toFixed(2);
+
+        console.log('💾 Total localStorage usage:');
+        console.log('💾   Size:', formatBytes(totalSize));
+        console.log('💾   Estimated % of 5MB limit:', percentUsed + '%');
+        console.log('💾');
+        console.log('💾 Aurora Portal data:');
+        console.log('💾   Size:', formatBytes(auroraSize));
+        console.log('💾   % of total storage:', (auroraSize / totalSize * 100).toFixed(2) + '%');
+        console.log('💾   % of 5MB limit:', auroraPercent + '%');
+
+        // Get universe details
+        const auroraData = localStorage.getItem('aurora-portal-data');
+        if (auroraData) {
+          const parsed = JSON.parse(auroraData);
+          const universeCount = Object.keys(parsed.universeLibrary || {}).length;
+          const avgPerUniverse = universeCount > 0 ? auroraSize / universeCount : 0;
+
+          console.log('💾');
+          console.log('💾 Universe breakdown:');
+          console.log('💾   Total universes:', universeCount);
+          console.log('💾   Average per universe:', formatBytes(avgPerUniverse));
+
+          // Show largest universes
+          const universes = Object.entries(parsed.universeLibrary || {}).map(([id, data]: any) => {
+            const universeStr = JSON.stringify(data);
+            return {
+              id: id.substring(0, 30),
+              title: data.title,
+              size: universeStr.length,
+              sizeFormatted: formatBytes(universeStr.length),
+              nodes: Object.keys(data.nodes || {}).length
+            };
+          }).sort((a, b) => b.size - a.size);
+
+          if (universes.length > 0) {
+            console.log('💾');
+            console.log('💾 Largest universes:');
+            console.table(universes.slice(0, 5));
+          }
+        }
+
+        console.log('💾');
+        console.log('💾 Storage health:');
+
+        if (parseFloat(percentUsed) < 50) {
+          console.log('💾   ✅ HEALTHY - Plenty of space available');
+        } else if (parseFloat(percentUsed) < 80) {
+          console.log('💾   ⚠️ WARNING - Approaching capacity');
+          console.log('💾   Consider deleting old universes');
+        } else {
+          console.log('💾   🔴 CRITICAL - Storage nearly full!');
+          console.log('💾   Delete universes ASAP or you may lose data');
+        }
+
+        console.log('💾');
+        console.log('💾 Note: Actual localStorage limit varies by browser');
+        console.log('💾   Chrome/Edge: ~10MB per domain');
+        console.log('💾   Firefox: ~10MB per domain');
+        console.log('💾   Safari: ~5MB per domain (more restrictive)');
+        console.log('💾 ==========================================');
+
+        return {
+          totalSize,
+          auroraSize,
+          percentUsed: parseFloat(percentUsed),
+          auroraPercent: parseFloat(auroraPercent),
+          formatted: {
+            total: formatBytes(totalSize),
+            aurora: formatBytes(auroraSize)
+          }
+        };
+
+      } catch (error) {
+        console.error('💾 ❌ Error checking quota:', error);
+        console.log('💾 ==========================================');
+        return null;
+      }
+    }
+  };
+
+  // Log helper availability
+  console.log('🐛 Aurora Debug helpers loaded! Try:');
+  console.log('   auroraDebug.showLibrary()  - View all saved universes');
+  console.log('   auroraDebug.showActive()   - View current canvas state');
+  console.log('   auroraDebug.checkQuota()   - Check localStorage usage & quota');
+  console.log('   auroraDebug.clearLibrary() - Clear all saved data');
+  console.log('   auroraDebug.dumpRaw()      - Dump raw localStorage data');
+}
+
 interface Nexus {
   id: string;
   position: [number, number, number];
@@ -199,25 +365,36 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
+    console.log('🆕 ==========================================');
+    console.log('🆕 CREATING NEW UNIVERSE:', new Date().toLocaleTimeString());
+    console.log('🆕   Title:', title);
+    console.log('🆕   Previous Universe ID:', get().activeUniverseId || 'none');
+    console.log('🆕   Previous nexuses:', get().nexuses.length);
+    console.log('🆕   Previous nodes:', Object.keys(get().nodes).length);
+
     // 🌌 STEP 1: Save current universe before starting a new one
     const currentState = get();
     if (currentState.nexuses.length > 0) {
-      console.log('🌌 Saving current universe before creating new one...');
+      console.log('🆕   💾 Saving previous universe before creating new one...');
       get().saveCurrentUniverse();
+    } else {
+      console.log('🆕   ℹ️ No previous universe to save (canvas was blank)');
     }
 
     // 🌌 STEP 2: Clear canvas for new universe
-    console.log('🌌 Clearing canvas for new universe...');
+    console.log('🆕   🧹 Clearing canvas for new universe...');
     get().clearCanvas();
 
     // 🌌 STEP 3: Create the new nexus
     let newNexus: Nexus | null = null;
+    let newUniverseId = '';
 
     set((state) => {
       const position: [number, number, number] = [0, 0, 0]; // First nexus always at origin
 
+      newUniverseId = `nexus-${Date.now()}`;
       newNexus = {
-        id: `nexus-${Date.now()}`,
+        id: newUniverseId,
         position,
         title,
         content,
@@ -226,14 +403,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         type: 'social',
       };
 
-      console.log(`🟢 Creating NEW Universe: "${title}" at origin`);
+      console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
 
       return { nexuses: [newNexus] }; // Start fresh with just this nexus
     });
 
     // 🌌 STEP 4: Auto-save the new universe to library
-    console.log('🌌 Auto-saving new universe to library...');
+    console.log('🆕   💾 Auto-saving new universe to library...');
     get().saveCurrentUniverse();
+    console.log('🆕   ✅ New universe created and set as active');
+    console.log('🆕 ==========================================');
 
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
@@ -1722,70 +1901,141 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   },
 
   deleteConversation: (nexusId: string) => {
-    set((state) => {
-      console.log(`🗑️ Deleting conversation: ${nexusId}`);
+    console.log('🗑️ ==========================================');
+    console.log('🗑️ DELETE CONVERSATION:', new Date().toLocaleTimeString());
+    console.log('🗑️   Universe ID to delete:', nexusId);
 
-      // Helper function to recursively get all descendant node IDs
-      const getAllDescendants = (parentId: string, nodes: { [id: string]: Node }): string[] => {
-        const descendants: string[] = [];
-        Object.keys(nodes).forEach(nodeId => {
-          if (nodes[nodeId].parentId === parentId) {
-            descendants.push(nodeId);
-            // Recursively get children of this node
-            descendants.push(...getAllDescendants(nodeId, nodes));
+    try {
+      const state = get();
+
+      // Check if universe exists in library
+      if (state.universeLibrary[nexusId]) {
+        console.log('🗑️   Found in universe library');
+        console.log('🗑️   Title:', state.universeLibrary[nexusId].title);
+        console.log('🗑️   Nexuses:', state.universeLibrary[nexusId].nexuses.length);
+        console.log('🗑️   Nodes:', Object.keys(state.universeLibrary[nexusId].nodes).length);
+      } else {
+        console.log('🗑️   ⚠️ Not found in universe library');
+      }
+
+      console.log('🗑️   Library count before:', Object.keys(state.universeLibrary).length);
+      console.log('🗑️   Universe IDs before:', Object.keys(state.universeLibrary));
+
+      set((state) => {
+        // Helper function to recursively get all descendant node IDs
+        const getAllDescendants = (parentId: string, nodes: { [id: string]: Node }): string[] => {
+          const descendants: string[] = [];
+          Object.keys(nodes).forEach(nodeId => {
+            if (nodes[nodeId].parentId === parentId) {
+              descendants.push(nodeId);
+              // Recursively get children of this node
+              descendants.push(...getAllDescendants(nodeId, nodes));
+            }
+          });
+          return descendants;
+        };
+
+        // Remove the nexus from canvas
+        const updatedNexuses = state.nexuses.filter(n => n.id !== nexusId);
+
+        // Get all descendant nodes recursively
+        const descendantIds = getAllDescendants(nexusId, state.nodes);
+        console.log(`🗑️   Found ${descendantIds.length} descendant nodes on canvas to delete`);
+
+        // Remove all descendant nodes from canvas
+        const updatedNodes = { ...state.nodes };
+        descendantIds.forEach(nodeId => {
+          delete updatedNodes[nodeId];
+        });
+
+        // Also remove any connection nodes that reference deleted nodes
+        Object.keys(updatedNodes).forEach(nodeId => {
+          const node = updatedNodes[nodeId];
+          if (node.isConnectionNode && node.connectionNodes) {
+            // Check if any connected nodes were deleted
+            const hasDeletedConnection = node.connectionNodes.some(connId =>
+              connId === nexusId || descendantIds.includes(connId)
+            );
+            if (hasDeletedConnection) {
+              delete updatedNodes[nodeId];
+            }
           }
         });
-        return descendants;
-      };
 
-      // Remove the nexus
-      const updatedNexuses = state.nexuses.filter(n => n.id !== nexusId);
-
-      // Get all descendant nodes recursively
-      const descendantIds = getAllDescendants(nexusId, state.nodes);
-      console.log(`🗑️ Found ${descendantIds.length} descendant nodes to delete`);
-
-      // Remove all descendant nodes
-      const updatedNodes = { ...state.nodes };
-      descendantIds.forEach(nodeId => {
-        delete updatedNodes[nodeId];
-      });
-
-      // Also remove any connection nodes that reference deleted nodes
-      Object.keys(updatedNodes).forEach(nodeId => {
-        const node = updatedNodes[nodeId];
-        if (node.isConnectionNode && node.connectionNodes) {
-          // Check if any connected nodes were deleted
-          const hasDeletedConnection = node.connectionNodes.some(connId =>
-            connId === nexusId || descendantIds.includes(connId)
-          );
-          if (hasDeletedConnection) {
-            delete updatedNodes[nodeId];
-          }
+        // 🔥 CRITICAL FIX: Remove from universe library
+        const updatedLibrary = { ...state.universeLibrary };
+        if (updatedLibrary[nexusId]) {
+          delete updatedLibrary[nexusId];
+          console.log('🗑️   ✅ Removed from universe library');
+        } else {
+          console.log('🗑️   ⚠️ Universe not in library (might already be deleted)');
         }
+
+        // Remove from activated conversations
+        const updatedActivated = state.activatedConversations.filter(id => id !== nexusId);
+
+        // Clear selection if we're deleting the selected nexus or any of its descendants
+        const isSelectedDeleted = state.selectedId === nexusId ||
+                                  (state.selectedId && descendantIds.includes(state.selectedId));
+        const updatedSelectedId = isSelectedDeleted ? null : state.selectedId;
+
+        // Clear activeUniverseId if we're deleting the active universe
+        const updatedActiveUniverseId = state.activeUniverseId === nexusId ? null : state.activeUniverseId;
+
+        return {
+          nexuses: updatedNexuses,
+          nodes: updatedNodes,
+          universeLibrary: updatedLibrary,
+          activatedConversations: updatedActivated,
+          selectedId: updatedSelectedId,
+          activeUniverseId: updatedActiveUniverseId,
+          showContentOverlay: updatedSelectedId === null ? false : state.showContentOverlay
+        };
       });
 
-      // Remove from activated conversations
-      const updatedActivated = state.activatedConversations.filter(id => id !== nexusId);
+      // Verify deletion
+      const updatedState = get();
+      const libraryCountAfter = Object.keys(updatedState.universeLibrary).length;
+      console.log('🗑️   Library count after:', libraryCountAfter);
+      console.log('🗑️   Universe IDs after:', Object.keys(updatedState.universeLibrary));
 
-      // Clear selection if we're deleting the selected nexus or any of its descendants
-      const isSelectedDeleted = state.selectedId === nexusId ||
-                                (state.selectedId && descendantIds.includes(state.selectedId));
-      const updatedSelectedId = isSelectedDeleted ? null : state.selectedId;
+      if (updatedState.universeLibrary[nexusId]) {
+        console.error('🗑️   ❌ ERROR: Universe still in library after deletion!');
+      } else {
+        console.log('🗑️   ✅ Verified: Universe removed from library');
+      }
 
-      console.log(`✅ Deleted conversation ${nexusId} and ${descendantIds.length} nodes`);
+      // Save to localStorage
+      console.log('🗑️   💾 Persisting deletion to localStorage...');
+      get().saveToLocalStorage();
 
-      return {
-        nexuses: updatedNexuses,
-        nodes: updatedNodes,
-        activatedConversations: updatedActivated,
-        selectedId: updatedSelectedId,
-        showContentOverlay: updatedSelectedId === null ? false : state.showContentOverlay
-      };
-    });
-    
-    // 💾 SAVE TO LOCALSTORAGE
-    get().saveToLocalStorage();
+      // Final verification: Check localStorage
+      const lsData = localStorage.getItem('aurora-portal-data');
+      if (lsData) {
+        const parsed = JSON.parse(lsData);
+        if (parsed.universeLibrary && parsed.universeLibrary[nexusId]) {
+          console.error('🗑️   ❌ ERROR: Universe still in localStorage!');
+        } else {
+          console.log('🗑️   ✅ Verified: Universe removed from localStorage');
+        }
+        console.log('🗑️   localStorage now has', Object.keys(parsed.universeLibrary || {}).length, 'universes');
+      }
+
+      console.log('🗑️   ✅ DELETE COMPLETE');
+      console.log('🗑️ ==========================================');
+
+    } catch (error) {
+      console.error('❌ ==========================================');
+      console.error('❌ CRITICAL ERROR in deleteConversation:', error);
+      console.error('❌   Error message:', (error as Error).message);
+      console.error('❌   Universe ID:', nexusId);
+      console.error('❌ ==========================================');
+
+      // Alert user
+      if (typeof window !== 'undefined') {
+        alert('⚠️ ERROR: Failed to delete universe!\n\n' + (error as Error).message + '\n\nCheck console for details.');
+      }
+    }
   },
 
   deleteNode: (nodeId: string) => {
@@ -1868,52 +2118,161 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   // 🌌 UNIVERSE MANAGEMENT FUNCTIONS
 
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => {
-    const state = get();
+    try {
+      const state = get();
 
-    // Only save if there's an active universe (has at least one nexus)
-    if (state.nexuses.length === 0) {
-      console.log('🌌 No universe to save - canvas is blank');
-      return;
+      console.log('🔍 ==========================================');
+      console.log('🔍 SAVE UNIVERSE DIAGNOSTIC:', new Date().toLocaleTimeString());
+      console.log('🔍   Active Universe ID:', state.activeUniverseId || 'null');
+      console.log('🔍   Number of nexuses:', state.nexuses.length);
+      console.log('🔍   Number of nodes:', Object.keys(state.nodes).length);
+      console.log('🔍   Current library has', Object.keys(state.universeLibrary).length, 'universes');
+      console.log('🔍   Existing universe IDs:', Object.keys(state.universeLibrary));
+
+      // VALIDATION: Check if we have data to save
+      if (state.nexuses.length === 0) {
+        console.log('🔍   ⚠️ No nexuses - not saving (canvas is blank)');
+        console.log('🔍 ==========================================');
+        return;
+      }
+
+      // VALIDATION: Check for required data
+      if (!state.nexuses[0]) {
+        throw new Error('First nexus is undefined!');
+      }
+      if (!state.nexuses[0].id) {
+        throw new Error('First nexus has no ID!');
+      }
+      if (!state.nexuses[0].title) {
+        console.warn('⚠️ First nexus has no title, using default');
+      }
+
+      // Use existing activeUniverseId or create a new one
+      let universeId = state.activeUniverseId;
+      const libraryBeforeSave = { ...state.universeLibrary };
+      const libraryCountBefore = Object.keys(libraryBeforeSave).length;
+
+      if (!universeId) {
+        // Create new universe ID from the first nexus ID
+        universeId = state.nexuses[0].id;
+        console.log('🔍   🆕 Creating new universe ID:', universeId);
+
+        // Check for ID collision
+        if (state.universeLibrary[universeId]) {
+          console.warn('⚠️ WARNING: Universe ID already exists in library! This is an UPDATE, not new.');
+        }
+      } else {
+        console.log('🔍   ♻️ Updating existing universe:', universeId);
+
+        // Verify the universe exists in the library
+        if (!state.universeLibrary[universeId]) {
+          console.warn('⚠️ WARNING: Active universe ID not found in library! Creating new entry.');
+        }
+      }
+
+      // Get title from first nexus
+      const title = state.nexuses[0]?.title || 'Untitled Universe';
+
+      // Save the universe to the library
+      const universeData: UniverseData = {
+        nexuses: state.nexuses,
+        nodes: state.nodes,
+        cameraPosition: cameraPosition || [0, 20, 30], // Default camera position
+        title,
+        lastModified: Date.now(),
+      };
+
+      console.log('🔍   📦 Universe data to save:');
+      console.log('🔍      - ID:', universeId);
+      console.log('🔍      - Title:', title);
+      console.log('🔍      - Nexuses:', universeData.nexuses.length);
+      console.log('🔍      - Nodes:', Object.keys(universeData.nodes).length);
+
+      // Update the store
+      set((state) => ({
+        activeUniverseId: universeId,
+        universeLibrary: {
+          ...state.universeLibrary,
+          [universeId!]: universeData,
+        },
+      }));
+
+      // VERIFICATION: Check that the update worked
+      const updatedState = get();
+      const libraryCountAfter = Object.keys(updatedState.universeLibrary).length;
+
+      console.log('🔍   ✅ State updated! Verifying...');
+      console.log('🔍      - Active Universe ID:', updatedState.activeUniverseId);
+      console.log('🔍      - Library count before:', libraryCountBefore);
+      console.log('🔍      - Library count after:', libraryCountAfter);
+      console.log('🔍      - Universe IDs in library:', Object.keys(updatedState.universeLibrary));
+
+      // Verify the universe is actually in the library
+      if (!updatedState.universeLibrary[universeId!]) {
+        throw new Error(`Universe ${universeId} was not added to library!`);
+      }
+
+      // Verify the data matches what we tried to save
+      const savedUniverse = updatedState.universeLibrary[universeId!];
+      if (savedUniverse.nexuses.length !== state.nexuses.length) {
+        throw new Error(`Nexus count mismatch! Expected ${state.nexuses.length}, got ${savedUniverse.nexuses.length}`);
+      }
+      if (Object.keys(savedUniverse.nodes).length !== Object.keys(state.nodes).length) {
+        throw new Error(`Node count mismatch! Expected ${Object.keys(state.nodes).length}, got ${Object.keys(savedUniverse.nodes).length}`);
+      }
+
+      console.log('🔍   ✅ State verification passed!');
+
+      // Save library to localStorage
+      console.log('🔍   💾 Persisting to localStorage...');
+      get().saveToLocalStorage();
+
+      // FINAL VERIFICATION: Check localStorage
+      const lsData = localStorage.getItem('aurora-portal-data');
+      if (!lsData) {
+        throw new Error('localStorage is empty after save!');
+      }
+
+      const parsedLS = JSON.parse(lsData);
+      if (!parsedLS.universeLibrary) {
+        throw new Error('universeLibrary missing from localStorage!');
+      }
+      if (!parsedLS.universeLibrary[universeId!]) {
+        throw new Error(`Universe ${universeId} not found in localStorage!`);
+      }
+
+      const lsCount = Object.keys(parsedLS.universeLibrary).length;
+      console.log('🔍   ✅ localStorage verification passed!');
+      console.log('🔍      - Universes in localStorage:', lsCount);
+      console.log('🔍      - Universe IDs:', Object.keys(parsedLS.universeLibrary));
+
+      if (lsCount !== libraryCountAfter) {
+        console.error('❌ COUNT MISMATCH: Store has', libraryCountAfter, 'but localStorage has', lsCount);
+      }
+
+      console.log('🔍   ✅ SAVE COMPLETE - All verifications passed!');
+      console.log('🔍 ==========================================');
+
+    } catch (error) {
+      console.error('❌ ==========================================');
+      console.error('❌ CRITICAL ERROR in saveCurrentUniverse:', error);
+      console.error('❌   Error message:', (error as Error).message);
+      console.error('❌   Error stack:', (error as Error).stack);
+
+      // Get current state for debugging
+      const debugState = get();
+      console.error('❌   Debug info:');
+      console.error('❌      - Active Universe ID:', debugState.activeUniverseId);
+      console.error('❌      - Nexuses on canvas:', debugState.nexuses.length);
+      console.error('❌      - Nodes on canvas:', Object.keys(debugState.nodes).length);
+      console.error('❌      - Library size:', Object.keys(debugState.universeLibrary).length);
+      console.error('❌ ==========================================');
+
+      // Alert user
+      if (typeof window !== 'undefined') {
+        alert('⚠️ CRITICAL ERROR: Failed to save universe!\n\n' + (error as Error).message + '\n\nCheck console for details.');
+      }
     }
-
-    // Use existing activeUniverseId or create a new one
-    let universeId = state.activeUniverseId;
-    if (!universeId) {
-      // Create new universe ID from the first nexus ID
-      universeId = state.nexuses[0].id;
-      console.log('🌌 Creating new universe with ID:', universeId);
-    }
-
-    // Get title from first nexus
-    const title = state.nexuses[0]?.title || 'Untitled Universe';
-
-    // Save the universe to the library
-    const universeData: UniverseData = {
-      nexuses: state.nexuses,
-      nodes: state.nodes,
-      cameraPosition: cameraPosition || [0, 20, 30], // Default camera position
-      title,
-      lastModified: Date.now(),
-    };
-
-    set((state) => ({
-      activeUniverseId: universeId,
-      universeLibrary: {
-        ...state.universeLibrary,
-        [universeId!]: universeData,
-      },
-    }));
-
-    console.log('🌌 ==========================================');
-    console.log('🌌 SAVED UNIVERSE:', universeId);
-    console.log('🌌 Title:', title);
-    console.log('🌌 Nexuses:', state.nexuses.length);
-    console.log('🌌 Nodes:', Object.keys(state.nodes).length);
-    console.log('🌌 Camera:', cameraPosition || 'default');
-    console.log('🌌 ==========================================');
-
-    // Save library to localStorage
-    get().saveToLocalStorage();
   },
 
   clearCanvas: () => {
@@ -1967,3 +2326,19 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     // This will require integration with the camera controls in CanvasScene
   },
 }));
+
+// 🐛 Enable showActive debug helper now that store is created
+if (typeof window !== 'undefined' && (window as any).auroraDebug) {
+  (window as any).auroraDebug.showActive = () => {
+    const state = useCanvasStore.getState();
+    console.log('🎯 ==========================================');
+    console.log('🎯 ACTIVE CANVAS STATE');
+    console.log('🎯   Active Universe ID:', state.activeUniverseId || 'none');
+    console.log('🎯   Nexuses on canvas:', state.nexuses?.length || 0);
+    console.log('🎯   Nodes on canvas:', Object.keys(state.nodes || {}).length);
+    console.log('🎯   Selected ID:', state.selectedId || 'none');
+    console.log('🎯   Library size:', Object.keys(state.universeLibrary || {}).length, 'universes');
+    console.log('🎯 ==========================================');
+    return state;
+  };
+}

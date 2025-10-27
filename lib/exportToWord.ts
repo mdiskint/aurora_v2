@@ -9,21 +9,69 @@ export interface ExportData {
 }
 
 export async function exportToWord(data: ExportData) {
-  // Helper function to split content into paragraphs
+  // Helper function to parse markdown content into Word paragraphs with proper bullet formatting
   const createContentParagraphs = (content: string) => {
-    return content.split('\n\n').map(para =>
-      new Paragraph({
-        children: [new TextRun({
-          text: para.trim(),
-          font: 'Calibri',
-          size: 24 // 12pt (size is in half-points)
-        })],
-        spacing: {
-          after: 240,
-          line: 360 // 1.5 line spacing
-        }
-      })
-    );
+    const paragraphs: Paragraph[] = [];
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Skip empty lines
+      if (!line.trim()) {
+        continue;
+      }
+
+      // Check for H3 heading (###)
+      if (line.trim().startsWith('### ')) {
+        paragraphs.push(
+          new Paragraph({
+            text: line.trim().substring(4),
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 300, after: 150 }
+          })
+        );
+      }
+      // Check for main bullet (starts with -, not indented)
+      else if (line.match(/^-\s+/)) {
+        paragraphs.push(
+          new Paragraph({
+            text: line.substring(2).trim(),
+            bullet: { level: 0 },
+            spacing: { after: 120 }
+          })
+        );
+      }
+      // Check for sub-bullet (starts with spaces then -)
+      else if (line.match(/^\s{2,}-\s+/)) {
+        // Count leading spaces to determine indent level
+        const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+        const level = Math.floor(leadingSpaces / 2); // 2 spaces = 1 level
+
+        paragraphs.push(
+          new Paragraph({
+            text: line.trim().substring(2).trim(),
+            bullet: { level: Math.min(level, 4) }, // Max 5 levels (0-4)
+            spacing: { after: 120 }
+          })
+        );
+      }
+      // Regular text (not a bullet or heading)
+      else {
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({
+              text: line.trim(),
+              font: 'Calibri',
+              size: 24
+            })],
+            spacing: { after: 200 }
+          })
+        );
+      }
+    }
+
+    return paragraphs;
   };
 
   // Build document children
