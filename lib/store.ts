@@ -30,6 +30,16 @@ if (typeof window !== 'undefined') {
       localStorage.removeItem('aurora-portal-data');
       console.log('🗑️ Library cleared from localStorage');
     },
+    recoverLibrary: () => {
+      console.log('🛡️ Attempting to recover library from backup...');
+      const store = (window as any).auroraStore;
+      if (store) {
+        return store.getState().recoverFromBackup();
+      } else {
+        console.error('❌ Store not available yet');
+        return false;
+      }
+    },
     showActive: () => {
       // Note: This function needs to be called after the store is created
       // It will be updated after store creation to have proper access
@@ -240,6 +250,10 @@ interface CanvasStore {
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
 
+  // 🛡️ BACKUP & RECOVERY
+  backupLibrary: () => void;
+  recoverFromBackup: () => boolean;
+
   // ⚓ ANCHOR SYSTEM
   toggleAnchor: (nodeId: string) => void;
   getAnchoredNodes: () => Node[];
@@ -272,6 +286,34 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 💾 SAVE TO LOCALSTORAGE
   saveToLocalStorage: () => {
     const state = get();
+
+    // 🛡️ CRITICAL: Backup existing library before any save operation
+    get().backupLibrary();
+
+    // 🛡️ CRITICAL: Verify we have data to save
+    if (!state.universeLibrary || typeof state.universeLibrary !== 'object') {
+      console.error('❌ REFUSING TO SAVE: universeLibrary is invalid!');
+      return;
+    }
+
+    // 🛡️ CRITICAL: Never save empty library if one already exists
+    const existingData = localStorage.getItem('aurora-portal-data');
+    if (existingData && existingData !== 'null') {
+      try {
+        const existing = JSON.parse(existingData);
+        const existingCount = Object.keys(existing.universeLibrary || {}).length;
+        const newCount = Object.keys(state.universeLibrary).length;
+
+        if (existingCount > 0 && newCount === 0) {
+          console.error('❌ REFUSING TO SAVE: Would overwrite', existingCount, 'universes with empty library!');
+          console.error('❌ If you want to clear the library, use window.auroraDebug.clearLibrary()');
+          return;
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not parse existing data, proceeding with save');
+      }
+    }
+
     const dataToSave = {
       universeLibrary: state.universeLibrary,
       activatedConversations: state.activatedConversations,
@@ -280,6 +322,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     try {
       const serialized = JSON.stringify(dataToSave);
+
+      // 🛡️ CRITICAL: Verify serialization didn't produce 'null' or empty
+      if (serialized === 'null' || serialized === '{}' || serialized === '{"universeLibrary":{},"activatedConversations":[]}') {
+        console.error('❌ REFUSING TO SAVE: Serialized data is empty or null!');
+        return;
+      }
+
       localStorage.setItem('aurora-portal-data', serialized);
 
       // Comprehensive logging
@@ -321,6 +370,26 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       const saved = localStorage.getItem('aurora-portal-data');
 
+      // 🛡️ CRITICAL: Check for corrupted data (null string)
+      if (saved === 'null' || saved === null) {
+        console.error('🚨 LIBRARY IS NULL OR CORRUPTED! Attempting recovery...');
+
+        // Try to recover from backup
+        const recovered = get().recoverFromBackup();
+
+        if (recovered) {
+          console.log('✅ Recovered from backup! Reloading...');
+          // Recursively call loadFromLocalStorage after recovery
+          get().loadFromLocalStorage();
+          return;
+        } else {
+          console.error('❌ No backup available - starting with empty library');
+          console.log('📂 Starting with blank canvas and empty library');
+          console.log('📂 ==========================================');
+          return;
+        }
+      }
+
       if (!saved) {
         console.log('📂 No saved data found in localStorage');
         console.log('📂 Starting with blank canvas and empty library');
@@ -329,6 +398,29 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
 
       const data = JSON.parse(saved);
+
+      // 🛡️ CRITICAL: Verify data structure
+      if (!data || typeof data !== 'object') {
+        console.error('🚨 DATA IS CORRUPTED! Attempting recovery...');
+        const recovered = get().recoverFromBackup();
+        if (recovered) {
+          get().loadFromLocalStorage();
+          return;
+        }
+        throw new Error('Data is corrupted and no backup available');
+      }
+
+      // 🛡️ CRITICAL: Verify universeLibrary exists
+      if (!data.universeLibrary || typeof data.universeLibrary !== 'object') {
+        console.error('🚨 UNIVERSE LIBRARY IS MISSING OR CORRUPTED! Attempting recovery...');
+        const recovered = get().recoverFromBackup();
+        if (recovered) {
+          get().loadFromLocalStorage();
+          return;
+        }
+        console.warn('⚠️ No backup - initializing empty library');
+        data.universeLibrary = {};
+      }
 
       // Load universe library (not the canvas - canvas stays blank)
       const universeLibrary = data.universeLibrary || {};
@@ -2382,10 +2474,69 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     // TODO: Restore camera position (will be implemented in step 8)
     // This will require integration with the camera controls in CanvasScene
   },
+
+  // 🛡️ BACKUP LIBRARY
+  backupLibrary: () => {
+    try {
+      const current = localStorage.getItem('aurora-portal-data');
+
+      // Only backup if data exists and is not null
+      if (current && current !== 'null') {
+        localStorage.setItem('aurora-portal-data-backup', current);
+        console.log('🛡️ Library backed up successfully');
+      } else {
+        console.log('🛡️ No valid data to backup');
+      }
+    } catch (error) {
+      console.error('❌ Failed to backup library:', error);
+    }
+  },
+
+  // 🛡️ RECOVER FROM BACKUP
+  recoverFromBackup: () => {
+    try {
+      const backup = localStorage.getItem('aurora-portal-data-backup');
+
+      if (!backup || backup === 'null') {
+        console.error('❌ No backup found');
+        return false;
+      }
+
+      // Verify backup is valid JSON
+      try {
+        const parsed = JSON.parse(backup);
+        if (!parsed.universeLibrary) {
+          console.error('❌ Backup is corrupted (missing universeLibrary)');
+          return false;
+        }
+      } catch (e) {
+        console.error('❌ Backup is corrupted (invalid JSON)');
+        return false;
+      }
+
+      // Restore from backup
+      localStorage.setItem('aurora-portal-data', backup);
+      console.log('✅ Successfully recovered library from backup!');
+      console.log('🛡️ Please reload the page to load recovered data');
+
+      // Alert user
+      if (typeof window !== 'undefined') {
+        alert('✅ Library recovered from backup!\n\nPlease refresh the page to load your universes.');
+      }
+
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to recover from backup:', error);
+      return false;
+    }
+  },
 }));
 
 // 🐛 Enable showActive debug helper now that store is created
 if (typeof window !== 'undefined' && (window as any).auroraDebug) {
+  // Expose store for debug helpers
+  (window as any).auroraStore = useCanvasStore;
+
   (window as any).auroraDebug.showActive = () => {
     const state = useCanvasStore.getState();
     console.log('🎯 ==========================================');
@@ -2397,5 +2548,11 @@ if (typeof window !== 'undefined' && (window as any).auroraDebug) {
     console.log('🎯   Library size:', Object.keys(state.universeLibrary || {}).length, 'universes');
     console.log('🎯 ==========================================');
     return state;
+  };
+
+  // Update recoverLibrary now that store is available
+  (window as any).auroraDebug.recoverLibrary = () => {
+    console.log('🛡️ Attempting to recover library from backup...');
+    return useCanvasStore.getState().recoverFromBackup();
   };
 }
