@@ -1354,6 +1354,24 @@ export default function CanvasScene() {
     };
   }, [addNodeFromWebSocket, addNexusFromWebSocket]);
 
+  // ⏰ AUTOSAVE INTERVAL - Backup save every 30 seconds
+  useEffect(() => {
+    console.log('⏰ Starting autosave interval (every 30 seconds)...');
+
+    const interval = setInterval(() => {
+      const state = useCanvasStore.getState();
+      if (state.nexuses.length > 0 || Object.keys(state.nodes).length > 0) {
+        console.log('⏰ AUTOSAVE triggered');
+        state.saveToLocalStorage();
+      }
+    }, 30000); // 30 seconds
+
+    return () => {
+      console.log('⏰ Clearing autosave interval');
+      clearInterval(interval);
+    };
+  }, []);
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />

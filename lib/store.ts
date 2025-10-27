@@ -83,39 +83,96 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       nexuses: state.nexuses,
       nodes: state.nodes,
       activatedConversations: state.activatedConversations,
+      timestamp: Date.now(),
     };
-    
+
     try {
-      localStorage.setItem('aurora-portal-data', JSON.stringify(dataToSave));
-      console.log('💾 Saved to localStorage:', {
-        nexusCount: state.nexuses.length,
-        nodeCount: Object.keys(state.nodes).length
-      });
+      const serialized = JSON.stringify(dataToSave);
+      localStorage.setItem('aurora-portal-data', serialized);
+
+      // Comprehensive logging
+      console.log('💾 ==========================================');
+      console.log('💾 SAVE TO LOCALSTORAGE:', new Date().toLocaleTimeString());
+      console.log('💾 Nexuses:', state.nexuses.length, state.nexuses.map(n => n.title));
+      console.log('💾 Nodes:', Object.keys(state.nodes).length, 'total');
+      console.log('💾 Data size:', (serialized.length / 1024).toFixed(2), 'KB');
+      console.log('💾 Storage key:', 'aurora-portal-data');
+      console.log('💾 ==========================================');
+
+      // Verify save worked by reading back
+      const verification = localStorage.getItem('aurora-portal-data');
+      if (!verification) {
+        throw new Error('Save verification failed - data not in localStorage!');
+      }
     } catch (error) {
-      console.error('❌ Failed to save to localStorage:', error);
+      console.error('❌ ==========================================');
+      console.error('❌ CRITICAL: Failed to save to localStorage:', error);
+      console.error('❌ ==========================================');
+
+      // Alert user of data loss risk
+      if (typeof window !== 'undefined') {
+        alert('⚠️ WARNING: Failed to save your universe!\n\nYour changes may be lost. Please:\n1. Take a screenshot\n2. Copy your content\n3. Refresh the page\n\nError: ' + (error as Error).message);
+      }
     }
   },
 
   // 📂 LOAD FROM LOCALSTORAGE
   loadFromLocalStorage: () => {
     try {
+      console.log('📂 ==========================================');
+      console.log('📂 LOAD FROM LOCALSTORAGE:', new Date().toLocaleTimeString());
+
       const saved = localStorage.getItem('aurora-portal-data');
-      if (saved) {
-        const data = JSON.parse(saved);
-        set({
-          nexuses: data.nexuses || [],
-          nodes: data.nodes || {},
-          activatedConversations: data.activatedConversations || [],
-        });
-        console.log('📂 Loaded from localStorage:', {
-          nexusCount: data.nexuses?.length || 0,
-          nodeCount: Object.keys(data.nodes || {}).length
-        });
-      } else {
+
+      if (!saved) {
         console.log('📂 No saved data found in localStorage');
+        console.log('📂 Checking for old key format...');
+
+        // Check for old 'aurora-universes' key (migration)
+        const oldSaved = localStorage.getItem('aurora-universes');
+        if (oldSaved) {
+          console.log('📂 Found data in old format! Migrating...');
+          localStorage.setItem('aurora-portal-data', oldSaved);
+          localStorage.removeItem('aurora-universes');
+          const data = JSON.parse(oldSaved);
+          set({
+            nexuses: data.nexuses || [],
+            nodes: data.nodes || {},
+            activatedConversations: data.activatedConversations || [],
+          });
+          console.log('✅ Migration complete!');
+          return;
+        }
+
+        console.log('📂 No data to load - starting fresh');
+        console.log('📂 ==========================================');
+        return;
       }
+
+      const data = JSON.parse(saved);
+
+      console.log('📂 Found data from:', data.timestamp ? new Date(data.timestamp).toLocaleString() : 'unknown time');
+      console.log('📂 Nexuses to load:', data.nexuses?.length || 0, data.nexuses?.map((n: any) => n.title) || []);
+      console.log('📂 Nodes to load:', Object.keys(data.nodes || {}).length, 'total');
+
+      set({
+        nexuses: data.nexuses || [],
+        nodes: data.nodes || {},
+        activatedConversations: data.activatedConversations || [],
+      });
+
+      console.log('✅ Successfully loaded from localStorage!');
+      console.log('📂 ==========================================');
+
     } catch (error) {
-      console.error('❌ Failed to load from localStorage:', error);
+      console.error('❌ ==========================================');
+      console.error('❌ CRITICAL: Failed to load from localStorage:', error);
+      console.error('❌ ==========================================');
+
+      // Alert user of load failure
+      if (typeof window !== 'undefined') {
+        alert('⚠️ WARNING: Failed to load your saved universes!\n\nError: ' + (error as Error).message + '\n\nPlease check the browser console for details.');
+      }
     }
   },
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import CanvasScene from '@/components/CanvasScene';
 import SectionNavigator from '@/components/SectionNavigator';
 import { useCanvasStore } from '@/lib/store';
@@ -10,6 +10,12 @@ export default function ExplorePage() {
   const loadAcademicPaperFromData = useCanvasStore((state) => state.loadAcademicPaperFromData);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 🚀 CRITICAL: LOAD DATA FROM LOCALSTORAGE WHEN PAGE LOADS
+  useEffect(() => {
+    console.log('🚀 [EXPLORE PAGE] Loading data from localStorage...');
+    useCanvasStore.getState().loadFromLocalStorage();
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
