@@ -2,7 +2,6 @@
 import React from 'react';
 import SectionNavigator from './SectionNavigator';
 import UnifiedNodeModal from './UnifiedNodeModal';
-import ExportModal from './ExportModal';
 import { useState, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Line, Text3D, Html } from '@react-three/drei';
@@ -1207,7 +1206,6 @@ function ConnectionModeHint({ isHoldingC, selectedCount }: { isHoldingC: boolean
 
 function Controls() {
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
   const nexuses = useCanvasStore((state) => state.nexuses);
 
   return (
@@ -1233,38 +1231,9 @@ function Controls() {
         )}
       </div>
 
-      {/* Export Button (top-right) */}
-      {nexuses.length > 0 && (
-        <div style={{ position: 'absolute', top: 19, right: 40, zIndex: 1000 }}>
-          <button
-            onClick={() => setShowExportModal(true)}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#9333EA',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            📄 Export Universe
-          </button>
-        </div>
-      )}
-
       <CreateNexusModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-      />
-
-      <ExportModal
-        isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
       />
     </>
   );

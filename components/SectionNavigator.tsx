@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useCanvasStore } from '@/lib/store';
 import PaperUploader from './PaperUploader';
+import ExportModal from './ExportModal';
 import { Node } from '@/lib/types';
 import { getDisplayTitle, getNodeTypeIcon } from '@/lib/titleGenerator';
 
@@ -18,7 +20,7 @@ export default function SectionNavigator() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
-  const exportToWordDoc = useCanvasStore((state) => state.exportToWordDoc);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Get current nexus (selected or most recent chat/paper nexus)
   let nexus = selectedId ? nexuses.find(n => n.id === selectedId) : null;
@@ -222,9 +224,9 @@ export default function SectionNavigator() {
       {/* Paper Upload Button */}
       <PaperUploader />
 
-      {/* Export to Word Button */}
+      {/* Export Universe Button */}
       <button
-        onClick={exportToWordDoc}
+        onClick={() => setShowExportModal(true)}
         style={{
           width: '100%',
           marginTop: '12px',
@@ -251,21 +253,14 @@ export default function SectionNavigator() {
           e.currentTarget.style.borderColor = 'rgba(147, 51, 234, 0.5)';
         }}
       >
-        <svg
-          style={{ width: '20px', height: '20px' }}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        Export to Word
+        📄 Export Universe
       </button>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+      />
     </div>
   );
 }
