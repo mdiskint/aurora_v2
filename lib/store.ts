@@ -1076,40 +1076,80 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => {
-    let newNexus: Nexus | null = null;
-    
-    set((state) => {
-      const nexusCount = state.nexuses.length;
-      
-      let position: [number, number, number];
-      
-      if (nexusCount === 0) {
-        position = [0, 0, 0];
-      } else {
-        const radius = 50;
-        const angle = (nexusCount * 2 * Math.PI) / 3;
-        position = [
-          radius * Math.cos(angle),
-          0,
-          radius * Math.sin(angle)
-        ];
-      }
-      
-      newNexus = {
-        id: `chat-${Date.now()}`,
-        position,
-        title: title,
-        content: `You: ${userMessage}\n\nClaude: ${aiResponse}`,
-        type: 'social'
-      };
-      
-      console.log(`💬 Creating Chat Nexus "${title}" at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
-      
-      return { nexuses: [...state.nexuses, newNexus] };
+    console.log('═══════════════════════════════════');
+    console.log('🆕 CREATE NEW CHAT UNIVERSE STARTED');
+    console.log('═══════════════════════════════════');
+
+    const state = get();
+
+    console.log('Current active universe:', state.activeUniverseId);
+    console.log('Current nexuses count:', state.nexuses.length);
+    console.log('Current library size:', Object.keys(state.universeLibrary).length);
+
+    // Step 1: Save old universe if exists
+    if (state.activeUniverseId && state.nexuses.length > 0) {
+      console.log('💾 Step 1: Saving old universe before creating new...');
+      get().saveCurrentUniverse();
+
+      // Verify it saved
+      const updatedLib = get().universeLibrary;
+      console.log('✅ Old universe saved. Library now has:', Object.keys(updatedLib).length);
+    } else {
+      console.log('ℹ️ Step 1: No previous universe to save');
+    }
+
+    // Step 2: Clear canvas
+    console.log('🧹 Step 2: Clearing canvas...');
+    get().clearCanvas();
+    console.log('✅ Canvas cleared');
+    console.log('Nexuses after clear:', get().nexuses.length);
+
+    // Step 3: Generate new universe ID
+    const newUniverseId = `chat-${Date.now()}`;
+    console.log('🆔 Step 3: New universe ID generated:', newUniverseId);
+
+    // Step 4: Create nexus
+    console.log('📝 Step 4: Creating nexus...');
+
+    let newNexus: Nexus = {
+      id: newUniverseId,
+      position: [0, 0, 0],
+      title: title,
+      content: `You: ${userMessage}\n\nClaude: ${aiResponse}`,
+      type: 'social'
+    };
+
+    console.log(`💬 Created Chat Nexus "${title}" with ID:`, newUniverseId);
+
+    // Step 5: Update state with NEW universe (replacing, not adding)
+    console.log('💾 Step 5: Setting state with new universe...');
+    set({
+      nexuses: [newNexus],  // Replace with single new nexus
+      nodes: {},  // Clear nodes
+      activeUniverseId: newUniverseId  // Set as active universe
     });
-    
-    // 💾 SAVE TO LOCALSTORAGE
-    get().saveToLocalStorage();
+
+    console.log('✅ State updated');
+    console.log('Active universe is now:', get().activeUniverseId);
+    console.log('Nexuses count:', get().nexuses.length);
+
+    // Step 6: IMMEDIATELY save new universe to library
+    console.log('💾 Step 6: Immediately saving new universe to library...');
+
+    // Wait a tiny bit for state to settle
+    setTimeout(() => {
+      const currentState = get();
+      console.log('Saving universe:', currentState.activeUniverseId);
+      console.log('Has nexuses:', currentState.nexuses.length);
+
+      get().saveCurrentUniverse();
+
+      // Verify
+      const finalLib = get().universeLibrary;
+      console.log('✅ FINAL: Library has', Object.keys(finalLib).length, 'universes');
+      console.log('Universe IDs:', Object.keys(finalLib));
+      console.log('═══════════════════════════════════');
+    }, 100);
     
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
@@ -2267,23 +2307,35 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   // 🌌 UNIVERSE MANAGEMENT FUNCTIONS
 
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => {
+    console.log('───────────────────────────────────');
+    console.log('💾 SAVE CURRENT UNIVERSE CALLED');
+    console.log('───────────────────────────────────');
+
     try {
       const state = get();
 
-      console.log('🔍 ==========================================');
-      console.log('🔍 SAVE UNIVERSE DIAGNOSTIC:', new Date().toLocaleTimeString());
-      console.log('🔍   Active Universe ID:', state.activeUniverseId || 'null');
-      console.log('🔍   Number of nexuses:', state.nexuses.length);
-      console.log('🔍   Number of nodes:', Object.keys(state.nodes).length);
-      console.log('🔍   Current library has', Object.keys(state.universeLibrary).length, 'universes');
-      console.log('🔍   Existing universe IDs:', Object.keys(state.universeLibrary));
+      console.log('Active Universe ID:', state.activeUniverseId);
+      console.log('Nexuses:', state.nexuses);
+      console.log('Nexuses count:', state.nexuses.length);
+      console.log('Nodes count:', Object.keys(state.nodes).length);
+      console.log('Current library size:', Object.keys(state.universeLibrary).length);
+      console.log('Current universe IDs in library:', Object.keys(state.universeLibrary));
 
-      // VALIDATION: Check if we have data to save
-      if (state.nexuses.length === 0) {
-        console.log('🔍   ⚠️ No nexuses - not saving (canvas is blank)');
-        console.log('🔍 ==========================================');
+      // Check 1: Do we have an ID?
+      if (!state.activeUniverseId) {
+        console.error('❌ SAVE FAILED: No active universe ID');
+        console.log('───────────────────────────────────');
         return;
       }
+      console.log('✅ Check 1: Has active ID:', state.activeUniverseId);
+
+      // Check 2: Do we have nexuses?
+      if (!state.nexuses || state.nexuses.length === 0) {
+        console.error('❌ SAVE FAILED: No nexuses');
+        console.log('───────────────────────────────────');
+        return;
+      }
+      console.log('✅ Check 2: Has', state.nexuses.length, 'nexuses');
 
       // VALIDATION: Check for required data
       if (!state.nexuses[0]) {
@@ -2296,48 +2348,35 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         console.warn('⚠️ First nexus has no title, using default');
       }
 
-      // Use existing activeUniverseId or create a new one
+      // Use existing activeUniverseId
       let universeId = state.activeUniverseId;
       const libraryBeforeSave = { ...state.universeLibrary };
       const libraryCountBefore = Object.keys(libraryBeforeSave).length;
 
-      if (!universeId) {
-        // Create new universe ID from the first nexus ID
-        universeId = state.nexuses[0].id;
-        console.log('🔍   🆕 Creating new universe ID:', universeId);
-
-        // Check for ID collision
-        if (state.universeLibrary[universeId]) {
-          console.warn('⚠️ WARNING: Universe ID already exists in library! This is an UPDATE, not new.');
-        }
-      } else {
-        console.log('🔍   ♻️ Updating existing universe:', universeId);
-
-        // Verify the universe exists in the library
-        if (!state.universeLibrary[universeId]) {
-          console.warn('⚠️ WARNING: Active universe ID not found in library! Creating new entry.');
-        }
-      }
+      console.log('📊 Library state before save:');
+      console.log('   - Library count:', libraryCountBefore);
+      console.log('   - Universe IDs:', Object.keys(libraryBeforeSave));
 
       // Get title from first nexus
       const title = state.nexuses[0]?.title || 'Untitled Universe';
 
-      // Save the universe to the library
+      // Create universe data object
       const universeData: UniverseData = {
         nexuses: state.nexuses,
         nodes: state.nodes,
-        cameraPosition: cameraPosition || [0, 20, 30], // Default camera position
+        cameraPosition: cameraPosition || [0, 20, 30],
         title,
         lastModified: Date.now(),
       };
 
-      console.log('🔍   📦 Universe data to save:');
-      console.log('🔍      - ID:', universeId);
-      console.log('🔍      - Title:', title);
-      console.log('🔍      - Nexuses:', universeData.nexuses.length);
-      console.log('🔍      - Nodes:', Object.keys(universeData.nodes).length);
+      console.log('📦 Universe data to save:');
+      console.log('   - ID:', universeId);
+      console.log('   - Title:', title);
+      console.log('   - Nexuses:', universeData.nexuses.length);
+      console.log('   - Nodes:', Object.keys(universeData.nodes).length);
 
-      // Update the store
+      // Update the store - ADD to library
+      console.log('💾 Adding universe to library...');
       set((state) => ({
         activeUniverseId: universeId,
         universeLibrary: {
@@ -2350,16 +2389,17 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       const updatedState = get();
       const libraryCountAfter = Object.keys(updatedState.universeLibrary).length;
 
-      console.log('🔍   ✅ State updated! Verifying...');
-      console.log('🔍      - Active Universe ID:', updatedState.activeUniverseId);
-      console.log('🔍      - Library count before:', libraryCountBefore);
-      console.log('🔍      - Library count after:', libraryCountAfter);
-      console.log('🔍      - Universe IDs in library:', Object.keys(updatedState.universeLibrary));
+      console.log('✅ State updated! Verifying...');
+      console.log('   - Active Universe ID:', updatedState.activeUniverseId);
+      console.log('   - Library count before:', libraryCountBefore);
+      console.log('   - Library count after:', libraryCountAfter);
+      console.log('   - Universe IDs in library:', Object.keys(updatedState.universeLibrary));
 
       // Verify the universe is actually in the library
       if (!updatedState.universeLibrary[universeId!]) {
         throw new Error(`Universe ${universeId} was not added to library!`);
       }
+      console.log('✅ Universe confirmed in library');
 
       // Verify the data matches what we tried to save
       const savedUniverse = updatedState.universeLibrary[universeId!];
@@ -2369,11 +2409,10 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       if (Object.keys(savedUniverse.nodes).length !== Object.keys(state.nodes).length) {
         throw new Error(`Node count mismatch! Expected ${Object.keys(state.nodes).length}, got ${Object.keys(savedUniverse.nodes).length}`);
       }
-
-      console.log('🔍   ✅ State verification passed!');
+      console.log('✅ Data integrity verified');
 
       // Save library to localStorage
-      console.log('🔍   💾 Persisting to localStorage...');
+      console.log('💾 Persisting to localStorage...');
       get().saveToLocalStorage();
 
       // FINAL VERIFICATION: Check localStorage
@@ -2391,16 +2430,18 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       }
 
       const lsCount = Object.keys(parsedLS.universeLibrary).length;
-      console.log('🔍   ✅ localStorage verification passed!');
-      console.log('🔍      - Universes in localStorage:', lsCount);
-      console.log('🔍      - Universe IDs:', Object.keys(parsedLS.universeLibrary));
+      console.log('✅ localStorage verification passed!');
+      console.log('   - Universes in localStorage:', lsCount);
+      console.log('   - Universe IDs:', Object.keys(parsedLS.universeLibrary));
 
       if (lsCount !== libraryCountAfter) {
         console.error('❌ COUNT MISMATCH: Store has', libraryCountAfter, 'but localStorage has', lsCount);
+      } else {
+        console.log('✅ Count matches between store and localStorage');
       }
 
-      console.log('🔍   ✅ SAVE COMPLETE - All verifications passed!');
-      console.log('🔍 ==========================================');
+      console.log('✅ SAVE COMPLETE - All verifications passed!');
+      console.log('───────────────────────────────────');
 
     } catch (error) {
       console.error('❌ ==========================================');
