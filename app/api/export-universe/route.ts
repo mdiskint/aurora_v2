@@ -104,56 +104,51 @@ function buildFullHistoryPrompt(
   nexus: { title: string; content: string },
   nodeDescriptions: string[]
 ): string {
-  return `Create a detailed bullet-point document from this conversation universe.
+  return `Create a comprehensive conversation transcript document in markdown format.
 
 Universe Title: "${nexus.title}"
 Universe Context: ${nexus.content}
 
-Structure your document like this:
+Format each exchange with clear labels and indentation to show conversation structure:
 
-# ${nexus.title}
+**[USER REPLY]**
+[User's actual content]
 
-## Executive Summary
-- [Key insight 1 from the exploration]
-- [Key insight 2 from the exploration]
-- [Key insight 3 from the exploration]
+**[AI RESPONSE]**
+[AI's actual content]
 
-## The Exploration Journey
-- [Major topic or phase 1]
-  - [Key finding or insight]
-  - [Supporting detail]
-  - [Supporting detail]
-- [Major topic or phase 2]
-  - [Key finding or insight]
-  - [Supporting detail]
-  - [Supporting detail]
-- [Major topic or phase 3]
-  - [Key finding or insight]
-  - [Supporting detail]
+**[SOCRATIC QUESTION]**
+[AI's question]
 
-## Key Connections & Insights
-- [Connection between ideas A and B]
-  - [What this reveals]
-  - [Why this matters]
-  - [Implication or application]
-- [Connection between ideas C and D]
-  - [What this reveals]
-  - [Why this matters]
-- [Emergent pattern or theme]
-  - [How it manifests]
-  - [Significance]
+**[USER ANSWER]**
+[User's answer to Socratic question]
 
-## Conclusions & Recommendations
-- [Recommendation 1]
-  - [Specific action item]
-  - [Expected outcome]
-  - [Timeline or priority]
-- [Recommendation 2]
-  - [Specific action item]
-  - [Expected outcome]
-- [Recommendation 3]
-  - [Specific action item]
-  - [Expected outcome]
+  **[FOLLOW-UP QUESTION]** (indented when it's a continuation)
+  [AI's follow-up]
+
+  **[USER ANSWER]**
+  [User's answer]
+
+**[CONNECTION NODE - Connecting: Topic A + Topic B + Topic C]**
+[Content from inspiration node showing synthesis]
+
+**[SYNTHESIS]**
+[Content from synthesis node]
+
+Show the full conversation tree with proper indentation:
+- Main threads at left margin
+- Replies indented 2 spaces
+- Sub-replies indented 4 spaces
+- Clearly label each exchange type
+
+Do NOT add commentary - just present the conversation as it happened.
+
+Structure:
+# ${nexus.title} - Full Conversation
+
+## Conversation Transcript
+
+[Full conversation with labels and indentation]
 
 ---
 
@@ -162,18 +157,9 @@ ${nodeDescriptions.join('\n\n')}
 
 ---
 
-Guidelines:
-- Use ONLY bullet points and sub-bullets - NO prose paragraphs
-- Use clear hierarchical structure with proper indentation
-- Main bullets (-) for primary points
-- Sub-bullets (  -) indented with 2 spaces for supporting details
-- Keep bullets concise and scannable
-- Use **bold** for emphasis on key terms
-- Organize chronologically in The Journey section
-- Focus on actionable insights and recommendations
-- Use markdown formatting: -, spaces for indentation
+Present the conversation chronologically as it unfolded. Use the node types and parent-child relationships to build the conversation tree. Label each exchange based on its type (USER REPLY, AI RESPONSE, SOCRATIC QUESTION, USER ANSWER, CONNECTION NODE, SYNTHESIS).
 
-Generate the complete bullet-point document now:`;
+Generate the complete conversation transcript now:`;
 }
 
 function buildAnalysisOnlyPrompt(
@@ -194,56 +180,64 @@ function buildAnalysisOnlyPrompt(
     `- ${n.semanticTitle || 'Insight'}: ${n.content.slice(0, 300)}`
   ).join('\n');
 
-  return `Create a concise bullet-point analysis document focusing on deliverables and actionable insights.
+  return `Create a comprehensive strategic consulting memo analyzing this conversation universe. Write in the style of McKinsey, Bain, or BCG - professional, confident, action-oriented, with a "so what?" focus.
 
 Universe Title: "${nexus.title}"
 Universe Context: ${nexus.content}
 
-Structure your document like this:
+Write COMPREHENSIVE PARAGRAPHS (5-10 sentences each) - NO bullet points. Use full prose to develop ideas thoroughly.
 
-# ${nexus.title} - Analysis
+Structure:
+
+# ${nexus.title} - Strategic Analysis
 
 ## Executive Summary
-- [Top insight 1]
-- [Top insight 2]
-- [Top insight 3]
 
-## Key Insights
-### [Insight Category 1]
-- [Main discovery or finding]
-  - [Supporting detail or evidence]
-  - [Why this matters]
-  - [Practical implication]
+Write 3-4 comprehensive paragraphs that synthesize the most critical insights, patterns, and recommendations from this conversation universe. This should be compelling enough to stand alone - a busy executive should understand the key findings and implications without reading further. Lead with the headline insight, then build out the strategic context, and conclude with the primary call to action. Each paragraph should be 5-7 sentences that flow naturally.
 
-### [Insight Category 2]
-- [Main discovery or finding]
-  - [Supporting detail or evidence]
-  - [Why this matters]
+## Key Insights Discovered
 
-### [Insight Category 3]
-- [Main discovery or finding]
-  - [Supporting detail or evidence]
+Identify and deeply analyze 3-5 of the most significant insights from the conversation. For each insight:
 
-## Important Connections
-- [How concept A relates to concept B]
-  - [What this connection reveals]
-  - [Why this matters]
-  - [Emergent pattern or opportunity]
-- [How concept C relates to concept D]
-  - [What this connection reveals]
-  - [Practical application]
+### [Insight Title - Compelling & Specific]
 
-## Recommendations & Next Steps
-- [Immediate action 1]
-  - [Specific implementation step]
-  - [Expected result]
-  - [Timeline or priority]
-- [Strategic recommendation 2]
-  - [Specific implementation step]
-  - [Expected result]
-- [Long-term recommendation 3]
-  - [Specific implementation step]
-  - [Expected result]
+Write 2-3 full paragraphs (5-7 sentences each) that:
+- Establish what was discovered and why it matters
+- Provide the evidence and reasoning behind this insight
+- Explore the implications and "so what?" factor
+- Connect to broader themes or strategic opportunities
+
+Do this for each major insight. Give each its own ### heading.
+
+## Emergent Patterns & Connections
+
+Write 3-5 comprehensive paragraphs analyzing how different ideas, themes, or concepts interconnected throughout the conversation. Identify patterns that weren't explicitly stated but emerged from the synthesis. Explain what these connections reveal about the underlying dynamics, opportunities, or challenges. Each paragraph should explore a distinct pattern or connection cluster with full development of the idea.
+
+## Strategic Recommendations
+
+Provide 3-5 key recommendations. For each recommendation:
+
+### [Recommendation Title - Clear & Action-Oriented]
+
+Write 2-3 full paragraphs (5-7 sentences each) that:
+- Present the recommendation with compelling rationale
+- Explain the expected impact and why this matters strategically
+- Detail specific implementation approaches or next steps
+- Address potential challenges or considerations
+- Connect back to the insights that support this recommendation
+
+Do this for each major recommendation. Give each its own ### heading.
+
+## Implementation Considerations
+
+Write 2-4 comprehensive paragraphs discussing the practical realities of moving forward. Address timing, sequencing, resource requirements, potential obstacles, and critical success factors. Be realistic about challenges while maintaining an action-oriented tone. Provide strategic guidance on how to prioritize and sequence the work.
+
+## Conclusion
+
+Write 2 comprehensive paragraphs that:
+- Synthesize the core message and strategic imperative
+- Reinforce the key opportunities and path forward
+- End with a compelling call to action
 
 ---
 
@@ -258,18 +252,18 @@ ${insightsList || 'None'}
 
 ---
 
-Guidelines:
-- Use ONLY bullet points and sub-bullets - NO prose paragraphs
-- Use clear hierarchical structure with proper indentation
-- Main bullets (-) for primary points
-- Sub-bullets (  -) indented with 2 spaces for supporting details
-- Use ### for insight category subheadings
-- Focus on deliverables and actionable items
-- Keep bullets concise and scannable
-- Make recommendations specific and implementable
-- Use markdown formatting: -, spaces for indentation
+Writing Guidelines:
+- Use ONLY comprehensive paragraphs - absolutely NO bullet points
+- Each paragraph should be 5-10 sentences with full development of ideas
+- Write in confident, professional consulting language
+- Focus on "so what?" - always explain why insights matter
+- Be specific and actionable in recommendations
+- Use proper markdown: # for title, ## for main sections, ### for subsections
+- Let paragraphs breathe - use line breaks between them for readability
+- Avoid jargon unless it adds precision
+- Be direct and action-oriented throughout
 
-Generate the complete bullet-point analysis document now:`;
+Generate the complete strategic consulting memo now:`;
 }
 
 function parseMarkdownToStructured(markdown: string, title: string) {
@@ -281,7 +275,6 @@ function parseMarkdownToStructured(markdown: string, title: string) {
   const sections: Array<{ heading: string; content: string }> = [];
   const sectionRegex = /^##\s+(.+?)$/gm;
 
-  let lastIndex = 0;
   let match;
   let summary = '';
 
@@ -311,7 +304,7 @@ function parseMarkdownToStructured(markdown: string, title: string) {
 
   // If no summary was found, use first paragraph after title
   if (!summary) {
-    const firstParagraphMatch = markdown.match(/^#[^\n]*\n\n(.+?)(?:\n\n|\n##|$)/s);
+    const firstParagraphMatch = markdown.match(/^#[^\n]*\n\n([\s\S]+?)(?:\n\n|\n##|$)/);
     summary = firstParagraphMatch ? firstParagraphMatch[1].trim() : 'Analysis of ' + extractedTitle;
   }
 

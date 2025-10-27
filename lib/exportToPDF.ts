@@ -70,11 +70,73 @@ export function exportToPDF(data: ExportData) {
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
 
-  // Parse summary for bullet points
+  // Conversation label patterns with colors
+  const labelPatterns = [
+    { pattern: /^\*\*\[USER REPLY\]\*\*/, label: '[USER REPLY]', color: [139, 92, 246] as [number, number, number] },
+    { pattern: /^\*\*\[AI RESPONSE\]\*\*/, label: '[AI RESPONSE]', color: [204, 85, 0] as [number, number, number] },
+    { pattern: /^\*\*\[SOCRATIC QUESTION\]\*\*/, label: '[SOCRATIC QUESTION]', color: [255, 215, 0] as [number, number, number] },
+    { pattern: /^\*\*\[USER ANSWER\]\*\*/, label: '[USER ANSWER]', color: [139, 92, 246] as [number, number, number] },
+    { pattern: /^\*\*\[FOLLOW-UP QUESTION\]\*\*/, label: '[FOLLOW-UP QUESTION]', color: [255, 215, 0] as [number, number, number] },
+    { pattern: /^\*\*\[CONNECTION NODE[^\]]*\]\*\*/, label: null, color: [0, 255, 212] as [number, number, number] },
+    { pattern: /^\*\*\[SYNTHESIS\]\*\*/, label: '[SYNTHESIS]', color: [168, 85, 247] as [number, number, number] }
+  ];
+
+  // Helper to process a line and check for conversation labels
+  const processLine = (line: string) => {
+    // Check for conversation labels
+    for (const labelPattern of labelPatterns) {
+      const match = line.match(labelPattern.pattern);
+      if (match) {
+        const labelText = labelPattern.label || match[0].replace(/^\*\*\[|\]\*\*$/g, '');
+        const restOfLine = line.substring(match[0].length).trim();
+        const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+        const indent = marginLeft + (leadingSpaces / 2) * 12.7; // 2 spaces ≈ 0.5 inch ≈ 12.7mm
+
+        checkNewPage(7);
+
+        // Draw colored bold label
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(labelPattern.color[0], labelPattern.color[1], labelPattern.color[2]);
+        doc.text(`[${labelText}]`, indent, yPosition);
+
+        // Calculate label width to position rest of text
+        const labelWidth = doc.getTextWidth(`[${labelText}] `);
+
+        // Draw rest of line in black
+        if (restOfLine) {
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          const wrappedLines = doc.splitTextToSize(restOfLine, maxWidth - (indent - marginLeft) - labelWidth);
+          wrappedLines.forEach((wrapped: string, idx: number) => {
+            if (idx > 0) {
+              checkNewPage(7);
+              doc.text(wrapped, indent, yPosition);
+            } else {
+              doc.text(wrapped, indent + labelWidth, yPosition);
+            }
+            yPosition += 7;
+          });
+        } else {
+          doc.setTextColor(0, 0, 0);
+          yPosition += 7;
+        }
+
+        return true; // Label was processed
+      }
+    }
+    return false; // No label found
+  };
+
+  // Parse summary for bullet points and conversation labels
   const summaryLinesArray = data.summary.split('\n');
   summaryLinesArray.forEach((line: string) => {
     if (!line.trim()) {
       yPosition += 3;
+      return;
+    }
+
+    // Check for conversation labels first
+    if (processLine(line)) {
       return;
     }
 
@@ -107,12 +169,14 @@ export function exportToPDF(data: ExportData) {
         yPosition += 7;
       });
     }
-    // Regular text
+    // Regular text with indentation
     else {
-      const textLines = doc.splitTextToSize(line.trim(), maxWidth);
+      const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+      const indent = marginLeft + (leadingSpaces / 2) * 12.7; // 2 spaces ≈ 0.5 inch
+      const textLines = doc.splitTextToSize(line.trim(), maxWidth - (indent - marginLeft));
       textLines.forEach((textLine: string) => {
         checkNewPage(7);
-        doc.text(textLine, marginLeft, yPosition);
+        doc.text(textLine, indent, yPosition);
         yPosition += 7;
       });
     }
@@ -138,7 +202,7 @@ export function exportToPDF(data: ExportData) {
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
 
-    // Parse content line by line for bullet handling
+    // Parse content line by line for bullet handling and conversation labels
     const lines = section.content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -147,6 +211,11 @@ export function exportToPDF(data: ExportData) {
       // Skip empty lines
       if (!line.trim()) {
         yPosition += 3;
+        continue;
+      }
+
+      // Check for conversation labels first
+      if (processLine(line)) {
         continue;
       }
 
@@ -211,12 +280,14 @@ export function exportToPDF(data: ExportData) {
         continue;
       }
 
-      // Regular text (not a bullet)
+      // Regular text with indentation
       checkNewPage(7);
-      const textLines = doc.splitTextToSize(line.trim(), maxWidth);
+      const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+      const indent = marginLeft + (leadingSpaces / 2) * 12.7; // 2 spaces ≈ 0.5 inch
+      const textLines = doc.splitTextToSize(line.trim(), maxWidth - (indent - marginLeft));
       textLines.forEach((textLine: string) => {
         checkNewPage(7);
-        doc.text(textLine, marginLeft, yPosition);
+        doc.text(textLine, indent, yPosition);
         yPosition += 7;
       });
       yPosition += 3;

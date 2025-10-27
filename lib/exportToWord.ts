@@ -14,6 +14,17 @@ export async function exportToWord(data: ExportData) {
     const paragraphs: Paragraph[] = [];
     const lines = content.split('\n');
 
+    // Conversation label detection with colors
+    const labelPatterns = [
+      { pattern: /^\*\*\[USER REPLY\]\*\*/, label: '[USER REPLY]', color: '8B5CF6' },
+      { pattern: /^\*\*\[AI RESPONSE\]\*\*/, label: '[AI RESPONSE]', color: 'CC5500' },
+      { pattern: /^\*\*\[SOCRATIC QUESTION\]\*\*/, label: '[SOCRATIC QUESTION]', color: 'FFD700' },
+      { pattern: /^\*\*\[USER ANSWER\]\*\*/, label: '[USER ANSWER]', color: '8B5CF6' },
+      { pattern: /^\*\*\[FOLLOW-UP QUESTION\]\*\*/, label: '[FOLLOW-UP QUESTION]', color: 'FFD700' },
+      { pattern: /^\*\*\[CONNECTION NODE[^\]]*\]\*\*/, label: null, color: '00FFD4' }, // Dynamic label
+      { pattern: /^\*\*\[SYNTHESIS\]\*\*/, label: '[SYNTHESIS]', color: 'A855F7' }
+    ];
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
@@ -21,6 +32,55 @@ export async function exportToWord(data: ExportData) {
       if (!line.trim()) {
         continue;
       }
+
+      // Check for conversation labels (e.g., **[USER REPLY]**)
+      let labelMatch = null;
+      for (const labelPattern of labelPatterns) {
+        const match = line.match(labelPattern.pattern);
+        if (match) {
+          const labelText = labelPattern.label || match[0].replace(/^\*\*\[|\]\*\*$/g, '');
+          const restOfLine = line.substring(match[0].length).trim();
+
+          // Get indent level from leading spaces
+          const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+          const indentInches = (leadingSpaces / 2) * 0.5; // 2 spaces = 0.5 inch
+
+          // Create paragraph with colored label
+          const children: TextRun[] = [
+            new TextRun({
+              text: `[${labelText}]`,
+              bold: true,
+              color: labelPattern.color,
+              font: 'Calibri',
+              size: 24
+            })
+          ];
+
+          // Add rest of line if present
+          if (restOfLine) {
+            children.push(
+              new TextRun({
+                text: ' ' + restOfLine,
+                font: 'Calibri',
+                size: 24
+              })
+            );
+          }
+
+          paragraphs.push(
+            new Paragraph({
+              children,
+              spacing: { after: 120, before: 100 },
+              indent: { left: Math.round(indentInches * 1440) } // Convert inches to twips
+            })
+          );
+
+          labelMatch = true;
+          break;
+        }
+      }
+
+      if (labelMatch) continue;
 
       // Check for H3 heading (###)
       if (line.trim().startsWith('### ')) {
@@ -56,8 +116,12 @@ export async function exportToWord(data: ExportData) {
           })
         );
       }
-      // Regular text (not a bullet or heading)
+      // Regular text with proper indentation
       else {
+        // Count leading spaces for indentation
+        const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+        const indentInches = (leadingSpaces / 2) * 0.5; // 2 spaces = 0.5 inch
+
         paragraphs.push(
           new Paragraph({
             children: [new TextRun({
@@ -65,7 +129,8 @@ export async function exportToWord(data: ExportData) {
               font: 'Calibri',
               size: 24
             })],
-            spacing: { after: 200 }
+            spacing: { after: 200 },
+            indent: { left: Math.round(indentInches * 1440) } // Convert inches to twips
           })
         );
       }
