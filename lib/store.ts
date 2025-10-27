@@ -240,6 +240,10 @@ interface CanvasStore {
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
 
+  // ⚓ ANCHOR SYSTEM
+  toggleAnchor: (nodeId: string) => void;
+  getAnchoredNodes: () => Node[];
+
   // 🌌 UNIVERSE MANAGEMENT
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => void;
   clearCanvas: () => void;
@@ -2113,6 +2117,59 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
+  },
+
+  // ⚓ ANCHOR SYSTEM FUNCTIONS
+
+  toggleAnchor: (nodeId: string) => {
+    console.log('⚓ ==========================================');
+    console.log('⚓ TOGGLE ANCHOR:', new Date().toLocaleTimeString());
+    console.log('⚓   Node ID:', nodeId);
+
+    const state = get();
+    const node = state.nodes[nodeId];
+
+    if (!node) {
+      console.error('⚓   ❌ Node not found:', nodeId);
+      return;
+    }
+
+    const wasAnchored = node.isAnchored || false;
+    const newAnchoredState = !wasAnchored;
+
+    console.log('⚓   Previous state:', wasAnchored ? 'anchored' : 'not anchored');
+    console.log('⚓   New state:', newAnchoredState ? 'anchored' : 'not anchored');
+
+    // Update the node
+    const updatedNode: Node = {
+      ...node,
+      isAnchored: newAnchoredState,
+      anchoredAt: newAnchoredState ? Date.now() : undefined
+    };
+
+    set({
+      nodes: {
+        ...state.nodes,
+        [nodeId]: updatedNode
+      }
+    });
+
+    console.log('⚓   ✅ Node', newAnchoredState ? 'anchored' : 'unanchored');
+    console.log('⚓   Title:', node.semanticTitle || node.content.slice(0, 50) + '...');
+    console.log('⚓ ==========================================');
+
+    // Save to localStorage
+    get().saveToLocalStorage();
+  },
+
+  getAnchoredNodes: () => {
+    const nodes = get().nodes;
+    const anchoredNodes = Object.values(nodes)
+      .filter(node => node.isAnchored)
+      .sort((a, b) => (b.anchoredAt || 0) - (a.anchoredAt || 0)); // Most recent first
+
+    console.log('⚓ Getting anchored nodes:', anchoredNodes.length, 'found');
+    return anchoredNodes;
   },
 
   // 🌌 UNIVERSE MANAGEMENT FUNCTIONS

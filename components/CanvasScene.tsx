@@ -2,9 +2,9 @@
 import React from 'react';
 import SectionNavigator from './SectionNavigator';
 import UnifiedNodeModal from './UnifiedNodeModal';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid, Line, Text3D, Html } from '@react-three/drei';
+import { OrbitControls, Grid, Line, Text3D, Html, Points, PointMaterial } from '@react-three/drei';
 import { useCanvasStore } from '@/lib/store';
 import CreateNexusModal from './CreateNexusModal';
 import * as THREE from 'three';
@@ -61,6 +61,46 @@ function CameraPositionManager() {
   }, [activeUniverseId, universeLibrary, camera]);
 
   return null;
+}
+
+function NodeSparkles({ position }: { position: [number, number, number] }) {
+  const pointsRef = useRef<any>();
+
+  // Create sparkle positions in a ring around the node
+  const particles = useMemo(() => {
+    const temp = [];
+    for (let i = 0; i < 20; i++) {
+      const angle = (Math.PI * 2 * i) / 20;
+      const radius = 1.3; // Just outside the node
+      temp.push(
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+        (Math.random() - 0.5) * 0.3
+      );
+    }
+    return new Float32Array(temp);
+  }, []);
+
+  // Rotate sparkles continuously
+  useFrame(() => {
+    if (pointsRef.current) {
+      pointsRef.current.rotation.z += 0.01; // Slow rotation
+    }
+  });
+
+  return (
+    <group position={position}>
+      <Points ref={pointsRef} positions={particles} stride={3}>
+        <PointMaterial
+          transparent
+          color="#FFD700"
+          size={0.08}
+          sizeAttenuation={true}
+          opacity={0.9}
+        />
+      </Points>
+    </group>
+  );
 }
 
 function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter, onPointerLeave, scale = 1 }: any) {
@@ -1210,6 +1250,11 @@ if (node.nodeType === 'synthesis') {
                   );
                 })}
               </>
+            )}
+
+            {/* Anchor Indicator - Sparkles orbiting around anchored nodes */}
+            {node.isAnchored && (
+              <NodeSparkles position={node.position} />
             )}
           </group>
         );

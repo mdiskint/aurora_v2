@@ -22,6 +22,7 @@ export default function UnifiedNodeModal() {
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
   const quotedText = useCanvasStore((state) => state.quotedText);
   const createMetaInspirationNode = useCanvasStore((state) => state.createMetaInspirationNode);
+  const toggleAnchor = useCanvasStore((state) => state.toggleAnchor);
 
   // Content editing state
   const [editedContent, setEditedContent] = useState('');
@@ -36,6 +37,7 @@ export default function UnifiedNodeModal() {
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [showAnchorFeedback, setShowAnchorFeedback] = useState(false);
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -667,6 +669,30 @@ export default function UnifiedNodeModal() {
                   </div>
                 </div>
               </div>
+
+              {/* Anchor Button - Top Center */}
+              {node && !isConnectionNode && !node.id.startsWith('meta-inspiration') && (
+                <div className="flex flex-col items-center mx-6">
+                  <button
+                    onClick={() => {
+                      toggleAnchor(node.id);
+                      setShowAnchorFeedback(true);
+                      setTimeout(() => setShowAnchorFeedback(false), 2000);
+                    }}
+                    className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
+                      ${node.isAnchored
+                        ? 'bg-yellow-600/40 border-2 border-yellow-400 text-yellow-200'
+                        : 'bg-transparent hover:bg-yellow-600/20 border-2 border-yellow-500/50 text-yellow-300'}`}
+                  >
+                    ⚓ {node.isAnchored ? 'Anchored' : 'Anchor Node'}
+                  </button>
+                  {showAnchorFeedback && (
+                    <div className="text-xs text-cyan-300 mt-1 animate-pulse">
+                      {node.isAnchored ? '✓ Anchored!' : '✓ Removed'}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleClose}

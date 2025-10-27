@@ -16,4 +16,6 @@ export interface Node {
   isSynthesis?: boolean;       // Flag to identify synthesis/insight nodes
   nodeType?: NodeType;         // Visual type for geometry and color
   semanticTitle?: string;      // AI-generated 5-10 word summary for navigation
+  isAnchored?: boolean;        // Flag to mark this node as anchored for quick navigation
+  anchoredAt?: number;         // Timestamp when node was anchored
 }

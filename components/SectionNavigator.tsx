@@ -20,7 +20,11 @@ export default function SectionNavigator() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
+  const getAnchoredNodes = useCanvasStore((state) => state.getAnchoredNodes);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // Get all anchored nodes
+  const anchoredNodes = getAnchoredNodes();
 
   // Get current nexus (selected or most recent chat/paper nexus)
   let nexus = selectedId ? nexuses.find(n => n.id === selectedId) : null;
@@ -217,6 +221,87 @@ export default function SectionNavigator() {
         paddingRight: '8px',
         marginBottom: '12px',
       }}>
+        {/* Anchored Nodes Section */}
+        {anchoredNodes.length > 0 && (
+          <>
+            <div style={{
+              color: '#FFD700',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              padding: '8px 12px',
+              borderBottom: '2px solid rgba(255, 215, 0, 0.3)',
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <span>⚓</span>
+              <span>ANCHORED NODES ({anchoredNodes.length})</span>
+            </div>
+
+            {anchoredNodes.map(node => {
+              const label = getNodeLabel(node);
+              const icon = getNodeTypeIcon(node.nodeType);
+
+              return (
+                <div
+                  key={node.id}
+                  onClick={() => handleClick(node.id)}
+                  style={{
+                    padding: '8px 12px',
+                    marginBottom: '4px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    backgroundColor: selectedId === node.id
+                      ? 'rgba(255, 215, 0, 0.2)'
+                      : 'transparent',
+                    border: selectedId === node.id
+                      ? '2px solid #FFD700'
+                      : '2px solid transparent',
+                    borderLeft: '3px solid #FFD700',
+                    color: selectedId === node.id ? '#FFD700' : '#F3E99F',
+                    transition: 'all 0.2s',
+                    fontSize: '12px',
+                    fontWeight: selectedId === node.id ? 'bold' : 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: '1.4',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '6px',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedId !== node.id) {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 215, 0, 0.1)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedId !== node.id) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }
+                  }}
+                >
+                  <span style={{
+                    fontSize: '14px',
+                    lineHeight: '1.2',
+                    flexShrink: 0,
+                  }}>
+                    {icon || '•'}
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    {label}
+                  </span>
+                </div>
+              );
+            })}
+
+            <div style={{
+              height: '1px',
+              background: 'linear-gradient(90deg, rgba(255,215,0,0.5) 0%, rgba(255,215,0,0) 100%)',
+              margin: '12px 0'
+            }} />
+          </>
+        )}
+
         {/* Render complete tree */}
         <TreeNodeComponent treeNode={tree} />
       </div>
