@@ -4,10 +4,10 @@ import { useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store';
 
 export default function Home() {
-  // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN APP STARTS
+  // 🚀 BLANK CANVAS ON STARTUP - Universes load on demand from Memories
   useEffect(() => {
-    console.log('🚀 Loading data from localStorage...');
-    useCanvasStore.getState().loadFromLocalStorage();
+    console.log('🚀 [HOME] Starting with blank canvas - no auto-load');
+    // loadFromLocalStorage(); // ← Removed: Canvas should start EMPTY
   }, []);
 
   const handleCreate = () => {

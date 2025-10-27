@@ -11,10 +11,10 @@ export default function ExplorePage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 🚀 CRITICAL: LOAD DATA FROM LOCALSTORAGE WHEN PAGE LOADS
+  // 🚀 BLANK CANVAS ON STARTUP - Universes load on demand from Memories
   useEffect(() => {
-    console.log('🚀 [EXPLORE PAGE] Loading data from localStorage...');
-    useCanvasStore.getState().loadFromLocalStorage();
+    console.log('🚀 [EXPLORE PAGE] Starting with blank canvas - no auto-load');
+    // loadFromLocalStorage(); // ← Removed: Canvas should start EMPTY
   }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -11,6 +11,58 @@ import * as THREE from 'three';
 import { useCameraAnimation } from '@/lib/useCameraAnimation';
 import { io } from 'socket.io-client';
 
+// 📸 Camera-tracking OrbitControls component
+function TrackedOrbitControls() {
+  const controlsRef = useRef<any>(null);
+  const saveCurrentUniverse = useCanvasStore((state) => state.saveCurrentUniverse);
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (!controlsRef.current) return;
+
+    const handleCameraChange = () => {
+      const position = camera.position;
+      const cameraPos: [number, number, number] = [position.x, position.y, position.z];
+      console.log('📸 Camera moved, saving position:', cameraPos);
+      saveCurrentUniverse(cameraPos);
+    };
+
+    // Listen to the 'end' event (fired when user stops dragging)
+    controlsRef.current.addEventListener('end', handleCameraChange);
+
+    return () => {
+      if (controlsRef.current) {
+        controlsRef.current.removeEventListener('end', handleCameraChange);
+      }
+    };
+  }, [camera, saveCurrentUniverse]);
+
+  return <OrbitControls ref={controlsRef} enableDamping dampingFactor={0.05} />;
+}
+
+// 📸 Camera Position Manager - Restores camera when universe loads
+function CameraPositionManager() {
+  const { camera } = useThree();
+  const activeUniverseId = useCanvasStore((state) => state.activeUniverseId);
+  const universeLibrary = useCanvasStore((state) => state.universeLibrary);
+  const prevUniverseId = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Only restore if universe changed (not on initial mount or same universe)
+    if (activeUniverseId && activeUniverseId !== prevUniverseId.current) {
+      const universeData = universeLibrary[activeUniverseId];
+      if (universeData?.cameraPosition) {
+        const [x, y, z] = universeData.cameraPosition;
+        console.log('📸 Restoring camera position:', universeData.cameraPosition);
+        camera.position.set(x, y, z);
+      }
+      prevUniverseId.current = activeUniverseId;
+    }
+  }, [activeUniverseId, universeLibrary, camera]);
+
+  return null;
+}
+
 function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter, onPointerLeave, scale = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
@@ -1372,6 +1424,21 @@ export default function CanvasScene() {
     };
   }, []);
 
+  // 💾 SAVE ON PAGE UNLOAD - Capture universe before user leaves
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log('💾 Page unloading - saving current universe...');
+      const state = useCanvasStore.getState();
+      state.saveCurrentUniverse();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
@@ -1380,7 +1447,8 @@ export default function CanvasScene() {
       {hasUniverse && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
         <Scene isHoldingC={isHoldingC} />
-        <OrbitControls enableDamping dampingFactor={0.05} />
+        <TrackedOrbitControls />
+        <CameraPositionManager />
       </Canvas>
     </div>
   );

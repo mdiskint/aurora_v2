@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useCanvasStore } from '@/lib/store';
 import dynamic from 'next/dynamic';
 import ChatInterface from '@/components/ChatInterface';
 import Navigation from '@/components/Navigation';
@@ -11,11 +9,8 @@ const CanvasScene = dynamic(() => import('@/components/CanvasScene'), {
 });
 
 export default function ChatPage() {
-  // 🚀 CRITICAL: LOAD DATA FROM LOCALSTORAGE WHEN PAGE LOADS
-  useEffect(() => {
-    console.log('🚀 [CHAT PAGE] Loading data from localStorage...');
-    useCanvasStore.getState().loadFromLocalStorage();
-  }, []);
+  // 🚀 BLANK CANVAS ON STARTUP - Universes load on demand from Memories
+  console.log('🚀 [CHAT PAGE] Starting with blank canvas - no auto-load');
 
   return (
     <>

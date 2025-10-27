@@ -12,7 +12,20 @@ interface Nexus {
   type?: 'academic' | 'social';
 }
 
+interface UniverseData {
+  nexuses: Nexus[];
+  nodes: { [id: string]: Node };
+  cameraPosition: [number, number, number];
+  title: string;
+  lastModified: number;
+}
+
 interface CanvasStore {
+  // 🌌 UNIVERSE LIBRARY - Each universe stored separately
+  activeUniverseId: string | null;
+  universeLibrary: { [id: string]: UniverseData };
+
+  // Current canvas state (what's visible)
   nexuses: Nexus[];
   nodes: { [id: string]: Node };
   selectedId: string | null;
@@ -60,9 +73,19 @@ interface CanvasStore {
   deleteNode: (nodeId: string) => void;
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
+
+  // 🌌 UNIVERSE MANAGEMENT
+  saveCurrentUniverse: (cameraPosition?: [number, number, number]) => void;
+  clearCanvas: () => void;
+  loadUniverse: (universeId: string) => void;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
+  // 🌌 UNIVERSE LIBRARY - Start with blank canvas
+  activeUniverseId: null,
+  universeLibrary: {},
+
+  // Current canvas state (empty on startup)
   nexuses: [],
   nodes: {},
   selectedId: null,
@@ -80,8 +103,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   saveToLocalStorage: () => {
     const state = get();
     const dataToSave = {
-      nexuses: state.nexuses,
-      nodes: state.nodes,
+      universeLibrary: state.universeLibrary,
       activatedConversations: state.activatedConversations,
       timestamp: Date.now(),
     };
@@ -91,10 +113,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       localStorage.setItem('aurora-portal-data', serialized);
 
       // Comprehensive logging
+      const universeCount = Object.keys(state.universeLibrary).length;
       console.log('💾 ==========================================');
       console.log('💾 SAVE TO LOCALSTORAGE:', new Date().toLocaleTimeString());
-      console.log('💾 Nexuses:', state.nexuses.length, state.nexuses.map(n => n.title));
-      console.log('💾 Nodes:', Object.keys(state.nodes).length, 'total');
+      console.log('💾 Universes in library:', universeCount);
+      if (universeCount > 0) {
+        Object.entries(state.universeLibrary).forEach(([id, data]) => {
+          console.log(`💾   - ${data.title} (${data.nexuses.length} nexuses, ${Object.keys(data.nodes).length} nodes)`);
+        });
+      }
       console.log('💾 Data size:', (serialized.length / 1024).toFixed(2), 'KB');
       console.log('💾 Storage key:', 'aurora-portal-data');
       console.log('💾 ==========================================');
@@ -126,42 +153,37 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       if (!saved) {
         console.log('📂 No saved data found in localStorage');
-        console.log('📂 Checking for old key format...');
-
-        // Check for old 'aurora-universes' key (migration)
-        const oldSaved = localStorage.getItem('aurora-universes');
-        if (oldSaved) {
-          console.log('📂 Found data in old format! Migrating...');
-          localStorage.setItem('aurora-portal-data', oldSaved);
-          localStorage.removeItem('aurora-universes');
-          const data = JSON.parse(oldSaved);
-          set({
-            nexuses: data.nexuses || [],
-            nodes: data.nodes || {},
-            activatedConversations: data.activatedConversations || [],
-          });
-          console.log('✅ Migration complete!');
-          return;
-        }
-
-        console.log('📂 No data to load - starting fresh');
+        console.log('📂 Starting with blank canvas and empty library');
         console.log('📂 ==========================================');
         return;
       }
 
       const data = JSON.parse(saved);
 
+      // Load universe library (not the canvas - canvas stays blank)
+      const universeLibrary = data.universeLibrary || {};
+      const universeCount = Object.keys(universeLibrary).length;
+
       console.log('📂 Found data from:', data.timestamp ? new Date(data.timestamp).toLocaleString() : 'unknown time');
-      console.log('📂 Nexuses to load:', data.nexuses?.length || 0, data.nexuses?.map((n: any) => n.title) || []);
-      console.log('📂 Nodes to load:', Object.keys(data.nodes || {}).length, 'total');
+      console.log('📂 Universes in library:', universeCount);
+
+      if (universeCount > 0) {
+        Object.entries(universeLibrary).forEach(([id, uData]: [string, any]) => {
+          console.log(`📂   - ${uData.title} (${uData.nexuses.length} nexuses, ${Object.keys(uData.nodes).length} nodes)`);
+        });
+      }
 
       set({
-        nexuses: data.nexuses || [],
-        nodes: data.nodes || {},
+        universeLibrary,
         activatedConversations: data.activatedConversations || [],
+        // Canvas stays blank - user loads universes from Memories
+        nexuses: [],
+        nodes: {},
+        activeUniverseId: null,
       });
 
-      console.log('✅ Successfully loaded from localStorage!');
+      console.log('✅ Successfully loaded universe library from localStorage!');
+      console.log('📂 Canvas remains blank - load universes from Memories page');
       console.log('📂 ==========================================');
 
     } catch (error) {
@@ -177,25 +199,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
+    // 🌌 STEP 1: Save current universe before starting a new one
+    const currentState = get();
+    if (currentState.nexuses.length > 0) {
+      console.log('🌌 Saving current universe before creating new one...');
+      get().saveCurrentUniverse();
+    }
+
+    // 🌌 STEP 2: Clear canvas for new universe
+    console.log('🌌 Clearing canvas for new universe...');
+    get().clearCanvas();
+
+    // 🌌 STEP 3: Create the new nexus
     let newNexus: Nexus | null = null;
-    
+
     set((state) => {
-      const nexusCount = state.nexuses.length;
-      
-      let position: [number, number, number];
-      
-      if (nexusCount === 0) {
-        position = [0, 0, 0];
-      } else {
-        const radius = 50;
-        const angle = (nexusCount * 2 * Math.PI) / 3;
-        position = [
-          radius * Math.cos(angle),
-          0,
-          radius * Math.sin(angle)
-        ];
-      }
-      
+      const position: [number, number, number] = [0, 0, 0]; // First nexus always at origin
+
       newNexus = {
         id: `nexus-${Date.now()}`,
         position,
@@ -205,28 +225,25 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         audioUrl,
         type: 'social',
       };
-      
-      console.log(`🟢 Creating Nexus ${nexusCount + 1} at [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
-      
-      return { nexuses: [...state.nexuses, newNexus] };
+
+      console.log(`🟢 Creating NEW Universe: "${title}" at origin`);
+
+      return { nexuses: [newNexus] }; // Start fresh with just this nexus
     });
-    
-    // 💾 SAVE TO LOCALSTORAGE
-    get().saveToLocalStorage();
-    
+
+    // 🌌 STEP 4: Auto-save the new universe to library
+    console.log('🌌 Auto-saving new universe to library...');
+    get().saveCurrentUniverse();
+
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
-      console.log('🔍 Checking for socket...', typeof window !== 'undefined' ? (window as any).socket : 'window is undefined');
       const socket = typeof window !== 'undefined' ? (window as any).socket : null;
       if (socket) {
-        console.log('✅ Socket found! Broadcasting...');
         socket.emit('create_nexus', {
           portalId: 'default-portal',
           ...newNexus
         });
         console.log('📤 Broadcasting nexus creation:', newNexus.id);
-      } else {
-        console.error('❌ No socket available for broadcasting!');
       }
     }
   },
@@ -296,13 +313,17 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   loadAcademicPaperFromData: (data: any) => {
     console.log('📚 Loading academic paper from uploaded data');
-    
-    set({
-      nexuses: [],
-      nodes: {},
-      selectedId: null,
-      showContentOverlay: false
-    });
+
+    // 🌌 STEP 1: Save current universe before loading paper
+    const currentState = get();
+    if (currentState.nexuses.length > 0) {
+      console.log('🌌 Saving current universe before loading paper...');
+      get().saveCurrentUniverse();
+    }
+
+    // 🌌 STEP 2: Clear canvas for new paper
+    console.log('🌌 Clearing canvas for new paper...');
+    get().clearCanvas();
 
     const nexus: Nexus = {
       id: data.nexus.id || 'uploaded-paper-nexus',
@@ -352,8 +373,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     set({ nexuses, nodes });
 
-    // 💾 SAVE TO LOCALSTORAGE
-    get().saveToLocalStorage();
+    // 🌌 Auto-save the new paper universe to library
+    console.log('🌌 Auto-saving paper universe to library...');
+    get().saveCurrentUniverse();
 
     console.log(`✅ Loaded paper: ${nexus.title} with ${data.sections.length} sections`);
 
@@ -1841,5 +1863,107 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
+  },
+
+  // 🌌 UNIVERSE MANAGEMENT FUNCTIONS
+
+  saveCurrentUniverse: (cameraPosition?: [number, number, number]) => {
+    const state = get();
+
+    // Only save if there's an active universe (has at least one nexus)
+    if (state.nexuses.length === 0) {
+      console.log('🌌 No universe to save - canvas is blank');
+      return;
+    }
+
+    // Use existing activeUniverseId or create a new one
+    let universeId = state.activeUniverseId;
+    if (!universeId) {
+      // Create new universe ID from the first nexus ID
+      universeId = state.nexuses[0].id;
+      console.log('🌌 Creating new universe with ID:', universeId);
+    }
+
+    // Get title from first nexus
+    const title = state.nexuses[0]?.title || 'Untitled Universe';
+
+    // Save the universe to the library
+    const universeData: UniverseData = {
+      nexuses: state.nexuses,
+      nodes: state.nodes,
+      cameraPosition: cameraPosition || [0, 20, 30], // Default camera position
+      title,
+      lastModified: Date.now(),
+    };
+
+    set((state) => ({
+      activeUniverseId: universeId,
+      universeLibrary: {
+        ...state.universeLibrary,
+        [universeId!]: universeData,
+      },
+    }));
+
+    console.log('🌌 ==========================================');
+    console.log('🌌 SAVED UNIVERSE:', universeId);
+    console.log('🌌 Title:', title);
+    console.log('🌌 Nexuses:', state.nexuses.length);
+    console.log('🌌 Nodes:', Object.keys(state.nodes).length);
+    console.log('🌌 Camera:', cameraPosition || 'default');
+    console.log('🌌 ==========================================');
+
+    // Save library to localStorage
+    get().saveToLocalStorage();
+  },
+
+  clearCanvas: () => {
+    console.log('🌌 Clearing canvas - all nexuses and nodes removed');
+    set({
+      nexuses: [],
+      nodes: {},
+      selectedId: null,
+      activeUniverseId: null,
+      showContentOverlay: false,
+      showReplyModal: false,
+      quotedText: null,
+      hoveredNodeId: null,
+      connectionModeNodeA: null,
+      connectionModeActive: false,
+      selectedNodesForConnection: [],
+    });
+    console.log('✅ Canvas cleared - ready for new universe');
+  },
+
+  loadUniverse: (universeId: string) => {
+    const state = get();
+    const universeData = state.universeLibrary[universeId];
+
+    if (!universeData) {
+      console.error('❌ Universe not found:', universeId);
+      return;
+    }
+
+    console.log('🌌 ==========================================');
+    console.log('🌌 LOADING UNIVERSE:', universeId);
+    console.log('🌌 Title:', universeData.title);
+    console.log('🌌 Nexuses:', universeData.nexuses.length);
+    console.log('🌌 Nodes:', Object.keys(universeData.nodes).length);
+    console.log('🌌 Last modified:', new Date(universeData.lastModified).toLocaleString());
+    console.log('🌌 ==========================================');
+
+    // Load the universe data to the canvas
+    set({
+      activeUniverseId: universeId,
+      nexuses: universeData.nexuses,
+      nodes: universeData.nodes,
+      selectedId: null,
+      showContentOverlay: false,
+      showReplyModal: false,
+    });
+
+    console.log('✅ Universe loaded successfully');
+
+    // TODO: Restore camera position (will be implemented in step 8)
+    // This will require integration with the camera controls in CanvasScene
   },
 }));

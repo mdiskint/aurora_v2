@@ -6,13 +6,15 @@ import { useEffect, useState } from 'react';
 
 export default function MemoriesPage() {
   const router = useRouter();
-  const nexuses = useCanvasStore((state) => state.nexuses);
-  const nodes = useCanvasStore((state) => state.nodes);
+  const universeLibrary = useCanvasStore((state) => state.universeLibrary);
+  const loadUniverse = useCanvasStore((state) => state.loadUniverse);
   const activatedConversations = useCanvasStore((state) => state.activatedConversations);
   const toggleActivateConversation = useCanvasStore((state) => state.toggleActivateConversation);
   const deleteConversation = useCanvasStore((state) => state.deleteConversation);
-  const selectNode = useCanvasStore((state) => state.selectNode);
-  const updateNexusContent = useCanvasStore((state) => state.updateNexusContent);
+
+  // Convert universeLibrary to nexuses array for compatibility
+  const nexuses = Object.entries(universeLibrary).map(([id, data]) => data.nexuses[0]);
+  const totalNodeCount = Object.values(universeLibrary).reduce((sum, data) => sum + Object.keys(data.nodes).length, 0);
 
   const [editingNexusId, setEditingNexusId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -24,18 +26,11 @@ export default function MemoriesPage() {
     useCanvasStore.getState().loadFromLocalStorage();
   }, []);
 
-  // Calculate node count for a nexus
-  const getNodeCount = (nexusId: string) => {
-    return Object.values(nodes).filter(node => {
-      // Check if node's ultimate parent is this nexus
-      let currentNode = node;
-      while (currentNode.parentId) {
-        if (currentNode.parentId === nexusId) return true;
-        currentNode = nodes[currentNode.parentId];
-        if (!currentNode) break;
-      }
-      return false;
-    }).length;
+  // Calculate node count for a universe
+  const getNodeCount = (universeId: string) => {
+    const universeData = universeLibrary[universeId];
+    if (!universeData) return 0;
+    return Object.keys(universeData.nodes).length;
   };
 
   // Get creation date (from nexus ID if timestamp-based)
@@ -53,9 +48,23 @@ export default function MemoriesPage() {
     return 'Unknown date';
   };
 
-  const handleOpenConversation = (nexusId: string) => {
-    selectNode(nexusId, false);
-    router.push('/chat');
+  const handleOpenConversation = (universeId: string) => {
+    console.log('🌌 Opening universe:', universeId);
+    loadUniverse(universeId);
+
+    // Determine which page to navigate to based on universe type
+    const universeData = universeLibrary[universeId];
+    if (universeData) {
+      const nexus = universeData.nexuses[0];
+      if (nexus?.type === 'academic') {
+        router.push('/explore');
+      } else {
+        router.push('/chat');
+      }
+    } else {
+      // Default to chat if universe not found
+      router.push('/chat');
+    }
   };
 
   const handleActivateToggle = (nexusId: string, e: React.MouseEvent) => {
@@ -87,16 +96,28 @@ export default function MemoriesPage() {
 
   const saveRename = () => {
     if (editingNexusId && editingTitle.trim()) {
-      const nexus = nexuses.find(n => n.id === editingNexusId);
-      if (nexus) {
-        // Update the title by updating the content (we'll modify the nexus structure)
-        updateNexusContent(editingNexusId, nexus.content);
-        // We need to update the title separately - let's directly modify
-        const store = useCanvasStore.getState();
-        const updatedNexuses = store.nexuses.map(n =>
-          n.id === editingNexusId ? { ...n, title: editingTitle.trim() } : n
+      const store = useCanvasStore.getState();
+      const universeData = store.universeLibrary[editingNexusId];
+
+      if (universeData) {
+        // Update the title in the universe library
+        const updatedNexuses = universeData.nexuses.map((n, idx) =>
+          idx === 0 ? { ...n, title: editingTitle.trim() } : n
         );
-        useCanvasStore.setState({ nexuses: updatedNexuses });
+
+        const updatedUniverseData = {
+          ...universeData,
+          title: editingTitle.trim(),
+          nexuses: updatedNexuses,
+          lastModified: Date.now(),
+        };
+
+        useCanvasStore.setState({
+          universeLibrary: {
+            ...store.universeLibrary,
+            [editingNexusId]: updatedUniverseData
+          }
+        });
         store.saveToLocalStorage();
       }
     }
@@ -109,29 +130,21 @@ export default function MemoriesPage() {
     setEditingTitle('');
   };
 
-  const handleExport = (nexusId: string, e: React.MouseEvent) => {
+  const handleExport = (universeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const nexus = nexuses.find(n => n.id === nexusId);
-    if (!nexus) return;
+    const universeData = universeLibrary[universeId];
+    if (!universeData) return;
 
-    // Get all nodes for this universe
-    const universeNodes = Object.values(nodes).filter(node => {
-      let currentNode = node;
-      while (currentNode.parentId) {
-        if (currentNode.parentId === nexusId) return true;
-        currentNode = nodes[currentNode.parentId];
-        if (!currentNode) break;
-      }
-      return false;
-    });
+    const nexus = universeData.nexuses[0];
+    const universeNodes = Object.values(universeData.nodes);
 
     // Create export data
     const exportData = {
-      id: nexusId,
-      title: nexus.title,
+      id: universeId,
+      title: universeData.title,
       nexus: nexus,
       nodes: universeNodes,
-      createdAt: getCreationDate(nexusId),
+      createdAt: getCreationDate(universeId),
       exportedAt: new Date().toISOString(),
       nodeCount: universeNodes.length
     };
@@ -141,7 +154,7 @@ export default function MemoriesPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${nexus.title.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.json`;
+    a.download = `${universeData.title.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -239,7 +252,7 @@ export default function MemoriesPage() {
             color: '#6B7280',
             fontSize: '18px'
           }}>
-            {nexuses.length} universe{nexuses.length !== 1 ? 's' : ''} saved • {Object.keys(nodes).length} total nodes
+            {nexuses.length} universe{nexuses.length !== 1 ? 's' : ''} saved • {totalNodeCount} total nodes
           </p>
         </div>
 

@@ -1,15 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useCanvasStore } from '@/lib/store';
 import CanvasScene from '@/components/CanvasScene';
 
 export default function CreatePage() {
-  // 🚀 CRITICAL: LOAD DATA FROM LOCALSTORAGE WHEN PAGE LOADS
-  useEffect(() => {
-    console.log('🚀 [CREATE PAGE] Loading data from localStorage...');
-    useCanvasStore.getState().loadFromLocalStorage();
-  }, []);
+  // 🚀 BLANK CANVAS ON STARTUP - Universes load on demand from Memories
+  console.log('🚀 [CREATE PAGE] Starting with blank canvas - no auto-load');
 
   return <CanvasScene />;
 }
