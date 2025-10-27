@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useCanvasStore } from '@/lib/store';
-import PaperUploader from './PaperUploader';
 import ExportModal from './ExportModal';
 import { Node } from '@/lib/types';
 import { getDisplayTitle, getNodeTypeIcon } from '@/lib/titleGenerator';
@@ -305,9 +304,6 @@ export default function SectionNavigator() {
         {/* Render complete tree */}
         <TreeNodeComponent treeNode={tree} />
       </div>
-
-      {/* Paper Upload Button */}
-      <PaperUploader />
 
       {/* Export Universe Button */}
       <button
