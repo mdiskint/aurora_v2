@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useCanvasStore } from '@/lib/store';
+import { exportToWord } from '@/lib/exportToWord';
+import { exportToPDF } from '@/lib/exportToPDF';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -14,6 +16,7 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const selectedId = useCanvasStore((state) => state.selectedId);
 
   const [exportType, setExportType] = useState<'full' | 'analysis'>('full');
+  const [exportFormat, setExportFormat] = useState<'word' | 'pdf'>('word');
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [exportedFilename, setExportedFilename] = useState('');
@@ -144,27 +147,29 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
       }
 
       const data = await response.json();
-      const markdown = data.markdown;
-
-      // Create blob and download
-      const blob = new Blob([markdown], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
+      const structuredData = data.structured;
 
       // Generate filename
       const safeName = currentNexus.title.replace(/[^a-z0-9]/gi, '-').toLowerCase();
       const dateStr = new Date().toISOString().split('T')[0];
-      const filename = `${safeName}-${exportType}-${dateStr}.md`;
+      const baseFilename = `${safeName}-${exportType}-${dateStr}`;
 
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Export based on selected format
+      if (exportFormat === 'word') {
+        await exportToWord({
+          ...structuredData,
+          filename: baseFilename,
+        });
+        setExportedFilename(`${baseFilename}.docx`);
+      } else if (exportFormat === 'pdf') {
+        exportToPDF({
+          ...structuredData,
+          filename: baseFilename,
+        });
+        setExportedFilename(`${baseFilename}.pdf`);
+      }
 
-      console.log('✅ Document exported successfully:', filename);
-      setExportedFilename(filename);
+      console.log('✅ Document exported successfully:', baseFilename);
       setExportSuccess(true);
     } catch (error) {
       console.error('❌ Export failed:', error);
@@ -215,7 +220,7 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
             <div style={{ marginBottom: '24px' }}>
               <p style={{ fontSize: '14px', color: '#9333EA', fontWeight: 'bold', marginBottom: '16px' }}>
-                Choose export format:
+                Choose content:
               </p>
 
               {/* Full History Option */}
@@ -302,6 +307,100 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
                 <p style={{ fontSize: '13px', color: '#94a3b8', marginLeft: '32px' }}>
                   Key insights, connections, and recommendations.
                   Focuses on deliverables, skips exploration process.
+                </p>
+              </div>
+            </div>
+
+            {/* Format Selection */}
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontSize: '14px', color: '#00FFD4', fontWeight: 'bold', marginBottom: '16px' }}>
+                Choose format:
+              </p>
+
+              {/* Word Option */}
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: exportFormat === 'word' ? '2px solid #00FFD4' : '2px solid #334155',
+                  backgroundColor: exportFormat === 'word' ? 'rgba(0, 255, 212, 0.1)' : 'transparent',
+                  marginBottom: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => setExportFormat('word')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                  <div
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      border: '2px solid #00FFD4',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {exportFormat === 'word' && (
+                      <div
+                        style={{
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          backgroundColor: '#00FFD4',
+                        }}
+                      />
+                    )}
+                  </div>
+                  <strong style={{ fontSize: '16px' }}>📝 Word Document (.docx)</strong>
+                </div>
+                <p style={{ fontSize: '13px', color: '#94a3b8', marginLeft: '32px' }}>
+                  Professional Word document with formatting, page numbers, and headers.
+                  Editable in Microsoft Word, Google Docs, and other word processors.
+                </p>
+              </div>
+
+              {/* PDF Option */}
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: exportFormat === 'pdf' ? '2px solid #00FFD4' : '2px solid #334155',
+                  backgroundColor: exportFormat === 'pdf' ? 'rgba(0, 255, 212, 0.1)' : 'transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onClick={() => setExportFormat('pdf')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                  <div
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      border: '2px solid #00FFD4',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {exportFormat === 'pdf' && (
+                      <div
+                        style={{
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          backgroundColor: '#00FFD4',
+                        }}
+                      />
+                    )}
+                  </div>
+                  <strong style={{ fontSize: '16px' }}>📄 PDF Document (.pdf)</strong>
+                </div>
+                <p style={{ fontSize: '13px', color: '#94a3b8', marginLeft: '32px' }}>
+                  Universal PDF format with page numbers and proper formatting.
+                  Viewable on any device, preserves layout perfectly.
                 </p>
               </div>
             </div>

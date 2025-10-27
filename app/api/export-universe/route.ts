@@ -83,7 +83,13 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Generated document:', markdown.slice(0, 100) + '...');
 
-    return NextResponse.json({ markdown });
+    // Parse markdown into structured data for Word/PDF export
+    const structuredData = parseMarkdownToStructured(markdown, nexus.title);
+
+    return NextResponse.json({
+      markdown, // Keep for backward compatibility
+      structured: structuredData
+    });
 
   } catch (error: any) {
     console.error('❌ Error exporting universe:', error);
@@ -208,4 +214,54 @@ Guidelines:
 - Make it actionable
 
 Generate the complete analysis document now:`;
+}
+
+function parseMarkdownToStructured(markdown: string, title: string) {
+  // Extract title from first # heading if present
+  const titleMatch = markdown.match(/^#\s+(.+?)$/m);
+  const extractedTitle = titleMatch ? titleMatch[1] : title;
+
+  // Split into sections by ## headings
+  const sections: Array<{ heading: string; content: string }> = [];
+  const sectionRegex = /^##\s+(.+?)$/gm;
+
+  let lastIndex = 0;
+  let match;
+  let summary = '';
+
+  while ((match = sectionRegex.exec(markdown)) !== null) {
+    const heading = match[1];
+    const startIndex = match.index + match[0].length;
+
+    // Get content from this heading to next heading (or end)
+    sectionRegex.lastIndex = startIndex;
+    const nextMatch = sectionRegex.exec(markdown);
+    const endIndex = nextMatch ? nextMatch.index : markdown.length;
+
+    const content = markdown.slice(startIndex, endIndex).trim();
+
+    // First section is typically Executive Summary
+    if (sections.length === 0 && (heading.toLowerCase().includes('summary') || heading.toLowerCase().includes('executive'))) {
+      summary = content;
+    } else {
+      sections.push({
+        heading,
+        content
+      });
+    }
+
+    sectionRegex.lastIndex = endIndex;
+  }
+
+  // If no summary was found, use first paragraph after title
+  if (!summary) {
+    const firstParagraphMatch = markdown.match(/^#[^\n]*\n\n(.+?)(?:\n\n|\n##|$)/s);
+    summary = firstParagraphMatch ? firstParagraphMatch[1].trim() : 'Analysis of ' + extractedTitle;
+  }
+
+  return {
+    title: extractedTitle,
+    summary,
+    sections
+  };
 }
