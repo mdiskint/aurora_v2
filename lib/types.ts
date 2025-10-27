@@ -15,4 +15,5 @@ export interface Node {
   isConnectionNode?: boolean;  // Flag to identify connection nodes
   isSynthesis?: boolean;       // Flag to identify synthesis/insight nodes
   nodeType?: NodeType;         // Visual type for geometry and color
+  semanticTitle?: string;      // AI-generated 5-10 word summary for navigation
 }

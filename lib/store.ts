@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Node } from './types';
+import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 
 interface Nexus {
   id: string;
@@ -28,6 +29,7 @@ interface CanvasStore {
   loadAcademicPaperFromData: (data: any) => void;
   updateNodeContent: (nodeId: string, newContent: string) => void;
   updateNexusContent: (nexusId: string, newContent: string) => void;
+  updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
   exportToWordDoc: () => void;
   addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis') => string;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
@@ -292,11 +294,43 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
 
     set({ nexuses, nodes });
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
-    
+
     console.log(`✅ Loaded paper: ${nexus.title} with ${data.sections.length} sections`);
+
+    // 📝 BATCH GENERATE SEMANTIC TITLES (async, non-blocking)
+    // Generate titles for all nodes in parallel without blocking the UI
+    const nodeIds = Object.keys(nodes);
+    const nodeContents = nodeIds.map(id => nodes[id].content);
+
+    console.log(`📝 Generating semantic titles for ${nodeIds.length} nodes in batch...`);
+
+    generateSemanticTitles(nodeContents)
+      .then((semanticTitles) => {
+        // Update each node with its generated title
+        const state = get();
+        const updatedNodes = { ...state.nodes };
+
+        nodeIds.forEach((nodeId, index) => {
+          if (updatedNodes[nodeId]) {
+            updatedNodes[nodeId] = {
+              ...updatedNodes[nodeId],
+              semanticTitle: semanticTitles[index],
+            };
+          }
+        });
+
+        set({ nodes: updatedNodes });
+        get().saveToLocalStorage();
+
+        console.log(`✅ Generated ${semanticTitles.length} semantic titles for paper nodes`);
+      })
+      .catch((error) => {
+        console.error('❌ Failed to generate batch semantic titles:', error);
+        // Fallback is already handled in generateSemanticTitles function
+      });
   },
 
   updateNodeContent: (nodeId: string, newContent: string) => {
@@ -328,11 +362,29 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
       return { nexuses: updatedNexuses };
     });
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
-    
+
     console.log(`✅ Updated nexus content: ${nexusId}`);
+  },
+
+  updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => {
+    set((state) => {
+      const updatedNodes = { ...state.nodes };
+      if (updatedNodes[nodeId]) {
+        updatedNodes[nodeId] = {
+          ...updatedNodes[nodeId],
+          semanticTitle,
+        };
+      }
+      return { nodes: updatedNodes };
+    });
+
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+
+    console.log(`✅ Updated semantic title for node ${nodeId}: "${semanticTitle}"`);
   },
 
   exportToWordDoc: async () => {
@@ -652,6 +704,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     } else {
       console.log('💭 Socratic mode: Skipping auto-selection of user answer node to preserve connection node focus');
     }
+
+    // 📝 GENERATE SEMANTIC TITLE (async, non-blocking)
+    // Generate title in background without blocking node creation
+    generateSemanticTitle(content)
+      .then((semanticTitle) => {
+        // Update the node with the generated title
+        get().updateNodeSemanticTitle(newNodeId, semanticTitle);
+        console.log(`📝 Generated semantic title for ${newNodeId}: "${semanticTitle}"`);
+      })
+      .catch((error) => {
+        console.error(`❌ Failed to generate semantic title for ${newNodeId}:`, error);
+        // Fallback is already handled in generateSemanticTitle function
+      });
 
     return newNodeId;
   },

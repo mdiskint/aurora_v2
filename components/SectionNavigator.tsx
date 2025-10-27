@@ -3,6 +3,7 @@
 import { useCanvasStore } from '@/lib/store';
 import PaperUploader from './PaperUploader';
 import { Node } from '@/lib/types';
+import { getDisplayTitle, getNodeTypeIcon } from '@/lib/titleGenerator';
 
 // Recursive tree node structure
 interface TreeNode {
@@ -76,7 +77,18 @@ export default function SectionNavigator() {
 
   // Helper function to get meaningful node label
   const getNodeLabel = (nodeData: Node | { id: string; title: string; content: string }) => {
-    // Use first ~50 characters of content if available
+    // If this is a Node with semanticTitle, use it
+    if ('semanticTitle' in nodeData && nodeData.semanticTitle) {
+      return nodeData.semanticTitle;
+    }
+
+    // Otherwise use getDisplayTitle helper for Nodes, or fall back to content preview
+    if ('semanticTitle' in nodeData) {
+      // It's a Node, use the helper
+      return getDisplayTitle(nodeData);
+    }
+
+    // For non-Node objects (nexuses), use content preview
     if (nodeData.content && nodeData.content.trim()) {
       const preview = nodeData.content.trim().substring(0, 50);
       return preview + (nodeData.content.length > 50 ? '...' : '');
@@ -97,6 +109,11 @@ export default function SectionNavigator() {
     const isNexus = treeNode.level === 0;
     const indent = treeNode.level * 20; // 20px per level
     const label = getNodeLabel(treeNode.data);
+
+    // Get node type icon if this is a Node
+    const icon = !isNexus && 'nodeType' in treeNode.data
+      ? getNodeTypeIcon(treeNode.data.nodeType)
+      : null;
 
     return (
       <>
@@ -139,15 +156,14 @@ export default function SectionNavigator() {
             }
           }}
         >
-          {/* Bullet point for non-nexus nodes */}
+          {/* Node type icon or bullet point for non-nexus nodes */}
           {!isNexus && (
             <span style={{
-              color: '#9333EA',
-              fontSize: '16px',
+              fontSize: '14px',
               lineHeight: '1.2',
               flexShrink: 0,
             }}>
-              •
+              {icon || '•'}
             </span>
           )}
           <span style={{ flex: 1 }}>
