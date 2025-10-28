@@ -25,11 +25,12 @@ export default function MemoriesPage() {
     console.log('📚 ==========================================');
     console.log('📚 MEMORIES PAGE LOADED:', new Date().toLocaleTimeString());
 
-    // Load data from localStorage
-    console.log('📚   Loading universe library from localStorage...');
+    // 🔥 CRITICAL FIX: ALWAYS load from localStorage to get latest saved universes
+    // This ensures newly created universes are picked up
+    console.log('📚   Loading from localStorage...');
     useCanvasStore.getState().loadFromLocalStorage();
 
-    // Get current library state after loading
+    // Get current library state (whether loaded or already present)
     const library = useCanvasStore.getState().universeLibrary;
     console.log('📚   Library has', Object.keys(library).length, 'universes');
     console.log('📚   Universe IDs:', Object.keys(library));

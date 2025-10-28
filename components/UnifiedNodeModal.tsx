@@ -39,6 +39,10 @@ export default function UnifiedNodeModal() {
   const [isVisible, setIsVisible] = useState(false);
   const [showAnchorFeedback, setShowAnchorFeedback] = useState(false);
 
+  // Quiz Me / Deep Thinking mode state
+  const [explorationMode, setExplorationMode] = useState<'deep-thinking' | 'quiz' | null>(null);
+  const [quizFeedback, setQuizFeedback] = useState('');
+
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
 
@@ -342,11 +346,15 @@ export default function UnifiedNodeModal() {
     }
   };
 
-  // 💭 EXPLORE TOGETHER
-  const handleExploreTogether = async () => {
+  // 💭 EXPLORE TOGETHER (Deep Thinking or Quiz Mode)
+  const handleExploreTogether = async (mode: 'deep-thinking' | 'quiz') => {
     if (!selectedId) return;
 
-    // Start Socratic exploration (works for both regular nodes and connection nodes)
+    // Set exploration mode
+    setExplorationMode(mode);
+    setQuizFeedback(''); // Reset any previous feedback
+
+    // Start exploration (works for both regular nodes and connection nodes)
     setIsLoadingAI(true);
 
     try {
@@ -359,9 +367,12 @@ export default function UnifiedNodeModal() {
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: `You are conducting a Socratic exploration of this idea:\n\n"${contextContent}"\n\nGenerate ONE thoughtful Socratic question that challenges assumptions, explores implications, or probes deeper understanding. Keep it concise (1-2 sentences).`
+            content: mode === 'quiz'
+              ? `You are a law professor testing a student's knowledge of this material:\n\n"${contextContent}"\n\nGenerate ONE recall or comprehension question about the key facts, holdings, or reasoning. Keep it concise (1-2 sentences).`
+              : `You are conducting a Socratic exploration of this idea:\n\n"${contextContent}"\n\nGenerate ONE thoughtful Socratic question that challenges assumptions, explores implications, or probes deeper understanding. Keep it concise (1-2 sentences).`
           }],
-          mode: 'socratic'
+          mode: mode === 'quiz' ? 'quiz' : 'socratic',
+          explorationMode: mode
         }),
       });
 
@@ -371,14 +382,14 @@ export default function UnifiedNodeModal() {
 
       // Set ref IMMEDIATELY (before state updates)
       isSocraticModeActive.current = true;
-      console.log('🔒 Socratic mode ref set to TRUE - state protected');
+      console.log(`🔒 ${mode} mode ref set to TRUE - state protected`);
 
       setSocraticQuestion(data.response);
       setSocraticRootId(selectedId);
       setInputContent('');
       setIsLoadingAI(false);
     } catch (error) {
-      console.error('❌ Failed to start Socratic exploration:', error);
+      console.error(`❌ Failed to start ${mode} exploration:`, error);
       setIsLoadingAI(false);
     }
   };
@@ -400,11 +411,11 @@ export default function UnifiedNodeModal() {
     }, 100);
   };
 
-  // Handle Socratic answer submission
+  // Handle Socratic/Quiz answer submission
   const handleSocraticAnswer = async () => {
     if (!inputContent.trim() || !socraticRootId || !socraticQuestion) return;
 
-    console.log('💭 Starting Socratic answer submission...');
+    console.log(`💭 Starting ${explorationMode} answer submission...`);
     console.log('   Root ID:', socraticRootId);
     console.log('   Current question:', socraticQuestion.substring(0, 50) + '...');
     console.log('   Current selectedId:', selectedId);
@@ -413,59 +424,161 @@ export default function UnifiedNodeModal() {
     setIsLoadingAI(true);
 
     try {
-      // Get AI's next question FIRST (before creating nodes)
-      console.log('🤖 Requesting next Socratic question from AI...');
+      // For quiz mode: Get grading feedback
+      // For deep-thinking mode: Get next question
+      const isQuizMode = explorationMode === 'quiz';
+      console.log(`🤖 Requesting ${isQuizMode ? 'quiz grading' : 'next question'} from AI...`);
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: `Previous question: "${socraticQuestion}"\nUser's answer: "${userAnswerText}"\n\nGenerate the NEXT Socratic question to continue the exploration. Keep it concise.`
+            content: `Previous question: "${socraticQuestion}"\nUser's answer: "${userAnswerText}"\n\n${
+              isQuizMode
+                ? 'Grade this answer and provide feedback.'
+                : 'Generate the NEXT Socratic question to continue the exploration. Keep it concise.'
+            }`
           }],
-          mode: 'socratic'
+          mode: isQuizMode ? 'quiz' : 'socratic',
+          explorationMode
         }),
       });
 
       if (!response.ok) throw new Error('Failed to continue exploration');
 
       const data = await response.json();
-      const nextQuestion = data.response;
-      console.log('✅ Received next question:', nextQuestion.substring(0, 50) + '...');
 
-      // CRITICAL: Keep ref TRUE to protect state during node creation
-      isSocraticModeActive.current = true;
-      console.log('🔒 Socratic mode ref STILL TRUE - continuing protection');
+      if (isQuizMode) {
+        // Quiz mode: Display feedback
+        const feedback = data.response;
+        console.log('✅ Received quiz feedback:', feedback.substring(0, 100) + '...');
 
-      // NOW update state FIRST before creating any nodes
-      console.log('🔄 Updating Socratic state with new question BEFORE creating nodes');
-      setSocraticQuestion(nextQuestion);
-      setInputContent('');
+        setQuizFeedback(feedback);
+        setInputContent('');
+        setIsLoadingAI(false);
+
+        // Create a single node with question, answer, and feedback
+        const quizNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n${feedback}`;
+        console.log('📝 Creating quiz answer node with feedback...');
+        addNode(quizNode, socraticRootId);
+
+        // Keep modal open to show feedback
+        setTimeout(() => {
+          console.log('🔓 Keeping modal open to show quiz feedback');
+          selectNode(socraticRootId, true);
+          setShowContentOverlay(true);
+        }, 100);
+      } else {
+        // Deep thinking mode: Continue with next question
+        const nextQuestion = data.response;
+        console.log('✅ Received next question:', nextQuestion.substring(0, 50) + '...');
+
+        // CRITICAL: Keep ref TRUE to protect state during node creation
+        isSocraticModeActive.current = true;
+        console.log('🔒 Socratic mode ref STILL TRUE - continuing protection');
+
+        // NOW update state FIRST before creating any nodes
+        console.log('🔄 Updating Socratic state with new question BEFORE creating nodes');
+        setSocraticQuestion(nextQuestion);
+        setInputContent('');
+        setIsLoadingAI(false);
+
+        // THEN create the nodes (this will trigger auto-selection but state is already updated)
+        const userAnswer = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}`;
+        console.log('📝 Creating user answer node...');
+        addNode(userAnswer, socraticRootId);
+
+        const nextQuestionNode = `Next Question:\n${nextQuestion}`;
+        console.log('📝 Creating AI question node...');
+        addNode(nextQuestionNode, socraticRootId);
+
+        // CRITICAL FIX: addNode calls selectNode(newId, false) which CLOSES the modal
+        // We need to force it back open and select the root node
+        setTimeout(() => {
+          console.log('🔓 Forcing modal to stay open and selecting root node');
+          selectNode(socraticRootId, true);
+          setShowContentOverlay(true);
+        }, 100);
+
+        console.log('✅ Socratic exploration continuing - state updated, nodes created');
+        console.log('   New question in state:', nextQuestion.substring(0, 30));
+      }
+    } catch (error) {
+      console.error(`❌ Failed to continue ${explorationMode} dialogue:`, error);
+      setIsLoadingAI(false);
+    }
+  };
+
+  // Ask another quiz question (after viewing feedback)
+  const handleAskAnotherQuestion = async () => {
+    if (!socraticRootId) return;
+
+    console.log('🔄 Asking another quiz question...');
+
+    // Clear previous state
+    setQuizFeedback('');
+    setInputContent('');
+    setIsLoadingAI(true);
+
+    try {
+      // Get a new quiz question based on the original content
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: `You are a law professor testing a student's knowledge of this material:\n\n"${displayContent}"\n\nGenerate ONE recall or comprehension question about the key facts, holdings, or reasoning. Keep it concise (1-2 sentences). Make sure this is a DIFFERENT question from before.`
+          }],
+          mode: 'quiz',
+          explorationMode: 'quiz'
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to get next question');
+
+      const data = await response.json();
+
+      console.log('✅ New quiz question generated:', data.response.substring(0, 50) + '...');
+
+      // Update state with new question
+      setSocraticQuestion(data.response);
       setIsLoadingAI(false);
 
-      // THEN create the nodes (this will trigger auto-selection but state is already updated)
-      const userAnswer = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}`;
-      console.log('📝 Creating user answer node...');
-      addNode(userAnswer, socraticRootId);
-
-      const nextQuestionNode = `Next Question:\n${nextQuestion}`;
-      console.log('📝 Creating AI question node...');
-      addNode(nextQuestionNode, socraticRootId);
-
-      // CRITICAL FIX: addNode calls selectNode(newId, false) which CLOSES the modal
-      // We need to force it back open and select the root node
+      // Keep modal open on the root node
       setTimeout(() => {
-        console.log('🔓 Forcing modal to stay open and selecting root node');
         selectNode(socraticRootId, true);
         setShowContentOverlay(true);
       }, 100);
 
-      console.log('✅ Socratic exploration continuing - state updated, nodes created');
-      console.log('   New question in state:', nextQuestion.substring(0, 30));
     } catch (error) {
-      console.error('❌ Failed to continue Socratic dialogue:', error);
+      console.error('❌ Failed to get next question:', error);
+      setQuizFeedback('Error loading next question. Please try again.');
       setIsLoadingAI(false);
     }
+  };
+
+  // End quiz (no synthesis for quiz mode)
+  const handleEndQuiz = () => {
+    if (!socraticRootId) return;
+
+    console.log('🏁 Ending quiz mode - no synthesis');
+
+    // CRITICAL: Clear the ref to allow normal state clearing
+    isSocraticModeActive.current = false;
+    console.log('🔓 Quiz mode ref set to FALSE - quiz ended');
+
+    setSocraticQuestion(null);
+    setSocraticRootId(null);
+    setInputContent('');
+    setQuizFeedback('');
+    setExplorationMode(null);
+    setActionMode(null);
+
+    // Close modal
+    selectNode(selectedId, false);
   };
 
   // End exploration and create synthesis
@@ -739,37 +852,104 @@ export default function UnifiedNodeModal() {
 
           {/* BOTTOM SECTION - Action Buttons */}
           <div className="border-t border-cyan-500/30 flex-shrink-0">
-            {/* Socratic Question Display */}
+            {/* Socratic Question / Quiz Display */}
             {socraticQuestion && (
-              <div className="p-4 bg-gradient-to-r from-cyan-900/30 to-purple-900/30 border-b border-cyan-500/20">
-                <div className="text-sm text-cyan-300 mb-2 font-semibold">💭 Socratic Question:</div>
+              <div className={`p-4 ${
+                explorationMode === 'quiz'
+                  ? 'bg-gradient-to-r from-purple-900/30 to-purple-800/30 border-b border-purple-500/20'
+                  : 'bg-gradient-to-r from-cyan-900/30 to-purple-900/30 border-b border-cyan-500/20'
+              }`}>
+                <div className={`text-sm mb-2 font-semibold ${
+                  explorationMode === 'quiz' ? 'text-purple-300' : 'text-cyan-300'
+                }`}>
+                  {explorationMode === 'quiz' ? '📝 Quiz Question:' : '💭 Socratic Question:'}
+                </div>
                 <div className="text-gray-200 text-base mb-3">{socraticQuestion}</div>
+
+                {/* Show quiz feedback if available */}
+                {quizFeedback && explorationMode === 'quiz' && (
+                  <div className="mb-3 p-3 bg-purple-950/30 border border-purple-500/30 rounded-lg">
+                    <div className="text-purple-200 text-sm whitespace-pre-wrap">{quizFeedback}</div>
+                  </div>
+                )}
+
                 <textarea
                   value={inputContent}
                   onChange={(e) => setInputContent(e.target.value)}
-                  placeholder="Type your answer..."
-                  disabled={isLoadingAI}
-                  className="w-full bg-slate-950/50 text-gray-200 border border-cyan-500/20 rounded-lg p-3
-                           focus:outline-none focus:border-cyan-500/50 resize-none"
+                  placeholder={explorationMode === 'quiz' ? 'Type your answer...' : 'Type your answer...'}
+                  disabled={isLoadingAI || (explorationMode === 'quiz' && quizFeedback !== '')}
+                  className={`w-full bg-slate-950/50 text-gray-200 border rounded-lg p-3
+                           focus:outline-none focus:border-${explorationMode === 'quiz' ? 'purple' : 'cyan'}-500/50 resize-none ${
+                    explorationMode === 'quiz' ? 'border-purple-500/20' : 'border-cyan-500/20'
+                  } ${(isLoadingAI || (explorationMode === 'quiz' && quizFeedback !== '')) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   rows={3}
                 />
                 <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={handleSocraticAnswer}
-                    disabled={isLoadingAI || !inputContent.trim()}
-                    className="flex-1 px-4 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50
-                             text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoadingAI ? '🤔 Thinking...' : 'Continue Exploration'}
-                  </button>
-                  <button
-                    onClick={handleEndExploration}
-                    disabled={isLoadingAI}
-                    className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50
-                             text-purple-300 rounded-lg transition-all disabled:opacity-50"
-                  >
-                    End & Synthesize
-                  </button>
+                  {explorationMode === 'quiz' ? (
+                    <>
+                      {/* Show different buttons based on whether feedback exists */}
+                      {quizFeedback ? (
+                        // After feedback: Show "Another Question" button
+                        <>
+                          <button
+                            onClick={handleAskAnotherQuestion}
+                            disabled={isLoadingAI}
+                            className="flex-1 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50
+                                     text-purple-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isLoadingAI ? '🔄 Loading...' : '📝 Another Question'}
+                          </button>
+                          <button
+                            onClick={handleEndQuiz}
+                            disabled={isLoadingAI}
+                            className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50
+                                     text-gray-300 rounded-lg transition-all disabled:opacity-50"
+                          >
+                            End Quiz
+                          </button>
+                        </>
+                      ) : (
+                        // Before feedback: Show "Submit Answer" button
+                        <>
+                          <button
+                            onClick={handleSocraticAnswer}
+                            disabled={isLoadingAI || !inputContent.trim()}
+                            className="flex-1 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50
+                                     text-purple-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isLoadingAI ? '✍️ Grading...' : 'Submit Answer'}
+                          </button>
+                          <button
+                            onClick={handleEndQuiz}
+                            disabled={isLoadingAI}
+                            className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50
+                                     text-gray-300 rounded-lg transition-all disabled:opacity-50"
+                          >
+                            End Quiz
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleSocraticAnswer}
+                        disabled={isLoadingAI || !inputContent.trim()}
+                        className="flex-1 px-4 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50
+                                 text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isLoadingAI ? '🤔 Thinking...' : 'Continue Exploration'}
+                      </button>
+                      <button
+                        onClick={handleEndExploration}
+                        disabled={isLoadingAI}
+                        className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50
+                                 text-purple-300 rounded-lg transition-all disabled:opacity-50"
+                      >
+                        End & Synthesize
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -849,11 +1029,18 @@ export default function UnifiedNodeModal() {
                     🤖 Ask AI
                   </button>
                   <button
-                    onClick={handleExploreTogether}
+                    onClick={() => handleExploreTogether('deep-thinking')}
                     disabled={isLoadingAI}
                     className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                   >
-                    💭 Explore This Idea
+                    🧠 Explore This Idea (Deep Thinking)
+                  </button>
+                  <button
+                    onClick={() => handleExploreTogether('quiz')}
+                    disabled={isLoadingAI}
+                    className="flex-1 px-4 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                  >
+                    📝 Quiz Me On This (Test Knowledge)
                   </button>
                 </div>
 

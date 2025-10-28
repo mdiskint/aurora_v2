@@ -11,7 +11,7 @@ export default function Navigation() {
       top: 0,
       left: 0,
       right: 0,
-      height: '70px',
+      height: '80px',
       background: 'linear-gradient(to bottom, rgba(5, 10, 30, 0.95), rgba(5, 10, 30, 0.8))',
       backdropFilter: 'blur(10px)',
       borderBottom: '2px solid rgba(0, 255, 212, 0.3)',
@@ -34,24 +34,24 @@ export default function Navigation() {
           left: '50%',
           transform: 'translateX(-50%)',
           cursor: 'pointer',
-          fontSize: '28px',
+          fontSize: '48px',
           fontWeight: 'bold',
           background: 'linear-gradient(90deg, #00ff87, #60efff, #b967ff, #ff61d8)',
           backgroundClip: 'text',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           letterSpacing: '0.15em',
-          filter: 'drop-shadow(0 0 15px rgba(96, 239, 255, 0.4)) drop-shadow(0 0 20px rgba(0, 255, 135, 0.3))',
+          filter: 'drop-shadow(0 0 20px rgba(96, 239, 255, 0.5)) drop-shadow(0 0 25px rgba(0, 255, 135, 0.4))',
           transition: 'all 0.3s ease',
           userSelect: 'none',
           animation: 'aurora-shimmer 8s ease-in-out infinite',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.filter = 'drop-shadow(0 0 25px rgba(96, 239, 255, 0.6)) drop-shadow(0 0 30px rgba(0, 255, 135, 0.5))';
+          e.currentTarget.style.filter = 'drop-shadow(0 0 30px rgba(96, 239, 255, 0.7)) drop-shadow(0 0 35px rgba(0, 255, 135, 0.6))';
           e.currentTarget.style.transform = 'translateX(-50%) scale(1.05)';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.filter = 'drop-shadow(0 0 15px rgba(96, 239, 255, 0.4)) drop-shadow(0 0 20px rgba(0, 255, 135, 0.3))';
+          e.currentTarget.style.filter = 'drop-shadow(0 0 20px rgba(96, 239, 255, 0.5)) drop-shadow(0 0 25px rgba(0, 255, 135, 0.4))';
           e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
         }}
       >

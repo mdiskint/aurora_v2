@@ -166,7 +166,22 @@ export default function ChatInterface() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get response from Claude');
+        const errorText = await response.text();
+        console.error('❌ API Error Response:', response.status, errorText);
+
+        if (response.status === 429) {
+          throw new Error('Rate limit reached. Please wait 60 seconds and try again.');
+        }
+
+        if (response.status === 402) {
+          throw new Error('API quota exceeded. Check your Anthropic billing.');
+        }
+
+        if (response.status === 500) {
+          throw new Error(`Server error: ${errorText.substring(0, 200)}`);
+        }
+
+        throw new Error(`API Error (${response.status}): ${errorText.substring(0, 200)}`);
       }
 
       const data = await response.json();
@@ -217,6 +232,12 @@ export default function ChatInterface() {
 
         console.log('✅ Universe created with', nodes.length, 'nodes');
 
+        // 🔥 CRITICAL FIX: Save universe AFTER all nodes are created
+        console.log('💾 Saving complete universe with all nodes...');
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for last node to settle
+        useCanvasStore.getState().saveCurrentUniverse();
+        console.log('✅ Universe saved to library');
+
         // 🌌 Don't update conversation history for Explore commands
         // The universe structure IS the conversation, not a message exchange
         console.log('🌌 Explore command complete - conversation history unchanged');
@@ -233,7 +254,7 @@ export default function ChatInterface() {
           console.log('🆕 Creating new nexus');
           createChatNexus(title, actualPrompt, aiResponse);
           setIsFirstMessage(false);
-          
+
           setTimeout(() => {
             const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
             if (chatNexus) {
@@ -241,6 +262,13 @@ export default function ChatInterface() {
               selectNode(chatNexus.id, true);
             }
           }, 300);
+
+          // 🔥 CRITICAL FIX: Save regular chat universe after creation
+          setTimeout(() => {
+            console.log('💾 Saving regular chat universe...');
+            useCanvasStore.getState().saveCurrentUniverse();
+            console.log('✅ Regular chat universe saved to library');
+          }, 400); // After selection timeout
         } else {
           // 🧠 Reply to selected conversation
           const parentId = selectedId || currentParentId;

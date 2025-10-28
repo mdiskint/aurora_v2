@@ -14,12 +14,15 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectedId = useCanvasStore((state) => state.selectedId);
+  const revertToOriginal = useCanvasStore((state) => state.revertToOriginal);
 
   const [exportType, setExportType] = useState<'full' | 'analysis'>('full');
   const [exportFormat, setExportFormat] = useState<'word' | 'pdf'>('word');
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [exportedFilename, setExportedFilename] = useState('');
+  const [showRevertModal, setShowRevertModal] = useState(false);
+  const [exportedNexusId, setExportedNexusId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -174,6 +177,12 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
       console.log('✅ Document exported successfully:', baseFilename);
       setExportSuccess(true);
+      setExportedNexusId(currentNexus.id);
+
+      // Show revert modal after a short delay for better UX
+      setTimeout(() => {
+        setShowRevertModal(true);
+      }, 1000);
     } catch (error) {
       console.error('❌ Export failed:', error);
       alert('Failed to export universe. Please try again.');
@@ -537,6 +546,123 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
           }
         `}</style>
       </div>
+
+      {/* Revert Confirmation Modal */}
+      {showRevertModal && exportedNexusId && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              backgroundColor: '#0A1628',
+              border: '2px solid #FFD700',
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '500px',
+              width: '90%',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                color: '#FFD700',
+                fontSize: '24px',
+                marginBottom: '16px',
+                textAlign: 'center',
+              }}
+            >
+              🔄 Revert to Original?
+            </h2>
+
+            <p
+              style={{
+                color: '#E5E7EB',
+                fontSize: '16px',
+                lineHeight: '1.6',
+                marginBottom: '24px',
+              }}
+            >
+              Your document has been downloaded with the full exploration.
+              <br />
+              <br />
+              Would you like to <strong style={{ color: '#FFD700' }}>revert this universe</strong> to its original state?
+              <br />
+              <br />
+              <strong style={{ color: '#00FFD4' }}>This will:</strong>
+              <br />
+              • Keep the nexus and original L1 nodes
+              <br />
+              • Remove all exploration (L2+, synthesis, connections)
+              <br />
+              • Give you a fresh slate to explore again
+              <br />
+              <br />
+              <span style={{ fontSize: '14px', opacity: 0.7 }}>
+                Your exported document contains the full exploration.
+              </span>
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => {
+                  revertToOriginal(exportedNexusId);
+                  setShowRevertModal(false);
+                  setExportedNexusId(null);
+                  // Close the export modal after revert
+                  setTimeout(() => {
+                    onClose();
+                  }, 500);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  backgroundColor: '#FFD700',
+                  color: '#050A1E',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}
+              >
+                Yes, Revert to Original
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowRevertModal(false);
+                  setExportedNexusId(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  backgroundColor: 'transparent',
+                  color: '#8B5CF6',
+                  border: '2px solid #8B5CF6',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}
+              >
+                No, Keep As Is
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

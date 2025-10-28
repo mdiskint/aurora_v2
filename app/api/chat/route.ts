@@ -20,10 +20,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode } = body;
+    const { messages, conversationContext, mode, explorationMode } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
+    console.log('🎓 Exploration Mode:', explorationMode);
 
     let userMessage: string;
 
@@ -142,7 +143,7 @@ IMPORTANT:
       console.log('📤 Sending spatial universe generation prompt...');
 
       const response = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 4096, // Increased to handle up to 19 nodes
         system: 'You are Aurora AI, a universe architect. Generate structured spatial knowledge graphs with intelligent scaling. Assess topic complexity and create the optimal number of nodes (3-19) to comprehensively map the conceptual space. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
@@ -171,6 +172,25 @@ IMPORTANT:
             cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
           }
 
+          // 🔥 FIX: Sanitize literal newlines in JSON strings
+          // Replace literal newlines inside JSON string values with escaped \n
+          console.log('🧹 Sanitizing literal newlines in JSON...');
+
+          // Strategy: Replace newlines inside quoted strings only
+          // This regex matches string values (including their quotes) and processes them
+          cleanedResponse = cleanedResponse.replace(
+            /"([^"]|\\")*"/g,  // Match string values (handles escaped quotes)
+            (match) => {
+              return match
+                .replace(/\r\n/g, '\\n')  // Windows line endings
+                .replace(/\n/g, '\\n')    // Unix line endings
+                .replace(/\r/g, '\\n')    // Old Mac line endings
+                .replace(/\t/g, '\\t');   // Tabs
+            }
+          );
+
+          console.log('🧹 Cleaned response (first 500 chars):', cleanedResponse.substring(0, 500));
+
           // Parse the cleaned response
           spatialData = JSON.parse(cleanedResponse);
         }
@@ -191,6 +211,59 @@ IMPORTANT:
       }
     }
 
+    // 🎓 QUIZ MODE: Handle quiz grading
+    if (mode === 'quiz' && userMessage.includes('Previous question:')) {
+      console.log('📝 QUIZ GRADING MODE - Evaluating student answer');
+
+      // Extract question and answer from the message
+      const questionMatch = userMessage.match(/Previous question: "(.+?)"/);
+      const answerMatch = userMessage.match(/User's answer: "(.+?)"/);
+
+      if (!questionMatch || !answerMatch) {
+        console.error('❌ Could not parse quiz question/answer');
+        return NextResponse.json(
+          { error: 'Invalid quiz answer format' },
+          { status: 400 }
+        );
+      }
+
+      const question = questionMatch[1];
+      const userAnswer = answerMatch[1];
+
+      console.log('❓ Question:', question.substring(0, 50) + '...');
+      console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
+
+      const gradingPrompt = `You are a law professor grading a student's answer.
+
+Question: "${question}"
+Student's Answer: "${userAnswer}"
+
+Evaluate the answer and respond with:
+1. A grade: "✓ Correct!", "Partially correct.", or "Not quite."
+2. Brief feedback (1-2 sentences) explaining why
+3. Ask: "Would you like another question?"
+
+Format your response exactly like this:
+[Grade] [Feedback] Would you like another question?`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 512,
+        system: 'You are a supportive law professor providing quiz feedback. Be encouraging but honest.',
+        messages: [{ role: 'user', content: gradingPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const feedback = textContent && 'text' in textContent ? textContent.text : 'Unable to grade answer.';
+
+      console.log('✅ Quiz feedback:', feedback.substring(0, 100) + '...');
+
+      return NextResponse.json({
+        response: feedback,
+        isQuizFeedback: true
+      });
+    }
+
     // Standard chat mode
     console.log('📤 Sending to Claude API...');
 
@@ -200,7 +273,7 @@ IMPORTANT:
       : 'You are Aurora AI, helping users explore ideas in 3D space.';
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 2048,
       system: systemMessage, // 🧠 Include context here
       messages: [{ role: 'user', content: userMessage }],

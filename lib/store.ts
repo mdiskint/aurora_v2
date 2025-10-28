@@ -56,6 +56,45 @@ if (typeof window !== 'undefined') {
       console.log('Raw aurora-portal-data:', parsed);
       return parsed;
     },
+    checkNow: () => {
+      console.log('🔍 ==========================================');
+      console.log('🔍 DIAGNOSTIC CHECK:', new Date().toLocaleTimeString());
+      const data = localStorage.getItem('aurora-portal-data');
+      if (!data || data === 'null') {
+        console.log('🔍 ❌ NO DATA IN LOCALSTORAGE!');
+        console.log('🔍 ==========================================');
+        return null;
+      }
+      const parsed = JSON.parse(data);
+      const universeCount = Object.keys(parsed.universeLibrary || {}).length;
+      console.log('🔍 ✅ Data exists:', universeCount, 'universes');
+      console.log('🔍 Data size:', (data.length / 1024).toFixed(2), 'KB');
+      console.log('🔍 Timestamp:', parsed.timestamp ? new Date(parsed.timestamp).toLocaleString() : 'none');
+      console.log('🔍 ==========================================');
+      return parsed;
+    },
+    watchChanges: () => {
+      console.log('👁️ STARTING LOCALSTORAGE WATCH MODE');
+      console.log('👁️ Will log all changes to aurora-portal-data');
+      let lastValue = localStorage.getItem('aurora-portal-data');
+      const interval = setInterval(() => {
+        const currentValue = localStorage.getItem('aurora-portal-data');
+        if (currentValue !== lastValue) {
+          console.log('🚨 ==========================================');
+          console.log('🚨 LOCALSTORAGE CHANGED!', new Date().toLocaleTimeString());
+          console.log('🚨 Previous:', lastValue ? `${(lastValue.length / 1024).toFixed(2)}KB` : 'null');
+          console.log('🚨 Current:', currentValue ? `${(currentValue.length / 1024).toFixed(2)}KB` : 'null');
+          if (!currentValue || currentValue === 'null') {
+            console.log('🚨 ❌❌❌ DATA WAS CLEARED OR SET TO NULL! ❌❌❌');
+            console.trace('Call stack at time of detection:');
+          }
+          console.log('🚨 ==========================================');
+          lastValue = currentValue;
+        }
+      }, 1000);
+      console.log('👁️ Watching every 1 second. Call clearInterval(' + interval + ') to stop');
+      return interval;
+    },
     checkQuota: () => {
       console.log('💾 ==========================================');
       console.log('💾 LOCALSTORAGE QUOTA CHECK');
@@ -169,10 +208,61 @@ if (typeof window !== 'undefined') {
     }
   };
 
+  // 🚨 LOCALSTORAGE INTERCEPTORS - Track all operations with call stacks
+  const originalSetItem = localStorage.setItem.bind(localStorage);
+  const originalRemoveItem = localStorage.removeItem.bind(localStorage);
+  const originalClear = localStorage.clear.bind(localStorage);
+
+  localStorage.setItem = function(key: string, value: string) {
+    if (key === 'aurora-portal-data') {
+      const stack = new Error().stack || '';
+      const caller = stack.split('\n')[2]?.trim() || 'unknown';
+      console.log('📝 ==========================================');
+      console.log('📝 LOCALSTORAGE.SETITEM:', new Date().toLocaleTimeString());
+      console.log('📝   Key:', key);
+      console.log('📝   Size:', (value.length / 1024).toFixed(2), 'KB');
+      console.log('📝   Called from:', caller);
+      console.log('📝 Full call stack:', stack);
+      console.log('📝 ==========================================');
+    }
+    return originalSetItem(key, value);
+  };
+
+  localStorage.removeItem = function(key: string) {
+    if (key === 'aurora-portal-data') {
+      const stack = new Error().stack || '';
+      const caller = stack.split('\n')[2]?.trim() || 'unknown';
+      console.log('🗑️ ==========================================');
+      console.log('🗑️ LOCALSTORAGE.REMOVEITEM:', new Date().toLocaleTimeString());
+      console.log('🗑️   Key:', key);
+      console.log('🗑️   ⚠️ AURORA DATA BEING REMOVED!');
+      console.log('🗑️   Called from:', caller);
+      console.log('🗑️ Full call stack:', stack);
+      console.log('🗑️ ==========================================');
+    }
+    return originalRemoveItem(key);
+  };
+
+  localStorage.clear = function() {
+    const stack = new Error().stack || '';
+    const caller = stack.split('\n')[2]?.trim() || 'unknown';
+    console.log('🔥 ==========================================');
+    console.log('🔥 LOCALSTORAGE.CLEAR:', new Date().toLocaleTimeString());
+    console.log('🔥   ⚠️⚠️⚠️ ALL DATA BEING CLEARED! ⚠️⚠️⚠️');
+    console.log('🔥   Called from:', caller);
+    console.log('🔥 Full call stack:', stack);
+    console.log('🔥 ==========================================');
+    return originalClear();
+  };
+
+  console.log('🚨 localStorage interceptors installed! All aurora-portal-data operations will be logged.');
+
   // Log helper availability
   console.log('🐛 Aurora Debug helpers loaded! Try:');
   console.log('   auroraDebug.showLibrary()  - View all saved universes');
   console.log('   auroraDebug.showActive()   - View current canvas state');
+  console.log('   auroraDebug.checkNow()     - Check localStorage right now');
+  console.log('   auroraDebug.watchChanges() - Watch for changes every 1 second');
   console.log('   auroraDebug.checkQuota()   - Check localStorage usage & quota');
   console.log('   auroraDebug.clearLibrary() - Clear all saved data');
   console.log('   auroraDebug.dumpRaw()      - Dump raw localStorage data');
@@ -247,6 +337,7 @@ interface CanvasStore {
   getActivatedConversations: () => Nexus[];
   deleteConversation: (nexusId: string) => void;
   deleteNode: (nodeId: string) => void;
+  revertToOriginal: (nexusId: string) => void;
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
 
@@ -287,12 +378,17 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   saveToLocalStorage: () => {
     const state = get();
 
+    // 🔍 DIAGNOSTIC: Capture call stack to see who triggered this save
+    const saveStack = new Error().stack || '';
+    const saveCaller = saveStack.split('\n')[2]?.trim() || 'unknown';
+
     // 🛡️ CRITICAL: Backup existing library before any save operation
     get().backupLibrary();
 
     // 🛡️ CRITICAL: Verify we have data to save
     if (!state.universeLibrary || typeof state.universeLibrary !== 'object') {
       console.error('❌ REFUSING TO SAVE: universeLibrary is invalid!');
+      console.error('❌ Save was called from:', saveCaller);
       return;
     }
 
@@ -335,6 +431,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const universeCount = Object.keys(state.universeLibrary).length;
       console.log('💾 ==========================================');
       console.log('💾 SAVE TO LOCALSTORAGE:', new Date().toLocaleTimeString());
+      console.log('💾 🔍 Called from:', saveCaller);
       console.log('💾 Universes in library:', universeCount);
       if (universeCount > 0) {
         Object.entries(state.universeLibrary).forEach(([id, data]) => {
@@ -345,10 +442,17 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       console.log('💾 Storage key:', 'aurora-portal-data');
       console.log('💾 ==========================================');
 
-      // Verify save worked by reading back
+      // 🔍 DIAGNOSTIC: Verify save worked by reading back
       const verification = localStorage.getItem('aurora-portal-data');
       if (!verification) {
         throw new Error('Save verification failed - data not in localStorage!');
+      }
+      const verifiedData = JSON.parse(verification);
+      const verifiedCount = Object.keys(verifiedData.universeLibrary || {}).length;
+      console.log('💾 ✅ VERIFICATION: Data confirmed in localStorage (' + verifiedCount + ' universes)');
+
+      if (verifiedCount !== universeCount) {
+        console.error('💾 🚨 VERIFICATION MISMATCH! Saved', universeCount, 'but found', verifiedCount);
       }
     } catch (error) {
       console.error('❌ ==========================================');
@@ -365,14 +469,25 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 📂 LOAD FROM LOCALSTORAGE
   loadFromLocalStorage: () => {
     try {
+      // 🔍 DIAGNOSTIC: Capture call stack
+      const loadStack = new Error().stack || '';
+      const loadCaller = loadStack.split('\n')[2]?.trim() || 'unknown';
+
       console.log('📂 ==========================================');
       console.log('📂 LOAD FROM LOCALSTORAGE:', new Date().toLocaleTimeString());
+      console.log('📂 🔍 Called from:', loadCaller);
 
       const saved = localStorage.getItem('aurora-portal-data');
+
+      console.log('📂 Raw data status:', saved === null ? 'NULL' : saved === 'null' ? '"null" STRING' : 'EXISTS');
+      if (saved) {
+        console.log('📂 Raw data size:', (saved.length / 1024).toFixed(2), 'KB');
+      }
 
       // 🛡️ CRITICAL: Check for corrupted data (null string)
       if (saved === 'null' || saved === null) {
         console.error('🚨 LIBRARY IS NULL OR CORRUPTED! Attempting recovery...');
+        console.error('🚨 Load was called from:', loadCaller);
 
         // Try to recover from backup
         const recovered = get().recoverFromBackup();
@@ -445,7 +560,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
 
       console.log('✅ Successfully loaded universe library from localStorage!');
+      console.log('📂 🔍 State has been set with', universeCount, 'universes');
       console.log('📂 Canvas remains blank - load universes from Memories page');
+
+      // 🔍 DIAGNOSTIC: Double-check the state was actually set
+      setTimeout(() => {
+        const currentState = get();
+        const currentLibraryCount = Object.keys(currentState.universeLibrary).length;
+        console.log('📂 🔍 POST-LOAD VERIFICATION:', currentLibraryCount, 'universes in state');
+        if (currentLibraryCount !== universeCount) {
+          console.error('📂 🚨 STATE MISMATCH! Loaded', universeCount, 'but state has', currentLibraryCount);
+        }
+      }, 100);
+
       console.log('📂 ==========================================');
 
     } catch (error) {
@@ -1030,10 +1157,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       
       return { nodes: updatedNodes };
     });
-    
-    // 💾 SAVE TO LOCALSTORAGE
-    get().saveToLocalStorage();
-    
+
+    // 💾 NOTE: saveToLocalStorage() removed - now only called by saveCurrentUniverse()
+    // This prevents premature saves when universe isn't in library yet
+
     // Broadcast node creation to WebSocket
     const socket = (window as any).socket;
     if (socket) {
@@ -1133,23 +1260,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('Active universe is now:', get().activeUniverseId);
     console.log('Nexuses count:', get().nexuses.length);
 
-    // Step 6: IMMEDIATELY save new universe to library
-    console.log('💾 Step 6: Immediately saving new universe to library...');
-
-    // Wait a tiny bit for state to settle
-    setTimeout(() => {
-      const currentState = get();
-      console.log('Saving universe:', currentState.activeUniverseId);
-      console.log('Has nexuses:', currentState.nexuses.length);
-
-      get().saveCurrentUniverse();
-
-      // Verify
-      const finalLib = get().universeLibrary;
-      console.log('✅ FINAL: Library has', Object.keys(finalLib).length, 'universes');
-      console.log('Universe IDs:', Object.keys(finalLib));
-      console.log('═══════════════════════════════════');
-    }, 100);
+    // 🔥 REMOVED: Saving now happens in ChatInterface AFTER nodes are created
+    // This prevents saving incomplete universes (nexus without nodes)
+    console.log('ℹ️ Universe will be saved by ChatInterface after nodes are added');
+    console.log('═══════════════════════════════════');
     
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
@@ -2249,6 +2363,86 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
+  },
+
+  // 🔄 REVERT TO ORIGINAL - Keep only nexus + L1 nodes
+  revertToOriginal: (nexusId: string) => {
+    console.log('🔄 ==========================================');
+    console.log('🔄 REVERT TO ORIGINAL:', new Date().toLocaleTimeString());
+    console.log('🔄   Universe ID:', nexusId);
+
+    try {
+      const state = get();
+
+      // Check if universe exists in library
+      if (!state.universeLibrary[nexusId]) {
+        console.error('🔄   ❌ Universe not found in library');
+        return;
+      }
+
+      const universe = state.universeLibrary[nexusId];
+      console.log('🔄   Universe title:', universe.title);
+      console.log('🔄   Total nodes before:', Object.keys(universe.nodes).length);
+
+      // Keep only L1 nodes (nodes whose parent is the nexus)
+      const l1Nodes: { [id: string]: Node } = {};
+      Object.entries(universe.nodes).forEach(([nodeId, node]) => {
+        if (node.parentId === nexusId) {
+          l1Nodes[nodeId] = node;
+        }
+      });
+
+      const l1NodeCount = Object.keys(l1Nodes).length;
+      const removedCount = Object.keys(universe.nodes).length - l1NodeCount;
+
+      console.log('🔄   L1 nodes kept:', l1NodeCount);
+      console.log('🔄   Exploration nodes removed:', removedCount);
+
+      // Update universe in library
+      set((state) => {
+        const updatedLibrary = {
+          ...state.universeLibrary,
+          [nexusId]: {
+            ...universe,
+            nodes: l1Nodes,
+            lastModified: Date.now()
+          }
+        };
+
+        // If this is the active universe, update canvas state
+        if (state.activeUniverseId === nexusId) {
+          console.log('🔄   Updating active canvas state');
+          return {
+            universeLibrary: updatedLibrary,
+            nodes: l1Nodes
+          };
+        }
+
+        return {
+          universeLibrary: updatedLibrary
+        };
+      });
+
+      console.log('🔄   ✅ Universe reverted to original state');
+      console.log('🔄   💾 Saving to localStorage...');
+
+      // Save to localStorage
+      get().saveToLocalStorage();
+
+      console.log('🔄   ✅ REVERT COMPLETE');
+      console.log('🔄 ==========================================');
+
+    } catch (error) {
+      console.error('❌ ==========================================');
+      console.error('❌ CRITICAL ERROR in revertToOriginal:', error);
+      console.error('❌   Error message:', (error as Error).message);
+      console.error('❌   Universe ID:', nexusId);
+      console.error('❌ ==========================================');
+
+      if (typeof window !== 'undefined') {
+        alert('⚠️ ERROR: Failed to revert universe!\n\n' + (error as Error).message + '\n\nCheck console for details.');
+      }
+    }
   },
 
   // ⚓ ANCHOR SYSTEM FUNCTIONS
