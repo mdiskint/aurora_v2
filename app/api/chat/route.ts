@@ -20,11 +20,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
     console.log('🎓 Exploration Mode:', explorationMode);
+    console.log('📋 Previous questions:', previousQuestions?.length || 0);
+    console.log('📚 Conversation history:', conversationHistory?.length || 0);
 
     let userMessage: string;
 
@@ -211,7 +213,214 @@ IMPORTANT:
       }
     }
 
-    // 🎓 QUIZ MODE: Handle quiz grading
+    // 🧠 DEEP THINKING MODE: Generate exploratory question with progressive depth
+    if (mode === 'deep-thinking' && !userMessage.includes('Previous question:')) {
+      console.log('🧠 DEEP THINKING: Generating exploratory question with history');
+      console.log('📚 Previous rounds:', conversationHistory?.length || 0);
+
+      const deepThinkingQuestionPrompt = `You are a Socratic teacher helping explore ideas deeply.
+
+Content to explore:
+"${userMessage}"
+
+${conversationHistory && conversationHistory.length > 0 ? `
+Previous exploration:
+${conversationHistory.map((exchange: any, i: number) =>
+  `Round ${i+1}:\nQ: ${exchange.question}\nA: ${exchange.userAnswer}\nInsight: ${exchange.aiEngagement}`
+).join('\n\n')}
+
+Based on where we've been, go DEEPER on the most interesting thread.
+` : 'This is the first question - start with what seems most thought-provoking.'}
+
+Your task: Ask ONE exploratory question that:
+- Builds on previous insights (if any)
+- Challenges assumptions
+- Makes unexpected connections
+- Reveals deeper patterns
+- Encourages novel thinking
+
+${conversationHistory && conversationHistory.length > 0 ? 'Avoid repeating questions or going in circles. Each question should advance the exploration to new territory.' : ''}
+
+Question types to use:
+- "What assumptions underlie [X]?"
+- "How might [concept from discussion] apply to [new context]?"
+- "What patterns emerge when we consider [A] and [B] together?"
+- "What happens if we reverse [logic they mentioned]?"
+- "What does [their insight] reveal about [bigger principle]?"
+- "If we push this further, what questions arise?"
+
+CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 400,
+        system: 'You are a Socratic teacher who guides deep exploration through progressively deeper questions. Each question should build on what came before.',
+        messages: [{ role: 'user', content: deepThinkingQuestionPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const question = textContent && 'text' in textContent ? textContent.text.trim() : 'Unable to generate question.';
+
+      console.log('✅ Generated deep thinking question:', question.substring(0, 80) + '...');
+
+      return NextResponse.json({
+        response: question,
+        isDeepThinkingQuestion: true
+      });
+    }
+
+    // 🧠 DEEP THINKING MODE: Handle conversational Socratic dialogue
+    if (mode === 'deep-thinking' && userMessage.includes('Previous question:')) {
+      console.log('🧠 DEEP THINKING MODE - Engaging with user\'s thinking');
+
+      const questionMatch = userMessage.match(/Previous question: "(.+?)"/);
+      const answerMatch = userMessage.match(/User's answer: "(.+?)"/);
+
+      if (!questionMatch || !answerMatch) {
+        console.error('❌ Could not parse deep thinking question/answer');
+        return NextResponse.json(
+          { error: 'Invalid deep thinking answer format' },
+          { status: 400 }
+        );
+      }
+
+      const question = questionMatch[1];
+      const userAnswer = answerMatch[1];
+
+      console.log('❓ Question:', question.substring(0, 50) + '...');
+      console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
+
+      const deepThinkingPrompt = `You are a Socratic teacher guiding a student through deep exploration and discovery.
+
+${conversationHistory && conversationHistory.length > 0 ? `
+Previous exploration rounds:
+${conversationHistory.map((exchange: any, i: number) =>
+  `Round ${i+1}:\nQ: ${exchange.question}\nA: ${exchange.userAnswer}\nInsight: ${exchange.aiEngagement}`
+).join('\n\n')}
+
+` : ''}Your most recent question:
+"${question}"
+
+Their latest response:
+"${userAnswer}"
+
+Your role:
+1. ENGAGE with their thinking (2-4 sentences):
+   - Acknowledge interesting insights they've shared
+   - Build on their ideas and previous rounds
+   - Highlight connections they're making across the conversation
+   - Challenge assumptions if needed
+   - Show how their thinking is progressing
+
+2. ASK the next exploratory question:
+   - Build naturally from what they just said
+   - Go deeper on the most interesting thread
+   - Help them discover something new
+   - Advance to new territory (avoid repeating previous ground)
+   - Make it feel like a flowing conversation
+
+Format your response exactly like this:
+
+[Your engagement with their answer - validate, build on, or challenge their thinking. 2-4 sentences.]
+
+[Your next exploratory question that naturally follows from their response and builds on the full conversation.]
+
+Keep it conversational and Socratic - you're exploring ideas together, not testing them.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        system: 'You are a Socratic teacher who engages deeply with student thinking. Build on their insights and guide discovery through thoughtful questions.',
+        messages: [{ role: 'user', content: deepThinkingPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const fullResponse = textContent && 'text' in textContent ? textContent.text : 'Unable to continue exploration.';
+
+      console.log('✅ Deep thinking response:', fullResponse.substring(0, 100) + '...');
+
+      return NextResponse.json({
+        response: fullResponse,
+        isDeepThinking: true
+      });
+    }
+
+    // 🎓 QUIZ MODE: Generate diverse question (QUESTION ONLY, NO ANSWER)
+    if (mode === 'quiz' && !userMessage.includes('Previous question:')) {
+      console.log('📝 QUIZ MODE: Generating diverse question (NO ANSWER)');
+      console.log('📋 Questions asked so far:', previousQuestions?.length || 0);
+
+      const quizQuestionPrompt = `You are a teacher creating quiz questions to thoroughly test student knowledge.
+
+Content to quiz on:
+"${userMessage}"
+
+${previousQuestions && previousQuestions.length > 0 ? `
+Previously asked questions (ask about a DIFFERENT aspect):
+${previousQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
+` : 'This is the first question about this content.'}
+
+Your task: Ask ONE clear question that tests a DIFFERENT aspect than previous questions.
+
+For legal content, cover these dimensions:
+1. **Facts**: What happened? Who were the parties? What was the dispute?
+2. **Procedural Posture**: How did the case get to this court?
+3. **Holdings**: What did the court decide?
+4. **Reasoning**: Why? What was the legal analysis?
+5. **Tests/Frameworks**: What legal test was established or applied?
+6. **Doctrine**: What principle or rule emerged?
+7. **Significance**: Why does this matter? What did it change?
+8. **Distinctions**: How does this differ from related cases?
+9. **Application**: How would this apply to a hypothetical?
+
+For non-legal content, cover:
+- Core concept/definition
+- Key components or elements
+- How it works (mechanism/process)
+- Why it matters (significance/impact)
+- Real-world applications
+- Common misconceptions
+- Historical context
+- Relationships to other concepts
+
+Choose an aspect NOT yet covered by previous questions and ask a specific, testable question.
+
+CRITICAL RULES:
+- Ask ONLY the question - do NOT provide the answer
+- Do NOT explain anything - just ask the question
+- Do NOT say "Here's a question:" or any preamble
+- Make it testable - the student should be able to give a specific answer
+- Focus on an aspect different from what's already been asked
+
+Output format: Just the question, nothing else.
+
+Example GOOD output:
+"What was Chief Justice Marshall's three-part reasoning in Marbury v. Madison?"
+
+Example BAD output:
+"What was the holding? The holding was that judicial review exists because..." ← NO! Don't give the answer!
+
+Now ask your question (QUESTION ONLY, NO ANSWER):`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,  // Short - just a question
+        system: 'You are a teacher creating diverse quiz questions. Ask ONLY the question, never provide the answer. Each question should test a different aspect of the content.',
+        messages: [{ role: 'user', content: quizQuestionPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const question = textContent && 'text' in textContent ? textContent.text.trim() : 'Unable to generate question.';
+
+      console.log('✅ Generated diverse question (NO ANSWER):', question.substring(0, 80) + '...');
+
+      return NextResponse.json({
+        response: question,
+        isQuizQuestion: true
+      });
+    }
+
+    // 🎓 QUIZ MODE: Handle quiz grading (PROVIDE ANSWER HERE)
     if (mode === 'quiz' && userMessage.includes('Previous question:')) {
       console.log('📝 QUIZ GRADING MODE - Evaluating student answer');
 
@@ -238,18 +447,30 @@ IMPORTANT:
 Question: "${question}"
 Student's Answer: "${userAnswer}"
 
-Evaluate the answer and respond with:
-1. A grade: "✓ Correct!", "Partially correct.", or "Not quite."
-2. Brief feedback (1-2 sentences) explaining why
-3. Ask: "Would you like another question?"
+Grade their answer and provide the correct answer:
+
+1. FEEDBACK (2-3 sentences):
+   - If CORRECT: Start with "✓ Correct!" and affirm what they got right
+   - If PARTIALLY CORRECT: Start with "Partially correct." Explain what they got right and what they missed
+   - If INCORRECT: Start with "Not quite." Explain what was wrong
+
+2. CORRECT ANSWER (3-5 sentences):
+   After your feedback, provide a clear, complete correct answer under a "The Complete Answer:" heading.
+
+3. End by asking: "Would you like another question?"
 
 Format your response exactly like this:
-[Grade] [Feedback] Would you like another question?`;
+[Grade and Feedback - 2-3 sentences]
+
+The Complete Answer:
+[Full correct answer - 3-5 sentences providing the complete explanation the student should learn]
+
+Would you like another question?`;
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 512,
-        system: 'You are a supportive law professor providing quiz feedback. Be encouraging but honest.',
+        max_tokens: 1000,
+        system: 'You are a supportive law professor providing quiz feedback. Be encouraging but honest. Always teach what the correct answer is so students learn from their mistakes.',
         messages: [{ role: 'user', content: gradingPrompt }],
       });
 

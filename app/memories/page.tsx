@@ -6,750 +6,425 @@ import { useEffect, useState } from 'react';
 
 export default function MemoriesPage() {
   const router = useRouter();
-  const universeLibrary = useCanvasStore((state) => state.universeLibrary);
-  const loadUniverse = useCanvasStore((state) => state.loadUniverse);
-  const activatedConversations = useCanvasStore((state) => state.activatedConversations);
-  const toggleActivateConversation = useCanvasStore((state) => state.toggleActivateConversation);
-  // Note: We handle deletion directly via localStorage, not through the store
 
-  // Convert universeLibrary to nexuses array for compatibility
-  const nexuses = Object.entries(universeLibrary).map(([id, data]) => data.nexuses[0]);
-  const totalNodeCount = Object.values(universeLibrary).reduce((sum, data) => sum + Object.keys(data.nodes).length, 0);
+  const folders = useCanvasStore(state => state.folders);
+  const universeLibrary = useCanvasStore(state => state.universeLibrary);
+  const createFolder = useCanvasStore(state => state.createFolder);
+  const renameFolder = useCanvasStore(state => state.renameFolder);
+  const deleteFolder = useCanvasStore(state => state.deleteFolder);
+  const moveUniverseToFolder = useCanvasStore(state => state.moveUniverseToFolder);
+  const loadUniverse = useCanvasStore(state => state.loadUniverse);
+  const deleteConversation = useCanvasStore(state => state.deleteConversation);
 
-  const [editingNexusId, setEditingNexusId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [selectedColor, setSelectedColor] = useState('#8B5CF6');
 
   // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
   useEffect(() => {
-    console.log('📚 ==========================================');
     console.log('📚 MEMORIES PAGE LOADED:', new Date().toLocaleTimeString());
-
-    // 🔥 CRITICAL FIX: ALWAYS load from localStorage to get latest saved universes
-    // This ensures newly created universes are picked up
-    console.log('📚   Loading from localStorage...');
     useCanvasStore.getState().loadFromLocalStorage();
 
-    // Get current library state (whether loaded or already present)
-    const library = useCanvasStore.getState().universeLibrary;
-    console.log('📚   Library has', Object.keys(library).length, 'universes');
-    console.log('📚   Universe IDs:', Object.keys(library));
-
-    // Display each universe
-    Object.entries(library).forEach(([id, universe]: any) => {
-      console.log(`📚   - ${id.substring(0, 30)}...: "${universe.title}" (${universe.nexuses?.length || 0} nexuses, ${Object.keys(universe.nodes || {}).length} nodes)`);
-    });
-
-    console.log('📚 ==========================================');
+    // Expand all folders by default
+    const folderIds = Object.keys(useCanvasStore.getState().folders);
+    setExpandedFolders(new Set(folderIds));
   }, []);
 
-  // Calculate node count for a universe
-  const getNodeCount = (universeId: string) => {
-    const universeData = universeLibrary[universeId];
-    if (!universeData) return 0;
-    return Object.keys(universeData.nodes).length;
-  };
-
-  // Get creation date (from nexus ID if timestamp-based)
-  const getCreationDate = (nexusId: string) => {
-    // Extract timestamp from ID if present (e.g., "chat-1234567890")
-    const match = nexusId.match(/(\d{13})/); // 13-digit timestamp
-    if (match) {
-      const timestamp = parseInt(match[1]);
-      return new Date(timestamp).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      });
-    }
-    return 'Unknown date';
-  };
-
-  const handleOpenConversation = (universeId: string) => {
-    console.log('🌌 Opening universe:', universeId);
-    loadUniverse(universeId);
-
-    // Determine which page to navigate to based on universe type
-    const universeData = universeLibrary[universeId];
-    if (universeData) {
-      const nexus = universeData.nexuses[0];
-      if (nexus?.type === 'academic') {
-        router.push('/explore');
-      } else {
-        router.push('/chat');
-      }
+  const toggleFolder = (folderId: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(folderId)) {
+      newExpanded.delete(folderId);
     } else {
-      // Default to chat if universe not found
-      router.push('/chat');
+      newExpanded.add(folderId);
+    }
+    setExpandedFolders(newExpanded);
+  };
+
+  const handleCreateFolder = () => {
+    if (newFolderName.trim()) {
+      createFolder(newFolderName.trim(), selectedColor);
+      setNewFolderName('');
+      setShowNewFolderModal(false);
+
+      // Auto-expand the new folder
+      setTimeout(() => {
+        const newFolderId = `folder-${Date.now()}`;
+        setExpandedFolders(prev => new Set(prev).add(newFolderId));
+      }, 100);
     }
   };
 
-  const handleActivateToggle = (nexusId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    toggleActivateConversation(nexusId);
-  };
-
-  const handleDeleteClick = (nexusId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeleteConfirmId(nexusId);
-  };
-
-  const confirmDelete = () => {
-    if (!deleteConfirmId) return;
-
-    const universeTitle = nexuses.find(n => n.id === deleteConfirmId)?.title || 'Unknown';
-
-    console.log('🗑️ ==========================================');
-    console.log('🗑️ DELETE BUTTON CLICKED:', deleteConfirmId);
-    console.log('🗑️ Universe title:', universeTitle);
-
-    try {
-      // Load the library from localStorage (NOT from Zustand store)
-      const libraryString = localStorage.getItem('aurora-portal-data');
-      console.log('📚 Loaded from localStorage');
-
-      if (!libraryString) {
-        console.error('❌ No aurora-portal-data found in localStorage');
-        alert('No data found in localStorage!');
-        return;
-      }
-
-      const parsed = JSON.parse(libraryString);
-      const library = parsed.universeLibrary || {};
-
-      console.log('📚 Current library has', Object.keys(library).length, 'universes');
-      console.log('📚 Universe IDs:', Object.keys(library));
-
-      // Check if universe exists
-      if (!library[deleteConfirmId]) {
-        console.error('❌ Universe not found in library:', deleteConfirmId);
-        alert('Universe not found!');
-        return;
-      }
-
-      console.log('✅ Found universe to delete:', library[deleteConfirmId].title);
-
-      // Delete it from the library
-      delete library[deleteConfirmId];
-      console.log('🗑️ Deleted from library object');
-      console.log('📚 Library now has', Object.keys(library).length, 'universes');
-
-      // Save back to localStorage
-      const updatedData = {
-        ...parsed,
-        universeLibrary: library
-      };
-      localStorage.setItem('aurora-portal-data', JSON.stringify(updatedData));
-      console.log('💾 Saved updated library to localStorage');
-
-      // Verify deletion
-      const verifyString = localStorage.getItem('aurora-portal-data');
-      if (verifyString) {
-        const verify = JSON.parse(verifyString);
-        const verifyLibrary = verify.universeLibrary || {};
-        console.log('✅ VERIFIED: Library now has', Object.keys(verifyLibrary).length, 'universes');
-
-        if (verifyLibrary[deleteConfirmId]) {
-          console.error('❌ ERROR: Universe still exists after delete!');
-          alert('Delete failed - universe still in storage!');
-          return;
-        } else {
-          console.log('✅ Confirmed: Universe successfully deleted');
-        }
-      }
-
-      console.log('🗑️ ==========================================');
-
-      // Close modal
-      setDeleteConfirmId(null);
-
-      // Refresh the page to show updated list
-      console.log('🔄 Reloading page to show updated library...');
-      window.location.reload();
-
-    } catch (error) {
-      console.error('❌ ==========================================');
-      console.error('❌ DELETE FAILED:', error);
-      console.error('❌ Error message:', (error as Error).message);
-      console.error('❌ ==========================================');
-      alert('Failed to delete universe. Check console for details.');
-      setDeleteConfirmId(null);
+  const handleRenameFolder = (folderId: string) => {
+    const folder = folders[folderId];
+    const newName = prompt('Rename folder:', folder.name);
+    if (newName && newName.trim()) {
+      renameFolder(folderId, newName.trim());
     }
   };
 
-  const cancelDelete = () => {
-    setDeleteConfirmId(null);
-  };
-
-  const handleRenameClick = (nexusId: string, currentTitle: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingNexusId(nexusId);
-    setEditingTitle(currentTitle);
-  };
-
-  const saveRename = () => {
-    if (editingNexusId && editingTitle.trim()) {
-      const store = useCanvasStore.getState();
-      const universeData = store.universeLibrary[editingNexusId];
-
-      if (universeData) {
-        // Update the title in the universe library
-        const updatedNexuses = universeData.nexuses.map((n, idx) =>
-          idx === 0 ? { ...n, title: editingTitle.trim() } : n
-        );
-
-        const updatedUniverseData = {
-          ...universeData,
-          title: editingTitle.trim(),
-          nexuses: updatedNexuses,
-          lastModified: Date.now(),
-        };
-
-        useCanvasStore.setState({
-          universeLibrary: {
-            ...store.universeLibrary,
-            [editingNexusId]: updatedUniverseData
-          }
-        });
-        store.saveToLocalStorage();
-      }
+  const handleDeleteFolder = (folderId: string) => {
+    if (folderId === 'default') {
+      alert('Cannot delete Uncategorized folder');
+      return;
     }
-    setEditingNexusId(null);
-    setEditingTitle('');
+
+    const folder = folders[folderId];
+    if (confirm(`Delete folder "${folder.name}"? Universes will move to Uncategorized.`)) {
+      deleteFolder(folderId);
+    }
   };
 
-  const cancelRename = () => {
-    setEditingNexusId(null);
-    setEditingTitle('');
-  };
+  // Group universes by folder
+  const universesByFolder: { [folderId: string]: typeof universeLibrary } = {};
+  Object.entries(universeLibrary).forEach(([universeId, universeData]) => {
+    const folderId = universeData.folderId || 'default';
+    if (!universesByFolder[folderId]) {
+      universesByFolder[folderId] = {};
+    }
+    universesByFolder[folderId][universeId] = universeData;
+  });
 
-  const handleExport = (universeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const universeData = universeLibrary[universeId];
-    if (!universeData) return;
-
-    const nexus = universeData.nexuses[0];
-    const universeNodes = Object.values(universeData.nodes);
-
-    // Create export data
-    const exportData = {
-      id: universeId,
-      title: universeData.title,
-      nexus: nexus,
-      nodes: universeNodes,
-      createdAt: getCreationDate(universeId),
-      exportedAt: new Date().toISOString(),
-      nodeCount: universeNodes.length
-    };
-
-    // Download as JSON
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${universeData.title.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const importedData = JSON.parse(event.target?.result as string);
-
-          // Validate structure
-          if (!importedData.nexus || !importedData.nodes) {
-            alert('Invalid universe file format');
-            return;
-          }
-
-          // Generate new ID to avoid conflicts
-          const newNexusId = `imported-${Date.now()}`;
-          const idMapping: { [oldId: string]: string } = {
-            [importedData.id]: newNexusId
-          };
-
-          // Create new IDs for all nodes
-          importedData.nodes.forEach((node: any) => {
-            idMapping[node.id] = `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          });
-
-          // Import nexus with new ID
-          const newNexus = { ...importedData.nexus, id: newNexusId };
-
-          // Import nodes with remapped IDs and parent references
-          const newNodes: any = {};
-          importedData.nodes.forEach((node: any) => {
-            const newNodeId = idMapping[node.id];
-            newNodes[newNodeId] = {
-              ...node,
-              id: newNodeId,
-              parentId: idMapping[node.parentId] || node.parentId,
-              children: node.children.map((childId: string) => idMapping[childId] || childId)
-            };
-          });
-
-          // Add to store
-          const store = useCanvasStore.getState();
-          useCanvasStore.setState({
-            nexuses: [...store.nexuses, newNexus],
-            nodes: { ...store.nodes, ...newNodes }
-          });
-          store.saveToLocalStorage();
-
-          alert(`Successfully imported: ${importedData.title}`);
-        } catch (error) {
-          console.error('Import error:', error);
-          alert('Failed to import universe file');
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
-  };
+  const folderColors = ['#8B5CF6', '#00FFD4', '#FFD700', '#10B981', '#EF4444', '#F59E0B'];
 
   return (
     <div style={{
-      width: '100vw',
-      height: '100vh',
+      minHeight: '100vh',
       backgroundColor: '#050A1E',
-      padding: '40px',
-      paddingTop: '80px',
-      overflowY: 'auto'
+      padding: '40px 20px'
     }}>
-      {/* Header */}
       <div style={{
-        marginBottom: '40px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
+        maxWidth: '1200px',
+        margin: '0 auto'
       }}>
-        <div>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '40px'
+        }}>
           <h1 style={{
             color: '#00FFD4',
             fontSize: '48px',
-            fontWeight: 'bold',
-            marginBottom: '8px'
+            margin: 0
           }}>
-            Universe Library
+            🧠 Memories
           </h1>
-          <p style={{
-            color: '#6B7280',
-            fontSize: '18px'
-          }}>
-            {nexuses.length} universe{nexuses.length !== 1 ? 's' : ''} saved • {totalNodeCount} total nodes
-          </p>
-        </div>
 
-        {/* Import Button */}
-        <button
-          onClick={handleImport}
-          style={{
-            padding: '12px 24px',
-            background: '#9333EA',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '16px',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = '#7C3AED'}
-          onMouseLeave={(e) => e.currentTarget.style.background = '#9333EA'}
-        >
-          📥 Import Universe
-        </button>
-      </div>
-
-      {/* Empty State */}
-      {nexuses.length === 0 && (
-        <div style={{
-          textAlign: 'center',
-          color: '#6B7280',
-          fontSize: '20px',
-          marginTop: '100px'
-        }}>
-          <p style={{ marginBottom: '20px' }}>No universes yet. Create one to get started!</p>
           <button
-            onClick={() => router.push('/chat')}
+            onClick={() => setShowNewFolderModal(true)}
             style={{
-              padding: '12px 32px',
-              background: '#00FFD4',
-              color: '#050A1E',
+              padding: '12px 24px',
+              backgroundColor: '#8B5CF6',
+              color: 'white',
               border: 'none',
               borderRadius: '8px',
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: 'bold',
               cursor: 'pointer'
             }}
           >
-            Create Universe
+            + New Folder
           </button>
         </div>
-      )}
 
-      {/* Universes Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: '24px',
-        marginBottom: '40px'
-      }}>
-        {nexuses.map((nexus) => {
-          const isActivated = activatedConversations.includes(nexus.id);
-          const nodeCount = getNodeCount(nexus.id);
-          const creationDate = getCreationDate(nexus.id);
-          const isEditing = editingNexusId === nexus.id;
+        {/* Folders */}
+        {Object.values(folders)
+          .sort((a, b) => {
+            // Default folder always last
+            if (a.id === 'default') return 1;
+            if (b.id === 'default') return -1;
+            return a.createdAt - b.createdAt;
+          })
+          .map(folder => {
+            const folderUniverses = universesByFolder[folder.id] || {};
+            const count = Object.keys(folderUniverses).length;
+            const isExpanded = expandedFolders.has(folder.id);
 
-          return (
-            <div
-              key={nexus.id}
-              style={{
-                background: '#1a2235',
-                borderRadius: '12px',
-                padding: '24px',
-                border: isActivated ? '3px solid #00FFD4' : '2px solid #2a3245',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {/* Top Right Controls */}
-              <div style={{
-                position: 'absolute',
-                top: '16px',
-                right: '16px',
-                display: 'flex',
-                gap: '8px',
-                alignItems: 'center',
-                zIndex: 10
-              }}>
-                {/* Activate Checkbox */}
+            return (
+              <div key={folder.id} style={{ marginBottom: '24px' }}>
+                {/* Folder Header */}
                 <div
-                  onClick={(e) => handleActivateToggle(nexus.id, e)}
                   style={{
-                    width: '24px',
-                    height: '24px',
-                    border: isActivated ? '2px solid #00FFD4' : '2px solid #6B7280',
-                    borderRadius: '4px',
-                    background: isActivated ? '#00FFD4' : 'transparent',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
+                    padding: '16px',
+                    backgroundColor: '#0A1628',
+                    border: `2px solid ${folder.color}`,
+                    borderRadius: '8px',
                     cursor: 'pointer'
                   }}
-                  title="Activate for AI context"
+                  onClick={() => toggleFolder(folder.id)}
                 >
-                  {isActivated && (
-                    <span style={{ color: '#050A1E', fontWeight: 'bold' }}>✓</span>
-                  )}
-                </div>
+                  <span style={{ fontSize: '20px', marginRight: '12px' }}>
+                    {isExpanded ? '📂' : '📁'}
+                  </span>
 
-                {/* Export Button */}
-                <div
-                  onClick={(e) => handleExport(nexus.id, e)}
-                  style={{
-                    width: '24px',
-                    height: '24px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    fontSize: '16px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title="Export universe"
-                >
-                  📤
-                </div>
-
-                {/* Delete Button */}
-                <div
-                  onClick={(e) => handleDeleteClick(nexus.id, e)}
-                  style={{
-                    width: '24px',
-                    height: '24px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    color: '#EF4444',
+                  <span style={{
+                    color: folder.color,
                     fontSize: '20px',
-                    fontWeight: 'bold',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#DC2626';
-                    e.currentTarget.style.transform = 'scale(1.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = '#EF4444';
-                    e.currentTarget.style.transform = 'scale(1)';
-                  }}
-                  title="Delete universe"
-                >
-                  ×
-                </div>
-              </div>
-
-              {/* Nexus Title - Editable */}
-              {isEditing ? (
-                <div style={{ marginBottom: '12px', marginRight: '100px' }}>
-                  <input
-                    type="text"
-                    value={editingTitle}
-                    onChange={(e) => setEditingTitle(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') saveRename();
-                      if (e.key === 'Escape') cancelRename();
-                    }}
-                    autoFocus
-                    style={{
-                      width: '100%',
-                      background: '#2a3245',
-                      border: '2px solid #00FFD4',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      color: '#FFD700',
-                      fontSize: '20px',
-                      fontWeight: 'bold'
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <button
-                      onClick={saveRename}
-                      style={{
-                        padding: '4px 12px',
-                        background: '#00FFD4',
-                        color: '#050A1E',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={cancelRename}
-                      style={{
-                        padding: '4px 12px',
-                        background: '#6B7280',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '8px',
-                  marginBottom: '12px',
-                  marginRight: '100px'
-                }}>
-                  <h3 style={{
-                    color: '#FFD700',
-                    fontSize: '22px',
                     fontWeight: 'bold',
                     flex: 1
                   }}>
-                    {nexus.title}
-                  </h3>
-                  <div
-                    onClick={(e) => handleRenameClick(nexus.id, nexus.title, e)}
-                    style={{
-                      cursor: 'pointer',
-                      color: '#6B7280',
-                      fontSize: '16px',
-                      padding: '4px'
-                    }}
-                    title="Rename universe"
-                  >
-                    ✏️
+                    {folder.name} ({count})
+                  </span>
+
+                  {folder.id !== 'default' && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'relative'
+                      }}
+                    >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const action = prompt('Rename (r) or Delete (d)?', 'r');
+                          if (action === 'r') handleRenameFolder(folder.id);
+                          if (action === 'd') handleDeleteFolder(folder.id);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          backgroundColor: 'transparent',
+                          color: folder.color,
+                          border: 'none',
+                          fontSize: '18px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ⋯
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Universe Cards */}
+                {isExpanded && (
+                  <div style={{
+                    marginTop: '12px',
+                    marginLeft: '32px',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                    gap: '16px'
+                  }}>
+                    {Object.entries(folderUniverses)
+                      .sort(([,a], [,b]) => b.lastModified - a.lastModified)
+                      .map(([universeId, universeData]) => (
+                        <div
+                          key={universeId}
+                          style={{
+                            backgroundColor: '#0A1628',
+                            border: '2px solid #8B5CF6',
+                            borderRadius: '8px',
+                            padding: '16px'
+                          }}
+                        >
+                          <h3 style={{
+                            color: '#00FFD4',
+                            fontSize: '16px',
+                            marginBottom: '8px',
+                            wordBreak: 'break-word'
+                          }}>
+                            {universeData.title}
+                          </h3>
+
+                          <div style={{
+                            color: '#6B7280',
+                            fontSize: '12px',
+                            marginBottom: '12px'
+                          }}>
+                            <div>{universeData.nexuses.length} nexuses</div>
+                            <div>{Object.keys(universeData.nodes).length} nodes</div>
+                            <div>{new Date(universeData.lastModified).toLocaleDateString()}</div>
+                          </div>
+
+                          {/* Folder Selector */}
+                          <select
+                            value={universeData.folderId || 'default'}
+                            onChange={(e) => moveUniverseToFolder(universeId, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              width: '100%',
+                              padding: '8px',
+                              marginBottom: '12px',
+                              backgroundColor: '#050A1E',
+                              color: '#E5E7EB',
+                              border: '1px solid #4B5563',
+                              borderRadius: '4px',
+                              fontSize: '12px'
+                            }}
+                          >
+                            {Object.values(folders).map(f => (
+                              <option key={f.id} value={f.id}>
+                                📁 {f.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={() => {
+                                loadUniverse(universeId);
+                                router.push('/chat');
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                backgroundColor: '#8B5CF6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Open
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete "${universeData.title}"?`)) {
+                                  // Find the nexus ID (first nexus in the universe)
+                                  const nexusId = universeData.nexuses[0]?.id;
+                                  if (nexusId) {
+                                    deleteConversation(nexusId);
+                                  }
+                                }
+                              }}
+                              style={{
+                                padding: '10px 14px',
+                                backgroundColor: 'transparent',
+                                color: '#EF4444',
+                                border: '2px solid #EF4444',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                   </div>
-                </div>
-              )}
-
-              {/* Metadata */}
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                marginBottom: '12px',
-                fontSize: '12px',
-                color: '#6B7280'
-              }}>
-                <span>📅 {creationDate}</span>
-                <span>•</span>
-                <span>🌐 {nodeCount} nodes</span>
+                )}
               </div>
-
-              {/* Nexus Content Preview */}
-              <p style={{
-                color: '#9CA3AF',
-                fontSize: '14px',
-                marginBottom: '20px',
-                lineHeight: '1.5',
-                display: '-webkit-box',
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden'
-              }}>
-                {nexus.content}
-              </p>
-
-              {/* Open Button */}
-              <button
-                onClick={() => handleOpenConversation(nexus.id)}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  background: '#9333EA',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#7C3AED'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#9333EA'}
-              >
-                Open Universe
-              </button>
-
-              {/* Activated Badge */}
-              {isActivated && (
-                <div style={{
-                  marginTop: '12px',
-                  padding: '6px 12px',
-                  background: 'rgba(0, 255, 212, 0.1)',
-                  border: '1px solid #00FFD4',
-                  borderRadius: '6px',
-                  color: '#00FFD4',
-                  fontSize: '12px',
-                  textAlign: 'center',
-                  fontWeight: 'bold'
-                }}>
-                  ✓ ACTIVATED FOR CONTEXT
-                </div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirmId && (
+      {/* New Folder Modal */}
+      {showNewFolderModal && (
         <div style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000
+          zIndex: 10000
         }}>
           <div style={{
-            background: '#1a2235',
-            borderRadius: '12px',
+            backgroundColor: '#0A1628',
+            border: '2px solid #8B5CF6',
+            borderRadius: '16px',
             padding: '32px',
-            maxWidth: '500px',
-            border: '2px solid #EF4444'
+            maxWidth: '400px',
+            width: '90%'
           }}>
-            <h2 style={{
-              color: '#EF4444',
-              fontSize: '24px',
-              fontWeight: 'bold',
-              marginBottom: '16px'
-            }}>
-              Delete Universe?
+            <h2 style={{ color: '#00FFD4', marginBottom: '16px' }}>
+              Create New Folder
             </h2>
-            <p style={{
-              color: '#9CA3AF',
-              fontSize: '16px',
-              marginBottom: '24px',
-              lineHeight: '1.5'
-            }}>
-              Are you sure you want to delete "{nexuses.find(n => n.id === deleteConfirmId)?.title}"?
-              This will permanently remove the nexus and all {getNodeCount(deleteConfirmId)} nodes.
-              This action cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleCreateFolder();
+                }
+              }}
+              placeholder="Folder name..."
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '12px',
+                marginBottom: '16px',
+                backgroundColor: '#050A1E',
+                color: 'white',
+                border: '2px solid #4B5563',
+                borderRadius: '8px',
+                fontSize: '16px'
+              }}
+            />
+
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ color: '#E5E7EB', marginBottom: '8px' }}>
+                Choose color:
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {folderColors.map(color => (
+                  <div
+                    key={color}
+                    onClick={() => setSelectedColor(color)}
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      backgroundColor: color,
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      border: selectedColor === color ? '3px solid white' : 'none'
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
               <button
-                onClick={cancelDelete}
+                onClick={handleCreateFolder}
+                disabled={!newFolderName.trim()}
                 style={{
-                  padding: '12px 24px',
-                  background: '#2a3245',
-                  color: 'white',
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: newFolderName.trim() ? '#00FFD4' : '#4B5563',
+                  color: '#050A1E',
                   border: 'none',
                   borderRadius: '8px',
-                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: newFolderName.trim() ? 'pointer' : 'not-allowed'
+                }}
+              >
+                Create
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowNewFolderModal(false);
+                  setNewFolderName('');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#8B5CF6',
+                  border: '2px solid #8B5CF6',
+                  borderRadius: '8px',
                   fontWeight: 'bold',
                   cursor: 'pointer'
                 }}
               >
                 Cancel
               </button>
-              <button
-                onClick={confirmDelete}
-                style={{
-                  padding: '12px 24px',
-                  background: '#EF4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#DC2626'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#EF4444'}
-              >
-                Delete Forever
-              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Back Button */}
-      <button
-        onClick={() => router.push('/chat')}
-        style={{
-          padding: '12px 24px',
-          background: '#2a3245',
-          color: '#00FFD4',
-          border: '2px solid #00FFD4',
-          borderRadius: '8px',
-          fontSize: '16px',
-          fontWeight: 'bold',
-          cursor: 'pointer'
-        }}
-      >
-        ← Back to Chat
-      </button>
     </div>
   );
 }

@@ -278,18 +278,29 @@ interface Nexus {
   type?: 'academic' | 'social';
 }
 
+interface Folder {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: number;
+}
+
 interface UniverseData {
   nexuses: Nexus[];
   nodes: { [id: string]: Node };
   cameraPosition: [number, number, number];
   title: string;
   lastModified: number;
+  folderId?: string;
 }
 
 interface CanvasStore {
   // 🌌 UNIVERSE LIBRARY - Each universe stored separately
   activeUniverseId: string | null;
   universeLibrary: { [id: string]: UniverseData };
+
+  // 📁 FOLDER SYSTEM
+  folders: { [id: string]: Folder };
 
   // Current canvas state (what's visible)
   nexuses: Nexus[];
@@ -353,12 +364,28 @@ interface CanvasStore {
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => void;
   clearCanvas: () => void;
   loadUniverse: (universeId: string) => void;
+
+  // 📁 FOLDER MANAGEMENT
+  createFolder: (name: string, color: string) => string;
+  renameFolder: (folderId: string, newName: string) => void;
+  deleteFolder: (folderId: string) => void;
+  moveUniverseToFolder: (universeId: string, folderId: string) => void;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🌌 UNIVERSE LIBRARY - Start with blank canvas
   activeUniverseId: null,
   universeLibrary: {},
+
+  // 📁 FOLDER SYSTEM - Start with default folder
+  folders: {
+    'default': {
+      id: 'default',
+      name: 'Uncategorized',
+      color: '#6B7280',
+      createdAt: Date.now()
+    }
+  },
 
   // Current canvas state (empty on startup)
   nexuses: [],
@@ -412,6 +439,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     const dataToSave = {
       universeLibrary: state.universeLibrary,
+      folders: state.folders,
       activatedConversations: state.activatedConversations,
       timestamp: Date.now(),
     };
@@ -429,6 +457,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       // Comprehensive logging
       const universeCount = Object.keys(state.universeLibrary).length;
+      const foldersCount = Object.keys(state.folders).length;
       console.log('💾 ==========================================');
       console.log('💾 SAVE TO LOCALSTORAGE:', new Date().toLocaleTimeString());
       console.log('💾 🔍 Called from:', saveCaller);
@@ -436,6 +465,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       if (universeCount > 0) {
         Object.entries(state.universeLibrary).forEach(([id, data]) => {
           console.log(`💾   - ${data.title} (${data.nexuses.length} nexuses, ${Object.keys(data.nodes).length} nodes)`);
+        });
+      }
+      console.log('💾 Folders:', foldersCount);
+      if (foldersCount > 0) {
+        Object.values(state.folders).forEach((folder: any) => {
+          console.log(`💾   - ${folder.name} (${folder.color})`);
         });
       }
       console.log('💾 Data size:', (serialized.length / 1024).toFixed(2), 'KB');
@@ -449,10 +484,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
       const verifiedData = JSON.parse(verification);
       const verifiedCount = Object.keys(verifiedData.universeLibrary || {}).length;
-      console.log('💾 ✅ VERIFICATION: Data confirmed in localStorage (' + verifiedCount + ' universes)');
+      const verifiedFoldersCount = Object.keys(verifiedData.folders || {}).length;
+      console.log('💾 ✅ VERIFICATION: Data confirmed in localStorage');
+      console.log('💾    - Universes:', verifiedCount);
+      console.log('💾    - Folders:', verifiedFoldersCount);
 
       if (verifiedCount !== universeCount) {
-        console.error('💾 🚨 VERIFICATION MISMATCH! Saved', universeCount, 'but found', verifiedCount);
+        console.error('💾 🚨 VERIFICATION MISMATCH! Saved', universeCount, 'universes but found', verifiedCount);
+      }
+      if (verifiedFoldersCount !== foldersCount) {
+        console.error('💾 🚨 VERIFICATION MISMATCH! Saved', foldersCount, 'folders but found', verifiedFoldersCount);
       }
     } catch (error) {
       console.error('❌ ==========================================');
@@ -550,8 +591,32 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         });
       }
 
+      // Load folders or create default
+      const folders = data.folders || {
+        'default': {
+          id: 'default',
+          name: 'Uncategorized',
+          color: '#6B7280',
+          createdAt: Date.now()
+        }
+      };
+
+      // 🔧 MIGRATION: Ensure all universes have a folderId
+      let migrationCount = 0;
+      Object.keys(universeLibrary).forEach(id => {
+        if (!universeLibrary[id].folderId) {
+          console.log('🔧 Migrating universe without folderId:', universeLibrary[id].title);
+          universeLibrary[id].folderId = 'default';
+          migrationCount++;
+        }
+      });
+      if (migrationCount > 0) {
+        console.log(`✅ Migrated ${migrationCount} universes to Uncategorized folder`);
+      }
+
       set({
         universeLibrary,
+        folders,
         activatedConversations: data.activatedConversations || [],
         // Canvas stays blank - user loads universes from Memories
         nexuses: [],
@@ -2232,7 +2297,10 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         // Clear activeUniverseId if we're deleting the active universe
         const updatedActiveUniverseId = state.activeUniverseId === nexusId ? null : state.activeUniverseId;
 
+        console.log('🗑️   Preserving folders during delete:', Object.keys(state.folders).length);
+
         return {
+          ...state,  // 🔥 CRITICAL: Preserve ALL state including folders
           nexuses: updatedNexuses,
           nodes: updatedNodes,
           universeLibrary: updatedLibrary,
@@ -2246,8 +2314,11 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       // Verify deletion
       const updatedState = get();
       const libraryCountAfter = Object.keys(updatedState.universeLibrary).length;
+      const foldersCountAfter = Object.keys(updatedState.folders).length;
       console.log('🗑️   Library count after:', libraryCountAfter);
       console.log('🗑️   Universe IDs after:', Object.keys(updatedState.universeLibrary));
+      console.log('🗑️   ✅ Folders preserved:', foldersCountAfter, 'folders still exist');
+      console.log('🗑️   Folder names:', Object.values(updatedState.folders).map((f: any) => f.name));
 
       if (updatedState.universeLibrary[nexusId]) {
         console.error('🗑️   ❌ ERROR: Universe still in library after deletion!');
@@ -2554,6 +2625,12 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       // Get title from first nexus
       const title = state.nexuses[0]?.title || 'Untitled Universe';
 
+      // Get existing universe data to preserve folderId
+      const existingUniverse = state.universeLibrary[universeId];
+      const folderId = existingUniverse?.folderId || 'default';
+
+      console.log('📂 Preserving folderId:', folderId);
+
       // Create universe data object
       const universeData: UniverseData = {
         nexuses: state.nexuses,
@@ -2561,6 +2638,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         cameraPosition: cameraPosition || [0, 20, 30],
         title,
         lastModified: Date.now(),
+        folderId: folderId,  // 🔥 CRITICAL: Preserve folderId
       };
 
       console.log('📦 Universe data to save:');
@@ -2708,6 +2786,81 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     // TODO: Restore camera position (will be implemented in step 8)
     // This will require integration with the camera controls in CanvasScene
+  },
+
+  // 📁 FOLDER MANAGEMENT FUNCTIONS
+  createFolder: (name: string, color: string): string => {
+    const newId = `folder-${Date.now()}`;
+
+    set(state => ({
+      folders: {
+        ...state.folders,
+        [newId]: {
+          id: newId,
+          name: name,
+          color: color,
+          createdAt: Date.now()
+        }
+      }
+    }));
+
+    console.log('📁 Created folder:', name, newId);
+    get().saveToLocalStorage();
+
+    return newId;
+  },
+
+  renameFolder: (folderId: string, newName: string) => {
+    set(state => ({
+      folders: {
+        ...state.folders,
+        [folderId]: {
+          ...state.folders[folderId],
+          name: newName
+        }
+      }
+    }));
+
+    console.log('📁 Renamed folder:', folderId, 'to', newName);
+    get().saveToLocalStorage();
+  },
+
+  deleteFolder: (folderId: string) => {
+    // Move all universes in this folder to Uncategorized
+    set(state => {
+      const updatedUniverses = { ...state.universeLibrary };
+      Object.keys(updatedUniverses).forEach(universeId => {
+        if (updatedUniverses[universeId].folderId === folderId) {
+          updatedUniverses[universeId].folderId = 'default';
+        }
+      });
+
+      const updatedFolders = { ...state.folders };
+      delete updatedFolders[folderId];
+
+      return {
+        universeLibrary: updatedUniverses,
+        folders: updatedFolders
+      };
+    });
+
+    console.log('📁 Deleted folder:', folderId);
+    get().saveToLocalStorage();
+  },
+
+  moveUniverseToFolder: (universeId: string, folderId: string) => {
+    set(state => ({
+      universeLibrary: {
+        ...state.universeLibrary,
+        [universeId]: {
+          ...state.universeLibrary[universeId],
+          folderId: folderId
+        }
+      }
+    }));
+
+    console.log('📁 Moved universe', universeId, 'to folder', folderId);
+    get().saveToLocalStorage();
   },
 
   // 🛡️ BACKUP LIBRARY

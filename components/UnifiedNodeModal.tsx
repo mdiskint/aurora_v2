@@ -42,6 +42,13 @@ export default function UnifiedNodeModal() {
   // Quiz Me / Deep Thinking mode state
   const [explorationMode, setExplorationMode] = useState<'deep-thinking' | 'quiz' | null>(null);
   const [quizFeedback, setQuizFeedback] = useState('');
+  const [deepThinkingEngagement, setDeepThinkingEngagement] = useState(''); // AI's response to user's thinking
+  const [quizHistory, setQuizHistory] = useState<string[]>([]); // Track previous questions for diverse question generation
+  const [deepThinkingHistory, setDeepThinkingHistory] = useState<Array<{
+    question: string;
+    userAnswer: string;
+    aiEngagement: string;
+  }>>([]); // Track deep thinking conversation for progressive depth
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -353,6 +360,9 @@ export default function UnifiedNodeModal() {
     // Set exploration mode
     setExplorationMode(mode);
     setQuizFeedback(''); // Reset any previous feedback
+    setDeepThinkingEngagement(''); // Reset any previous engagement
+    setQuizHistory([]); // Reset quiz history for new quiz session
+    setDeepThinkingHistory([]); // Reset deep thinking history for new exploration
 
     // Start exploration (works for both regular nodes and connection nodes)
     setIsLoadingAI(true);
@@ -367,12 +377,12 @@ export default function UnifiedNodeModal() {
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: mode === 'quiz'
-              ? `You are a law professor testing a student's knowledge of this material:\n\n"${contextContent}"\n\nGenerate ONE recall or comprehension question about the key facts, holdings, or reasoning. Keep it concise (1-2 sentences).`
-              : `You are conducting a Socratic exploration of this idea:\n\n"${contextContent}"\n\nGenerate ONE thoughtful Socratic question that challenges assumptions, explores implications, or probes deeper understanding. Keep it concise (1-2 sentences).`
+            content: contextContent  // Send content directly (prompt is in backend now)
           }],
-          mode: mode === 'quiz' ? 'quiz' : 'socratic',
-          explorationMode: mode
+          mode: mode === 'quiz' ? 'quiz' : mode === 'deep-thinking' ? 'deep-thinking' : 'socratic',
+          explorationMode: mode,
+          previousQuestions: mode === 'quiz' ? [] : undefined,  // Empty array for first quiz question
+          conversationHistory: mode === 'deep-thinking' ? [] : undefined  // Empty array for first deep thinking question
         }),
       });
 
@@ -438,11 +448,12 @@ export default function UnifiedNodeModal() {
             content: `Previous question: "${socraticQuestion}"\nUser's answer: "${userAnswerText}"\n\n${
               isQuizMode
                 ? 'Grade this answer and provide feedback.'
-                : 'Generate the NEXT Socratic question to continue the exploration. Keep it concise.'
+                : 'Engage with their thinking and ask the next question.'
             }`
           }],
-          mode: isQuizMode ? 'quiz' : 'socratic',
-          explorationMode
+          mode: isQuizMode ? 'quiz' : explorationMode === 'deep-thinking' ? 'deep-thinking' : 'socratic',
+          explorationMode,
+          conversationHistory: explorationMode === 'deep-thinking' ? deepThinkingHistory : undefined  // Pass history for progressive depth
         }),
       });
 
@@ -459,6 +470,12 @@ export default function UnifiedNodeModal() {
         setInputContent('');
         setIsLoadingAI(false);
 
+        // Add current question to history for diverse question generation
+        if (socraticQuestion) {
+          setQuizHistory([...quizHistory, socraticQuestion]);
+          console.log('📋 Added to quiz history. Total questions:', quizHistory.length + 1);
+        }
+
         // Create a single node with question, answer, and feedback
         const quizNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n${feedback}`;
         console.log('📝 Creating quiz answer node with feedback...');
@@ -471,39 +488,58 @@ export default function UnifiedNodeModal() {
           setShowContentOverlay(true);
         }, 100);
       } else {
-        // Deep thinking mode: Continue with next question
-        const nextQuestion = data.response;
-        console.log('✅ Received next question:', nextQuestion.substring(0, 50) + '...');
+        // Deep thinking mode: Show engagement + next question
+        const fullResponse = data.response;
+        console.log('✅ Received deep thinking response:', fullResponse.substring(0, 100) + '...');
+
+        // Parse the response: Split by double newlines to separate engagement from next question
+        const paragraphs = fullResponse.split('\n\n').filter(p => p.trim());
+
+        // First paragraph(s) are engagement, last one is the next question
+        const engagement = paragraphs.slice(0, -1).join('\n\n').trim();
+        const nextQuestion = paragraphs[paragraphs.length - 1].trim();
+
+        console.log('💭 Engagement:', engagement.substring(0, 50) + '...');
+        console.log('❓ Next question:', nextQuestion.substring(0, 50) + '...');
 
         // CRITICAL: Keep ref TRUE to protect state during node creation
         isSocraticModeActive.current = true;
-        console.log('🔒 Socratic mode ref STILL TRUE - continuing protection');
+        console.log('🔒 Deep thinking mode ref STILL TRUE - continuing protection');
 
-        // NOW update state FIRST before creating any nodes
-        console.log('🔄 Updating Socratic state with new question BEFORE creating nodes');
+        // Show engagement in UI
+        setDeepThinkingEngagement(engagement);
+
+        // Save to conversation history for progressive depth
+        if (socraticQuestion) {
+          setDeepThinkingHistory([
+            ...deepThinkingHistory,
+            {
+              question: socraticQuestion,
+              userAnswer: userAnswerText,
+              aiEngagement: engagement
+            }
+          ]);
+          console.log('📋 Added to deep thinking history. Total rounds:', deepThinkingHistory.length + 1);
+        }
+
+        // Update state with next question
         setSocraticQuestion(nextQuestion);
         setInputContent('');
         setIsLoadingAI(false);
 
-        // THEN create the nodes (this will trigger auto-selection but state is already updated)
-        const userAnswer = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}`;
-        console.log('📝 Creating user answer node...');
-        addNode(userAnswer, socraticRootId);
+        // Create node with user's answer + AI's engagement
+        const exchangeNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n💡 ${engagement}`;
+        console.log('📝 Creating deep thinking exchange node...');
+        addNode(exchangeNode, socraticRootId);
 
-        const nextQuestionNode = `Next Question:\n${nextQuestion}`;
-        console.log('📝 Creating AI question node...');
-        addNode(nextQuestionNode, socraticRootId);
-
-        // CRITICAL FIX: addNode calls selectNode(newId, false) which CLOSES the modal
-        // We need to force it back open and select the root node
+        // Keep modal open to show engagement
         setTimeout(() => {
-          console.log('🔓 Forcing modal to stay open and selecting root node');
+          console.log('🔓 Keeping modal open to show deep thinking engagement');
           selectNode(socraticRootId, true);
           setShowContentOverlay(true);
         }, 100);
 
-        console.log('✅ Socratic exploration continuing - state updated, nodes created');
-        console.log('   New question in state:', nextQuestion.substring(0, 30));
+        console.log('✅ Deep thinking exchange complete - showing engagement before next question');
       }
     } catch (error) {
       console.error(`❌ Failed to continue ${explorationMode} dialogue:`, error);
@@ -511,11 +547,23 @@ export default function UnifiedNodeModal() {
     }
   };
 
+  // Continue deep thinking exploration (after viewing engagement)
+  const handleContinueDeepThinking = () => {
+    console.log('🧠 Continuing deep thinking exploration...');
+
+    // Clear engagement to show answer input again
+    setDeepThinkingEngagement('');
+
+    // Next question is already set in state, just need to clear engagement
+    console.log('✅ Ready for next answer, question:', socraticQuestion?.substring(0, 50) + '...');
+  };
+
   // Ask another quiz question (after viewing feedback)
   const handleAskAnotherQuestion = async () => {
     if (!socraticRootId) return;
 
     console.log('🔄 Asking another quiz question...');
+    console.log('📋 Previous questions:', quizHistory.length);
 
     // Clear previous state
     setQuizFeedback('');
@@ -530,10 +578,11 @@ export default function UnifiedNodeModal() {
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: `You are a law professor testing a student's knowledge of this material:\n\n"${displayContent}"\n\nGenerate ONE recall or comprehension question about the key facts, holdings, or reasoning. Keep it concise (1-2 sentences). Make sure this is a DIFFERENT question from before.`
+            content: displayContent  // Send content directly
           }],
           mode: 'quiz',
-          explorationMode: 'quiz'
+          explorationMode: 'quiz',
+          previousQuestions: quizHistory  // ← Send history for diverse questions
         }),
       });
 
@@ -631,6 +680,7 @@ export default function UnifiedNodeModal() {
       setSocraticQuestion(null);
       setSocraticRootId(null);
       setInputContent('');
+      setDeepThinkingEngagement('');
       setActionMode(null);
       setIsLoadingAI(false);
 
@@ -749,13 +799,21 @@ export default function UnifiedNodeModal() {
           left: '50%',
           transform: 'translate(-50%, -50%)',
           width: '70vw',
-          height: '80vh',
+          maxHeight: '90vh',
           display: 'flex',
           flexDirection: 'column',
+          padding: '20px'
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl h-full flex flex-col">
+        <div
+          className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl flex flex-col"
+          style={{
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            overflowX: 'hidden'
+          }}
+        >
 
           {/* TOP SECTION - Content Display */}
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -859,31 +917,70 @@ export default function UnifiedNodeModal() {
                   ? 'bg-gradient-to-r from-purple-900/30 to-purple-800/30 border-b border-purple-500/20'
                   : 'bg-gradient-to-r from-cyan-900/30 to-purple-900/30 border-b border-cyan-500/20'
               }`}>
-                <div className={`text-sm mb-2 font-semibold ${
-                  explorationMode === 'quiz' ? 'text-purple-300' : 'text-cyan-300'
-                }`}>
-                  {explorationMode === 'quiz' ? '📝 Quiz Question:' : '💭 Socratic Question:'}
+                {/* Header with progress indicator */}
+                <div className="flex justify-between items-center mb-2">
+                  <div className={`text-sm font-semibold ${
+                    explorationMode === 'quiz' ? 'text-purple-300' : 'text-cyan-300'
+                  }`}>
+                    {explorationMode === 'quiz' ? '📝 Quiz Question' : '💭 Socratic Question'}
+                  </div>
+                  {explorationMode === 'quiz' && (
+                    <div className="text-xs text-purple-400/60">
+                      Question {quizHistory.length + 1}
+                    </div>
+                  )}
                 </div>
                 <div className="text-gray-200 text-base mb-3">{socraticQuestion}</div>
 
                 {/* Show quiz feedback if available */}
                 {quizFeedback && explorationMode === 'quiz' && (
-                  <div className="mb-3 p-3 bg-purple-950/30 border border-purple-500/30 rounded-lg">
-                    <div className="text-purple-200 text-sm whitespace-pre-wrap">{quizFeedback}</div>
+                  <div className="mb-3 p-4 bg-purple-950/30 border border-purple-500/30 rounded-lg">
+                    <div
+                      className="text-purple-200 text-sm"
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        wordWrap: 'break-word',
+                        lineHeight: '1.6'
+                      }}
+                    >
+                      {quizFeedback}
+                    </div>
                   </div>
                 )}
 
-                <textarea
-                  value={inputContent}
-                  onChange={(e) => setInputContent(e.target.value)}
-                  placeholder={explorationMode === 'quiz' ? 'Type your answer...' : 'Type your answer...'}
-                  disabled={isLoadingAI || (explorationMode === 'quiz' && quizFeedback !== '')}
-                  className={`w-full bg-slate-950/50 text-gray-200 border rounded-lg p-3
-                           focus:outline-none focus:border-${explorationMode === 'quiz' ? 'purple' : 'cyan'}-500/50 resize-none ${
-                    explorationMode === 'quiz' ? 'border-purple-500/20' : 'border-cyan-500/20'
-                  } ${(isLoadingAI || (explorationMode === 'quiz' && quizFeedback !== '')) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  rows={3}
-                />
+                {/* Show deep thinking engagement if available */}
+                {deepThinkingEngagement && explorationMode === 'deep-thinking' && (
+                  <div className="mb-3 p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                    <div className="text-yellow-200 text-xs font-semibold mb-2 uppercase tracking-wide">
+                      💡 Building on your thinking:
+                    </div>
+                    <div
+                      className="text-gray-200 text-sm"
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        wordWrap: 'break-word',
+                        lineHeight: '1.6'
+                      }}
+                    >
+                      {deepThinkingEngagement}
+                    </div>
+                  </div>
+                )}
+
+                {/* Textarea - hide when showing engagement for deep thinking or feedback for quiz */}
+                {!((explorationMode === 'deep-thinking' && deepThinkingEngagement) || (explorationMode === 'quiz' && quizFeedback)) && (
+                  <textarea
+                    value={inputContent}
+                    onChange={(e) => setInputContent(e.target.value)}
+                    placeholder={explorationMode === 'quiz' ? 'Type your answer...' : 'Share your thoughts...'}
+                    disabled={isLoadingAI}
+                    className={`w-full bg-slate-950/50 text-gray-200 border rounded-lg p-3
+                             focus:outline-none focus:border-${explorationMode === 'quiz' ? 'purple' : 'cyan'}-500/50 resize-none ${
+                      explorationMode === 'quiz' ? 'border-purple-500/20' : 'border-cyan-500/20'
+                    } ${isLoadingAI ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    rows={3}
+                  />
+                )}
                 <div className="flex gap-2 mt-3">
                   {explorationMode === 'quiz' ? (
                     <>
@@ -932,22 +1029,48 @@ export default function UnifiedNodeModal() {
                     </>
                   ) : (
                     <>
-                      <button
-                        onClick={handleSocraticAnswer}
-                        disabled={isLoadingAI || !inputContent.trim()}
-                        className="flex-1 px-4 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50
-                                 text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isLoadingAI ? '🤔 Thinking...' : 'Continue Exploration'}
-                      </button>
-                      <button
-                        onClick={handleEndExploration}
-                        disabled={isLoadingAI}
-                        className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50
-                                 text-purple-300 rounded-lg transition-all disabled:opacity-50"
-                      >
-                        End & Synthesize
-                      </button>
+                      {/* Deep Thinking mode buttons - show different buttons based on engagement */}
+                      {deepThinkingEngagement ? (
+                        // After AI engagement: Show "Continue Exploring" button
+                        <>
+                          <button
+                            onClick={handleContinueDeepThinking}
+                            disabled={isLoadingAI}
+                            className="flex-1 px-4 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50
+                                     text-yellow-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                          >
+                            {isLoadingAI ? '🤔 Thinking...' : '🧠 Continue Exploring'}
+                          </button>
+                          <button
+                            onClick={handleEndExploration}
+                            disabled={isLoadingAI}
+                            className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50
+                                     text-gray-300 rounded-lg transition-all disabled:opacity-50"
+                          >
+                            End & Synthesize
+                          </button>
+                        </>
+                      ) : (
+                        // Before AI engagement: Show "Share My Thinking" button
+                        <>
+                          <button
+                            onClick={handleSocraticAnswer}
+                            disabled={isLoadingAI || !inputContent.trim()}
+                            className="flex-1 px-4 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50
+                                     text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isLoadingAI ? '🤔 Thinking...' : '💭 Share My Thinking'}
+                          </button>
+                          <button
+                            onClick={handleEndExploration}
+                            disabled={isLoadingAI}
+                            className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50
+                                     text-gray-300 rounded-lg transition-all disabled:opacity-50"
+                          >
+                            End & Synthesize
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
