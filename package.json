@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.67.0",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
+    "dexie": "^4.2.1",
     "docx": "^9.5.1",
     "file-saver": "^2.0.5",
     "jspdf": "^3.0.3",

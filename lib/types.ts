@@ -18,4 +18,16 @@ export interface Node {
   semanticTitle?: string;      // AI-generated 5-10 word summary for navigation
   isAnchored?: boolean;        // Flag to mark this node as anchored for quick navigation
   anchoredAt?: number;         // Timestamp when node was anchored
+
+  // Quiz progress tracking
+  quizProgress?: {
+    questionsAsked: string[];
+    answersGiven: Array<{
+      question: string;
+      answer: string;
+      wasCorrect: boolean;
+    }>;
+    lastQuizDate: number;
+    completedCycles: number; // How many times they've gone through all aspects
+  };
 }

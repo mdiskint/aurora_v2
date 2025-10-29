@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Node } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
+import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup } from './db';
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
@@ -320,6 +321,7 @@ interface CanvasStore {
   updateNodeContent: (nodeId: string, newContent: string) => void;
   updateNexusContent: (nexusId: string, newContent: string) => void;
   updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
+  updateNode: (nodeId: string, updates: Partial<Node>) => void;
   exportToWordDoc: () => void;
   addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis') => string;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
@@ -401,8 +403,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   connectionModeActive: false,
   selectedNodesForConnection: [],
 
-  // 💾 SAVE TO LOCALSTORAGE
-  saveToLocalStorage: () => {
+  // 💾 SAVE TO LOCALSTORAGE + INDEXEDDB
+  saveToLocalStorage: async () => {
     const state = get();
 
     // 🔍 DIAGNOSTIC: Capture call stack to see who triggered this save
@@ -453,13 +455,26 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         return;
       }
 
+      // 💾 Save to localStorage (backwards compatibility)
       localStorage.setItem('aurora-portal-data', serialized);
 
-      // Comprehensive logging
+      // 💾 Save each universe to IndexedDB
       const universeCount = Object.keys(state.universeLibrary).length;
+      for (const [id, universeData] of Object.entries(state.universeLibrary)) {
+        await saveUniverse(id, universeData);
+      }
+
+      // 💾 Create backup snapshot every 5 saves
+      const saveCounter = (window as any)._auroraSaveCount || 0;
+      (window as any)._auroraSaveCount = saveCounter + 1;
+      if ((window as any)._auroraSaveCount % 5 === 0) {
+        await createBackup(dataToSave, 'auto');
+      }
+
+      // Comprehensive logging
       const foldersCount = Object.keys(state.folders).length;
       console.log('💾 ==========================================');
-      console.log('💾 SAVE TO LOCALSTORAGE:', new Date().toLocaleTimeString());
+      console.log('💾 SAVE TO STORAGE:', new Date().toLocaleTimeString());
       console.log('💾 🔍 Called from:', saveCaller);
       console.log('💾 Universes in library:', universeCount);
       if (universeCount > 0) {
@@ -474,7 +489,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         });
       }
       console.log('💾 Data size:', (serialized.length / 1024).toFixed(2), 'KB');
-      console.log('💾 Storage key:', 'aurora-portal-data');
+      console.log('💾 Storage: localStorage + IndexedDB');
       console.log('💾 ==========================================');
 
       // 🔍 DIAGNOSTIC: Verify save worked by reading back
@@ -485,7 +500,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const verifiedData = JSON.parse(verification);
       const verifiedCount = Object.keys(verifiedData.universeLibrary || {}).length;
       const verifiedFoldersCount = Object.keys(verifiedData.folders || {}).length;
-      console.log('💾 ✅ VERIFICATION: Data confirmed in localStorage');
+      console.log('💾 ✅ VERIFICATION: Data confirmed in both storages');
       console.log('💾    - Universes:', verifiedCount);
       console.log('💾    - Folders:', verifiedFoldersCount);
 
@@ -497,7 +512,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
     } catch (error) {
       console.error('❌ ==========================================');
-      console.error('❌ CRITICAL: Failed to save to localStorage:', error);
+      console.error('❌ CRITICAL: Failed to save to storage:', error);
       console.error('❌ ==========================================');
 
       // Alert user of data loss risk
@@ -507,82 +522,136 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
-  // 📂 LOAD FROM LOCALSTORAGE
-  loadFromLocalStorage: () => {
+  // 📂 LOAD FROM INDEXEDDB + LOCALSTORAGE (with migration)
+  loadFromLocalStorage: async () => {
+    // Skip if running on server-side
+    if (typeof window === 'undefined') {
+      console.log('📂 Skipping load on server-side');
+      return;
+    }
+
     try {
       // 🔍 DIAGNOSTIC: Capture call stack
       const loadStack = new Error().stack || '';
       const loadCaller = loadStack.split('\n')[2]?.trim() || 'unknown';
 
       console.log('📂 ==========================================');
-      console.log('📂 LOAD FROM LOCALSTORAGE:', new Date().toLocaleTimeString());
+      console.log('📂 LOAD FROM STORAGE:', new Date().toLocaleTimeString());
       console.log('📂 🔍 Called from:', loadCaller);
 
-      const saved = localStorage.getItem('aurora-portal-data');
+      // Try IndexedDB first
+      let universeLibrary = await loadAllUniverses();
+      let folders: any = {};
+      let activatedConversations: string[] = [];
 
-      console.log('📂 Raw data status:', saved === null ? 'NULL' : saved === 'null' ? '"null" STRING' : 'EXISTS');
-      if (saved) {
-        console.log('📂 Raw data size:', (saved.length / 1024).toFixed(2), 'KB');
-      }
+      // If IndexedDB is empty, try localStorage as fallback and migrate
+      if (Object.keys(universeLibrary).length === 0) {
+        console.log('📂 IndexedDB empty, checking localStorage for migration...');
 
-      // 🛡️ CRITICAL: Check for corrupted data (null string)
-      if (saved === 'null' || saved === null) {
-        console.error('🚨 LIBRARY IS NULL OR CORRUPTED! Attempting recovery...');
-        console.error('🚨 Load was called from:', loadCaller);
+        const saved = localStorage.getItem('aurora-portal-data');
 
-        // Try to recover from backup
-        const recovered = get().recoverFromBackup();
+        console.log('📂 Raw data status:', saved === null ? 'NULL' : saved === 'null' ? '"null" STRING' : 'EXISTS');
+        if (saved) {
+          console.log('📂 Raw data size:', (saved.length / 1024).toFixed(2), 'KB');
+        }
 
-        if (recovered) {
-          console.log('✅ Recovered from backup! Reloading...');
-          // Recursively call loadFromLocalStorage after recovery
-          get().loadFromLocalStorage();
-          return;
-        } else {
-          console.error('❌ No backup available - starting with empty library');
+        // 🛡️ CRITICAL: Check for corrupted data (null string)
+        if (saved === 'null' || saved === null) {
+          console.error('🚨 LIBRARY IS NULL OR CORRUPTED! Attempting recovery...');
+          console.error('🚨 Load was called from:', loadCaller);
+
+          // Try to recover from backup
+          const recovered = get().recoverFromBackup();
+
+          if (recovered) {
+            console.log('✅ Recovered from backup! Reloading...');
+            // Recursively call loadFromLocalStorage after recovery
+            await get().loadFromLocalStorage();
+            return;
+          } else {
+            console.error('❌ No backup available - starting with empty library');
+            console.log('📂 Starting with blank canvas and empty library');
+            console.log('📂 ==========================================');
+            return;
+          }
+        }
+
+        if (!saved) {
+          console.log('📂 No saved data found in any storage');
           console.log('📂 Starting with blank canvas and empty library');
           console.log('📂 ==========================================');
+
+          // Initialize with default folder
+          set({
+            universeLibrary: {},
+            folders: {
+              'default': {
+                id: 'default',
+                name: 'Uncategorized',
+                color: '#6B7280',
+                createdAt: Date.now()
+              }
+            },
+            activatedConversations: [],
+            nexuses: [],
+            nodes: {},
+            activeUniverseId: null,
+          });
           return;
+        }
+
+        const data = JSON.parse(saved);
+
+        // 🛡️ CRITICAL: Verify data structure
+        if (!data || typeof data !== 'object') {
+          console.error('🚨 DATA IS CORRUPTED! Attempting recovery...');
+          const recovered = get().recoverFromBackup();
+          if (recovered) {
+            await get().loadFromLocalStorage();
+            return;
+          }
+          throw new Error('Data is corrupted and no backup available');
+        }
+
+        // 🛡️ CRITICAL: Verify universeLibrary exists
+        if (!data.universeLibrary || typeof data.universeLibrary !== 'object') {
+          console.error('🚨 UNIVERSE LIBRARY IS MISSING OR CORRUPTED! Attempting recovery...');
+          const recovered = get().recoverFromBackup();
+          if (recovered) {
+            await get().loadFromLocalStorage();
+            return;
+          }
+          console.warn('⚠️ No backup - initializing empty library');
+          data.universeLibrary = {};
+        }
+
+        // Migrate from localStorage to IndexedDB
+        universeLibrary = data.universeLibrary || {};
+        folders = data.folders || {};
+        activatedConversations = data.activatedConversations || [];
+
+        const universeCount = Object.keys(universeLibrary).length;
+        if (universeCount > 0) {
+          console.log('⚙️ MIGRATING', universeCount, 'universes from localStorage to IndexedDB...');
+
+          for (const [id, universeData] of Object.entries(universeLibrary)) {
+            await saveUniverse(id, universeData);
+          }
+
+          console.log('✅ Migration complete!');
+        }
+      } else {
+        // Load folders and activated conversations from localStorage (could move to IndexedDB later)
+        const localData = localStorage.getItem('aurora-portal-data');
+        if (localData) {
+          const data = JSON.parse(localData);
+          folders = data.folders || {};
+          activatedConversations = data.activatedConversations || [];
         }
       }
 
-      if (!saved) {
-        console.log('📂 No saved data found in localStorage');
-        console.log('📂 Starting with blank canvas and empty library');
-        console.log('📂 ==========================================');
-        return;
-      }
-
-      const data = JSON.parse(saved);
-
-      // 🛡️ CRITICAL: Verify data structure
-      if (!data || typeof data !== 'object') {
-        console.error('🚨 DATA IS CORRUPTED! Attempting recovery...');
-        const recovered = get().recoverFromBackup();
-        if (recovered) {
-          get().loadFromLocalStorage();
-          return;
-        }
-        throw new Error('Data is corrupted and no backup available');
-      }
-
-      // 🛡️ CRITICAL: Verify universeLibrary exists
-      if (!data.universeLibrary || typeof data.universeLibrary !== 'object') {
-        console.error('🚨 UNIVERSE LIBRARY IS MISSING OR CORRUPTED! Attempting recovery...');
-        const recovered = get().recoverFromBackup();
-        if (recovered) {
-          get().loadFromLocalStorage();
-          return;
-        }
-        console.warn('⚠️ No backup - initializing empty library');
-        data.universeLibrary = {};
-      }
-
-      // Load universe library (not the canvas - canvas stays blank)
-      const universeLibrary = data.universeLibrary || {};
       const universeCount = Object.keys(universeLibrary).length;
 
-      console.log('📂 Found data from:', data.timestamp ? new Date(data.timestamp).toLocaleString() : 'unknown time');
       console.log('📂 Universes in library:', universeCount);
 
       if (universeCount > 0) {
@@ -591,15 +660,18 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         });
       }
 
-      // Load folders or create default
-      const folders = data.folders || {
-        'default': {
-          id: 'default',
-          name: 'Uncategorized',
-          color: '#6B7280',
-          createdAt: Date.now()
-        }
-      };
+      // Ensure default folder exists
+      if (!folders['default']) {
+        folders = {
+          ...folders,
+          'default': {
+            id: 'default',
+            name: 'Uncategorized',
+            color: '#6B7280',
+            createdAt: Date.now()
+          }
+        };
+      }
 
       // 🔧 MIGRATION: Ensure all universes have a folderId
       let migrationCount = 0;
@@ -617,14 +689,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       set({
         universeLibrary,
         folders,
-        activatedConversations: data.activatedConversations || [],
+        activatedConversations: activatedConversations || [],
         // Canvas stays blank - user loads universes from Memories
         nexuses: [],
         nodes: {},
         activeUniverseId: null,
       });
 
-      console.log('✅ Successfully loaded universe library from localStorage!');
+      console.log('✅ Successfully loaded universe library from IndexedDB + localStorage!');
       console.log('📂 🔍 State has been set with', universeCount, 'universes');
       console.log('📂 Canvas remains blank - load universes from Memories page');
 
@@ -642,7 +714,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     } catch (error) {
       console.error('❌ ==========================================');
-      console.error('❌ CRITICAL: Failed to load from localStorage:', error);
+      console.error('❌ CRITICAL: Failed to load from storage:', error);
       console.error('❌ ==========================================');
 
       // Alert user of load failure
@@ -931,6 +1003,24 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().saveToLocalStorage();
 
     console.log(`✅ Updated semantic title for node ${nodeId}: "${semanticTitle}"`);
+  },
+
+  updateNode: (nodeId: string, updates: Partial<Node>) => {
+    set((state) => {
+      const updatedNodes = { ...state.nodes };
+      if (updatedNodes[nodeId]) {
+        updatedNodes[nodeId] = {
+          ...updatedNodes[nodeId],
+          ...updates,
+        };
+      }
+      return { nodes: updatedNodes };
+    });
+
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+
+    console.log(`✅ Updated node ${nodeId}:`, updates);
   },
 
   exportToWordDoc: async () => {
@@ -2326,8 +2416,14 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         console.log('🗑️   ✅ Verified: Universe removed from library');
       }
 
-      // Save to localStorage
-      console.log('🗑️   💾 Persisting deletion to localStorage...');
+      // Save to storage (localStorage + IndexedDB)
+      console.log('🗑️   💾 Persisting deletion to storage...');
+
+      // Delete from IndexedDB
+      deleteUniverseFromDB(nexusId).then(() => {
+        console.log('🗑️   ✅ Deleted from IndexedDB');
+      });
+
       get().saveToLocalStorage();
 
       // Final verification: Check localStorage

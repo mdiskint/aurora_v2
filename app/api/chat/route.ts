@@ -350,19 +350,45 @@ Keep it conversational and Socratic - you're exploring ideas together, not testi
       console.log('📝 QUIZ MODE: Generating diverse question (NO ANSWER)');
       console.log('📋 Questions asked so far:', previousQuestions?.length || 0);
 
-      const quizQuestionPrompt = `You are a teacher creating quiz questions to thoroughly test student knowledge.
+      // Check if we've reached completion threshold (7 questions)
+      const maxQuestions = 7;
+      const questionCount = previousQuestions?.length || 0;
+      const hasCompletedCycle = questionCount >= maxQuestions;
+
+      const quizQuestionPrompt = hasCompletedCycle ? `You are a teacher who has just guided a student through comprehensive quiz on content.
+
+The student has answered ${questionCount} questions covering all major aspects!
+
+Your task: Acknowledge their completion warmly and offer to start fresh.
+
+Output exactly this message (customize based on what they covered):
+
+"🎉 Excellent work! You've completed a comprehensive quiz covering all major aspects of this content through ${questionCount} questions.
+
+You've demonstrated understanding of:
+• Core facts and details
+• Key concepts and definitions
+• Reasoning and analysis
+• Applications and implications
+• Significance and impact
+
+Ready to test your retention? I can start over with fresh questions on the same topics to reinforce your learning.
+
+Would you like to continue with a new quiz cycle?"
+
+Just output this completion message.` : `You are a teacher creating quiz questions to thoroughly test student knowledge.
 
 Content to quiz on:
 "${userMessage}"
 
 ${previousQuestions && previousQuestions.length > 0 ? `
-Previously asked questions (ask about a DIFFERENT aspect):
+Previously asked questions (${questionCount}/${maxQuestions} - ask about a DIFFERENT aspect):
 ${previousQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
 ` : 'This is the first question about this content.'}
 
 Your task: Ask ONE clear question that tests a DIFFERENT aspect than previous questions.
 
-For legal content, cover these dimensions:
+For legal content, systematically cover these aspects:
 1. **Facts**: What happened? Who were the parties? What was the dispute?
 2. **Procedural Posture**: How did the case get to this court?
 3. **Holdings**: What did the court decide?
@@ -373,7 +399,7 @@ For legal content, cover these dimensions:
 8. **Distinctions**: How does this differ from related cases?
 9. **Application**: How would this apply to a hypothetical?
 
-For non-legal content, cover:
+For non-legal content, systematically cover:
 - Core concept/definition
 - Key components or elements
 - How it works (mechanism/process)
@@ -383,7 +409,7 @@ For non-legal content, cover:
 - Historical context
 - Relationships to other concepts
 
-Choose an aspect NOT yet covered by previous questions and ask a specific, testable question.
+Choose the next uncovered aspect and ask a specific, testable question.
 
 CRITICAL RULES:
 - Ask ONLY the question - do NOT provide the answer
@@ -404,19 +430,26 @@ Now ask your question (QUESTION ONLY, NO ANSWER):`;
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 300,  // Short - just a question
-        system: 'You are a teacher creating diverse quiz questions. Ask ONLY the question, never provide the answer. Each question should test a different aspect of the content.',
+        max_tokens: hasCompletedCycle ? 500 : 300,  // More tokens for completion message
+        system: hasCompletedCycle
+          ? 'You are a supportive teacher acknowledging quiz completion. Be warm and encouraging.'
+          : 'You are a teacher creating diverse quiz questions. Ask ONLY the question, never provide the answer. Each question should test a different aspect of the content.',
         messages: [{ role: 'user', content: quizQuestionPrompt }],
       });
 
       const textContent = response.content.find((block) => block.type === 'text');
       const question = textContent && 'text' in textContent ? textContent.text.trim() : 'Unable to generate question.';
 
-      console.log('✅ Generated diverse question (NO ANSWER):', question.substring(0, 80) + '...');
+      console.log(hasCompletedCycle
+        ? '🎉 Generated completion message'
+        : `✅ Generated diverse question (${questionCount + 1}/${maxQuestions}):`,
+        question.substring(0, 80) + '...');
 
       return NextResponse.json({
         response: question,
-        isQuizQuestion: true
+        isQuizQuestion: true,
+        isCompletion: hasCompletedCycle,
+        questionCount: questionCount
       });
     }
 

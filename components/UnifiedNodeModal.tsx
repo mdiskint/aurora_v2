@@ -17,6 +17,7 @@ export default function UnifiedNodeModal() {
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
   const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
   const updateNexusContent = useCanvasStore((state) => state.updateNexusContent);
+  const updateNode = useCanvasStore((state) => state.updateNode);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const addNode = useCanvasStore((state) => state.addNode);
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
@@ -244,6 +245,151 @@ export default function UnifiedNodeModal() {
     }
   }, [showContentOverlay]);
 
+  // ⌨️ KEYBOARD NAVIGATION: Arrow keys to navigate node hierarchy (works globally)
+  useEffect(() => {
+    if (!node && !nexus) return;
+
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable) {
+        return;
+      }
+
+      // Check if we're on a nexus
+      const isOnNexus = !!nexus && !node;
+
+      // Get child nodes (L1 nodes for nexus, or regular children for nodes)
+      const getChildren = () => {
+        const parentId = isOnNexus ? nexus.id : node?.id;
+        if (!parentId) return [];
+
+        return Object.values(nodes)
+          .filter(n => n.parentId === parentId)
+          .sort((a, b) => a.id.localeCompare(b.id));
+      };
+
+      // Helper to navigate and show modal
+      const navigateAndShow = (targetId: string) => {
+        selectNode(targetId, true);
+        setShowContentOverlay(true);
+      };
+
+      // If on nexus, all arrows should navigate to first L1 node
+      if (isOnNexus) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const children = getChildren();
+          if (children.length === 0) return;
+
+          navigateAndShow(children[0].id);
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowContentOverlay(false);
+          return;
+        }
+
+        return;
+      }
+
+      // Regular node navigation below
+      if (!node) return;
+
+      // Get all sibling nodes (nodes with same parent)
+      const getSiblings = () => {
+        return Object.values(nodes)
+          .filter(n => n.parentId === node.parentId)
+          .sort((a, b) => a.id.localeCompare(b.id));
+      };
+
+      // Get parent node or nexus
+      const getParent = () => {
+        if (!node.parentId) return null;
+
+        // Check if parent is a node
+        const parentNode = nodes[node.parentId];
+        if (parentNode) return parentNode;
+
+        // Check if parent is a nexus
+        const parentNexus = nexuses.find(n => n.id === node.parentId);
+        return parentNexus || null;
+      };
+
+      // Left arrow - previous sibling
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const siblings = getSiblings();
+        if (siblings.length <= 1) return;
+
+        const currentIndex = siblings.findIndex(n => n.id === node.id);
+        if (currentIndex === -1) return;
+
+        const prevIndex = currentIndex === 0 ? siblings.length - 1 : currentIndex - 1;
+        navigateAndShow(siblings[prevIndex].id);
+      }
+
+      // Right arrow - next sibling
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const siblings = getSiblings();
+        if (siblings.length <= 1) return;
+
+        const currentIndex = siblings.findIndex(n => n.id === node.id);
+        if (currentIndex === -1) return;
+
+        const nextIndex = (currentIndex + 1) % siblings.length;
+        navigateAndShow(siblings[nextIndex].id);
+      }
+
+      // Up arrow - parent node
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const parent = getParent();
+        if (!parent) return;
+
+        navigateAndShow(parent.id);
+      }
+
+      // Down arrow - first child
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const children = getChildren();
+        if (children.length === 0) return;
+
+        navigateAndShow(children[0].id);
+      }
+
+      // Escape - close modal
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowContentOverlay(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [node, nexus, nodes, nexuses, selectNode, setShowContentOverlay]);
+
+  // Get all sibling nodes (nodes with same parent) - for UI hint
+  const getSiblingNodes = () => {
+    if (!node) return [];
+
+    // Get all nodes with the same parent
+    const siblings = Object.values(nodes)
+      .filter(n => n.parentId === node.parentId)
+      .sort((a, b) => {
+        // Sort by ID to maintain consistent order (IDs are timestamp-based)
+        return a.id.localeCompare(b.id);
+      });
+
+    return siblings;
+  };
+
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setHasUnsavedChanges(true);
@@ -361,7 +507,21 @@ export default function UnifiedNodeModal() {
     setExplorationMode(mode);
     setQuizFeedback(''); // Reset any previous feedback
     setDeepThinkingEngagement(''); // Reset any previous engagement
-    setQuizHistory([]); // Reset quiz history for new quiz session
+
+    // 📝 LOAD QUIZ PROGRESS FROM NODE (if exists)
+    let existingQuestions: string[] = [];
+    if (mode === 'quiz' && node) {
+      const progress = node.quizProgress;
+      if (progress && progress.questionsAsked.length > 0) {
+        existingQuestions = progress.questionsAsked;
+        console.log('📚 Resuming quiz - loaded', existingQuestions.length, 'previous questions');
+        console.log('📋 Questions asked:', existingQuestions);
+      } else {
+        console.log('🆕 Starting fresh quiz - no previous progress found');
+      }
+    }
+
+    setQuizHistory(existingQuestions); // Load existing or start fresh
     setDeepThinkingHistory([]); // Reset deep thinking history for new exploration
 
     // Start exploration (works for both regular nodes and connection nodes)
@@ -381,7 +541,7 @@ export default function UnifiedNodeModal() {
           }],
           mode: mode === 'quiz' ? 'quiz' : mode === 'deep-thinking' ? 'deep-thinking' : 'socratic',
           explorationMode: mode,
-          previousQuestions: mode === 'quiz' ? [] : undefined,  // Empty array for first quiz question
+          previousQuestions: mode === 'quiz' ? existingQuestions : undefined,  // Send existing questions
           conversationHistory: mode === 'deep-thinking' ? [] : undefined  // Empty array for first deep thinking question
         }),
       });
@@ -471,9 +631,32 @@ export default function UnifiedNodeModal() {
         setIsLoadingAI(false);
 
         // Add current question to history for diverse question generation
+        const updatedQuizHistory = [...quizHistory, socraticQuestion];
         if (socraticQuestion) {
-          setQuizHistory([...quizHistory, socraticQuestion]);
-          console.log('📋 Added to quiz history. Total questions:', quizHistory.length + 1);
+          setQuizHistory(updatedQuizHistory);
+          console.log('📋 Added to quiz history. Total questions:', updatedQuizHistory.length);
+        }
+
+        // 💾 SAVE QUIZ PROGRESS TO NODE
+        if (node && socraticQuestion) {
+          const wasCorrect = feedback.includes('✓') || feedback.includes('✅') || feedback.toLowerCase().includes('correct');
+
+          const updatedProgress = {
+            questionsAsked: updatedQuizHistory,
+            answersGiven: [
+              ...(node.quizProgress?.answersGiven || []),
+              {
+                question: socraticQuestion,
+                answer: userAnswerText,
+                wasCorrect
+              }
+            ],
+            lastQuizDate: Date.now(),
+            completedCycles: node.quizProgress?.completedCycles || 0
+          };
+
+          updateNode(node.id, { quizProgress: updatedProgress });
+          console.log('💾 Quiz progress saved:', updatedProgress.questionsAsked.length, 'questions');
         }
 
         // Create a single node with question, answer, and feedback
@@ -926,15 +1109,37 @@ export default function UnifiedNodeModal() {
                   </div>
                   {explorationMode === 'quiz' && (
                     <div className="text-xs text-purple-400/60">
-                      Question {quizHistory.length + 1}
+                      Question {quizHistory.length + 1}/7
                     </div>
                   )}
                 </div>
+
+                {/* Progress bar for quiz mode */}
+                {explorationMode === 'quiz' && (
+                  <div className="mb-3">
+                    <div className="w-full h-1.5 bg-purple-950/50 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-purple-500 to-purple-400 transition-all duration-500 ease-out"
+                        style={{ width: `${((quizHistory.length + 1) / 7) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="text-gray-200 text-base mb-3">{socraticQuestion}</div>
 
                 {/* Show quiz feedback if available */}
                 {quizFeedback && explorationMode === 'quiz' && (
-                  <div className="mb-3 p-4 bg-purple-950/30 border border-purple-500/30 rounded-lg">
+                  <div className={`mb-3 p-4 rounded-lg ${
+                    quizFeedback.includes('🎉') || quizFeedback.toLowerCase().includes('excellent work')
+                      ? 'bg-gradient-to-br from-purple-900/40 to-pink-900/40 border-2 border-purple-400/50'
+                      : 'bg-purple-950/30 border border-purple-500/30'
+                  }`}>
+                    {(quizFeedback.includes('🎉') || quizFeedback.toLowerCase().includes('excellent work')) && (
+                      <div className="text-purple-300 text-xs font-semibold mb-2 uppercase tracking-wide flex items-center gap-2">
+                        🎉 Quiz Complete!
+                      </div>
+                    )}
                     <div
                       className="text-purple-200 text-sm"
                       style={{
@@ -1180,6 +1385,22 @@ export default function UnifiedNodeModal() {
                   >
                     🌌 Explore Entire Universe
                   </button>
+                )}
+
+                {/* Keyboard Navigation Hint */}
+                {node && (
+                  <div
+                    style={{
+                      marginTop: '20px',
+                      paddingTop: '12px',
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '11px',
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    ↑↓ parent/child • ←→ siblings • Esc to close
+                  </div>
                 )}
               </div>
             )}

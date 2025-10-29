@@ -3,6 +3,7 @@
 import { useCanvasStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { listBackups, restoreBackup } from '@/lib/db';
 
 export default function MemoriesPage() {
   const router = useRouter();
@@ -21,6 +22,10 @@ export default function MemoriesPage() {
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedColor, setSelectedColor] = useState('#8B5CF6');
 
+  // 🔄 Recovery UI state
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [backups, setBackups] = useState<Array<{id: string; timestamp: number; label: string; date: string}>>([]);
+
   // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
   useEffect(() => {
     console.log('📚 MEMORIES PAGE LOADED:', new Date().toLocaleTimeString());
@@ -29,6 +34,9 @@ export default function MemoriesPage() {
     // Expand all folders by default
     const folderIds = Object.keys(useCanvasStore.getState().folders);
     setExpandedFolders(new Set(folderIds));
+
+    // Load available backups
+    listBackups().then(setBackups);
   }, []);
 
   const toggleFolder = (folderId: string) => {
@@ -75,6 +83,36 @@ export default function MemoriesPage() {
     }
   };
 
+  const handleRestoreBackup = async (backupId: string) => {
+    if (!confirm('Restore from this backup? Your current data will be replaced.')) {
+      return;
+    }
+
+    const data = await restoreBackup(backupId);
+    if (data) {
+      // Update Zustand store with restored data
+      useCanvasStore.setState({
+        universeLibrary: data.universeLibrary || {},
+        folders: data.folders || {},
+        activatedConversations: data.activatedConversations || [],
+        nexuses: [],
+        nodes: {},
+        activeUniverseId: null,
+      });
+
+      // Save restored data
+      useCanvasStore.getState().saveToLocalStorage();
+
+      setShowRecoveryModal(false);
+      alert('✅ Backup restored successfully!');
+
+      // Reload the page to reflect changes
+      window.location.reload();
+    } else {
+      alert('❌ Failed to restore backup');
+    }
+  };
+
   // Group universes by folder
   const universesByFolder: { [folderId: string]: typeof universeLibrary } = {};
   Object.entries(universeLibrary).forEach(([universeId, universeData]) => {
@@ -112,21 +150,39 @@ export default function MemoriesPage() {
             🧠 Memories
           </h1>
 
-          <button
-            onClick={() => setShowNewFolderModal(true)}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#8B5CF6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
-          >
-            + New Folder
-          </button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button
+              onClick={() => setShowRecoveryModal(true)}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#EF4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              🔄 Recover Data
+            </button>
+
+            <button
+              onClick={() => setShowNewFolderModal(true)}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#8B5CF6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              + New Folder
+            </button>
+          </div>
         </div>
 
         {/* Folders */}
@@ -422,6 +478,114 @@ export default function MemoriesPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recovery Modal */}
+      {showRecoveryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            backgroundColor: '#0A1628',
+            border: '2px solid #EF4444',
+            borderRadius: '16px',
+            padding: '32px',
+            maxWidth: '600px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <h2 style={{ color: '#EF4444', marginBottom: '16px' }}>
+              🔄 Recover Lost Data
+            </h2>
+
+            <p style={{ color: '#E5E7EB', marginBottom: '24px' }}>
+              Restore your universes from an automatic backup snapshot.
+              Aurora creates backups every 5 saves.
+            </p>
+
+            {backups.length === 0 ? (
+              <div style={{
+                color: '#9CA3AF',
+                textAlign: 'center',
+                padding: '40px 20px'
+              }}>
+                No backups available yet.
+                <br/>
+                Backups are created automatically as you save universes.
+              </div>
+            ) : (
+              <div style={{ marginBottom: '24px' }}>
+                {backups.map(backup => (
+                  <div
+                    key={backup.id}
+                    style={{
+                      backgroundColor: '#050A1E',
+                      border: '1px solid #4B5563',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      marginBottom: '12px'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <div style={{ color: '#00FFD4', fontWeight: 'bold', marginBottom: '4px' }}>
+                          {backup.label === 'auto' ? '📦 Auto Backup' : backup.label}
+                        </div>
+                        <div style={{ color: '#9CA3AF', fontSize: '14px' }}>
+                          {backup.date}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRestoreBackup(backup.id)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#00FFD4',
+                          color: '#050A1E',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowRecoveryModal(false)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                backgroundColor: 'transparent',
+                color: '#EF4444',
+                border: '2px solid #EF4444',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
