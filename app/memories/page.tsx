@@ -10,6 +10,7 @@ export default function MemoriesPage() {
 
   const folders = useCanvasStore(state => state.folders);
   const universeLibrary = useCanvasStore(state => state.universeLibrary);
+  const activeUniverseIds = useCanvasStore(state => state.activeUniverseIds);
   const createFolder = useCanvasStore(state => state.createFolder);
   const renameFolder = useCanvasStore(state => state.renameFolder);
   const deleteFolder = useCanvasStore(state => state.deleteFolder);
@@ -17,6 +18,7 @@ export default function MemoriesPage() {
   const loadUniverse = useCanvasStore(state => state.loadUniverse);
   const deleteConversation = useCanvasStore(state => state.deleteConversation);
   const renameUniverse = useCanvasStore(state => state.renameUniverse);
+  const toggleUniverseActive = useCanvasStore(state => state.toggleUniverseActive);
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
@@ -189,15 +191,56 @@ export default function MemoriesPage() {
           alignItems: 'center',
           marginBottom: '40px'
         }}>
-          <h1 style={{
-            color: '#00FFD4',
-            fontSize: '48px',
-            margin: 0
-          }}>
-            🧠 Memories
-          </h1>
+          <div>
+            <h1 style={{
+              color: '#00FFD4',
+              fontSize: '48px',
+              margin: 0
+            }}>
+              🧠 Memories
+            </h1>
+            {activeUniverseIds.length > 0 && (
+              <div style={{
+                marginTop: '8px',
+                fontSize: '14px',
+                color: '#00FFD4',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span style={{
+                  padding: '4px 12px',
+                  backgroundColor: 'rgba(0, 255, 212, 0.2)',
+                  borderRadius: '12px',
+                  fontWeight: 'bold'
+                }}>
+                  {activeUniverseIds.length} Active
+                </span>
+              </div>
+            )}
+          </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {activeUniverseIds.length > 0 && (
+              <button
+                onClick={() => router.push('/chat')}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#00FFD4',
+                  color: '#050A1E',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                🌌 View Active Universes
+              </button>
+            )}
             <button
               onClick={() => setShowRecoveryModal(true)}
               style={{
@@ -319,11 +362,49 @@ export default function MemoriesPage() {
                           onContextMenu={(e) => handleContextMenu(e, universeId)}
                           style={{
                             backgroundColor: '#0A1628',
-                            border: '2px solid #8B5CF6',
+                            border: `2px solid ${activeUniverseIds.includes(universeId) ? '#00FFD4' : '#8B5CF6'}`,
                             borderRadius: '8px',
-                            padding: '16px'
+                            padding: '16px',
+                            position: 'relative',
+                            boxShadow: activeUniverseIds.includes(universeId) ? '0 0 20px rgba(0, 255, 212, 0.3)' : 'none'
                           }}
                         >
+                          {/* Active checkbox */}
+                          <div style={{
+                            position: 'absolute',
+                            top: '12px',
+                            right: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={activeUniverseIds.includes(universeId)}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                toggleUniverseActive(universeId);
+                              }}
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                cursor: 'pointer',
+                                accentColor: '#00FFD4'
+                              }}
+                              title={activeUniverseIds.includes(universeId) ? 'Deactivate universe' : 'Activate universe'}
+                            />
+                            {activeUniverseIds.includes(universeId) && (
+                              <span style={{
+                                fontSize: '10px',
+                                color: '#00FFD4',
+                                fontWeight: 'bold',
+                                textTransform: 'uppercase'
+                              }}>
+                                Active
+                              </span>
+                            )}
+                          </div>
+
                           {/* Title - editable or static */}
                           {editingUniverseId === universeId ? (
                             <div style={{ position: 'relative', marginBottom: '8px' }}>

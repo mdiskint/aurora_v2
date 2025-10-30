@@ -40,20 +40,24 @@ function TrackedOrbitControls({ enabled = true }: { enabled?: boolean }) {
   return <OrbitControls ref={controlsRef} enabled={enabled} enableDamping dampingFactor={0.05} />;
 }
 
-// 📸 Camera Position Manager - Resets camera when universe switches
+// 📸 Camera Position Manager - Resets camera when active universes change
 function CameraPositionManager() {
   const { camera } = useThree();
-  const activeUniverseId = useCanvasStore((state) => state.activeUniverseId);
-  const universeLibrary = useCanvasStore((state) => state.universeLibrary);
-  const prevUniverseId = useRef<string | null>(null);
+  const activeUniverseIds = useCanvasStore((state) => state.activeUniverseIds);
+  const prevUniverseIds = useRef<string[]>([]);
 
   useEffect(() => {
-    // Only act if universe changed (not on initial mount or same universe)
-    if (prevUniverseId.current !== null && activeUniverseId !== prevUniverseId.current) {
+    // Check if the active universes array has changed
+    const hasChanged =
+      prevUniverseIds.current.length !== activeUniverseIds.length ||
+      !prevUniverseIds.current.every((id, index) => id === activeUniverseIds[index]);
+
+    // Only act if universe array changed (not on initial mount)
+    if (prevUniverseIds.current.length > 0 && hasChanged) {
       console.log('📷 ==========================================');
-      console.log('📷 UNIVERSE CHANGED - Resetting camera');
-      console.log('📷   From:', prevUniverseId.current);
-      console.log('📷   To:', activeUniverseId);
+      console.log('📷 ACTIVE UNIVERSES CHANGED - Resetting camera');
+      console.log('📷   From:', prevUniverseIds.current);
+      console.log('📷   To:', activeUniverseIds);
       console.log('📷 ==========================================');
 
       // Get current position
@@ -61,10 +65,26 @@ function CameraPositionManager() {
       const startY = camera.position.y;
       const startZ = camera.position.z;
 
-      // Default viewing position (same as Canvas default)
-      const targetX = 10;
-      const targetY = 8;
-      const targetZ = 15;
+      // Calculate target position based on number of active universes
+      let targetX, targetY, targetZ;
+
+      if (activeUniverseIds.length === 0) {
+        // No universes - default position
+        targetX = 10;
+        targetY = 8;
+        targetZ = 15;
+      } else if (activeUniverseIds.length === 1) {
+        // Single universe - standard close view
+        targetX = 10;
+        targetY = 8;
+        targetZ = 15;
+      } else {
+        // Multiple universes - pull back for wider view
+        const pullbackFactor = Math.min(activeUniverseIds.length, 6) * 0.5;
+        targetX = 10 + (pullbackFactor * 3);
+        targetY = 15 + (pullbackFactor * 2);
+        targetZ = 20 + (pullbackFactor * 4);
+      }
 
       // Smooth animation
       const duration = 800; // 0.8 seconds
@@ -95,8 +115,8 @@ function CameraPositionManager() {
       animateCamera();
     }
 
-    prevUniverseId.current = activeUniverseId;
-  }, [activeUniverseId, universeLibrary, camera]);
+    prevUniverseIds.current = [...activeUniverseIds];
+  }, [activeUniverseIds, camera]);
 
   return null;
 }
@@ -1953,7 +1973,7 @@ export default function CanvasScene() {
   const createMultiConnection = useCanvasStore((state) => state.createMultiConnection);
   const deleteNode = useCanvasStore((state) => state.deleteNode);
   const deleteConversation = useCanvasStore((state) => state.deleteConversation);
-  const activeUniverseId = useCanvasStore((state) => state.activeUniverseId);
+  const activeUniverseIds = useCanvasStore((state) => state.activeUniverseIds);
   const universeLibrary = useCanvasStore((state) => state.universeLibrary);
   const renameUniverse = useCanvasStore((state) => state.renameUniverse);
 
@@ -1963,6 +1983,11 @@ export default function CanvasScene() {
 
   // Show section navigator for any universe with nexuses
   const hasUniverse = nexuses.length > 0;
+
+  // Get current universe data - only show title for single universe
+  const currentUniverse = activeUniverseIds.length === 1 && activeUniverseIds[0]
+    ? universeLibrary[activeUniverseIds[0]]
+    : null;
 
   // Keyboard handling moved to parent component
   useEffect(() => {
@@ -2095,14 +2120,11 @@ export default function CanvasScene() {
     };
   }, []);
 
-  // Get current universe data
-  const currentUniverse = activeUniverseId ? universeLibrary[activeUniverseId] : null;
-
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
 
-      {/* Universe Title - editable on right-click */}
+      {/* Universe Title - editable on right-click (only for single universe) */}
       {currentUniverse && (
         <div style={{
           position: 'absolute',
@@ -2119,14 +2141,14 @@ export default function CanvasScene() {
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value.slice(0, 80))}
                 onBlur={() => {
-                  if (activeUniverseId) {
-                    renameUniverse(activeUniverseId, editTitle);
+                  if (activeUniverseIds[0]) {
+                    renameUniverse(activeUniverseIds[0], editTitle);
                   }
                   setIsEditingTitle(false);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && activeUniverseId) {
-                    renameUniverse(activeUniverseId, editTitle);
+                  if (e.key === 'Enter' && activeUniverseIds[0]) {
+                    renameUniverse(activeUniverseIds[0], editTitle);
                     setIsEditingTitle(false);
                   }
                   if (e.key === 'Escape') {

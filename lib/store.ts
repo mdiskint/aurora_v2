@@ -297,7 +297,8 @@ interface UniverseData {
 
 interface CanvasStore {
   // 🌌 UNIVERSE LIBRARY - Each universe stored separately
-  activeUniverseId: string | null;
+  activeUniverseId: string | null; // Deprecated: use activeUniverseIds for multi-universe
+  activeUniverseIds: string[]; // NEW: Array of currently active universe IDs
   universeLibrary: { [id: string]: UniverseData };
 
   // 📁 FOLDER SYSTEM
@@ -370,6 +371,11 @@ interface CanvasStore {
   normalizeUniverseCoordinates: (universeData: UniverseData) => UniverseData;
   renameUniverse: (universeId: string, newTitle: string) => boolean;
 
+  // 🌌 MULTI-UNIVERSE MANAGEMENT
+  toggleUniverseActive: (universeId: string) => void;
+  loadMultipleUniverses: (universeIds: string[]) => void;
+  calculateUniversePosition: (index: number, total: number) => [number, number, number];
+
   // 📁 FOLDER MANAGEMENT
   createFolder: (name: string, color: string) => string;
   renameFolder: (folderId: string, newName: string) => void;
@@ -380,6 +386,7 @@ interface CanvasStore {
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🌌 UNIVERSE LIBRARY - Start with blank canvas
   activeUniverseId: null,
+  activeUniverseIds: [], // NEW: Start with no active universes
   universeLibrary: {},
 
   // 📁 FOLDER SYSTEM - Start with default folder
@@ -3023,6 +3030,131 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     console.log('✅ Universe renamed and saved');
 
     return true;
+  },
+
+  // 🌌 MULTI-UNIVERSE MANAGEMENT FUNCTIONS
+
+  calculateUniversePosition: (index: number, total: number): [number, number, number] => {
+    // Position universes in a circle around the origin
+    // Radius increases with more universes to prevent overlap
+    const baseRadius = 50; // Base distance from center
+    const radius = baseRadius + (Math.floor(total / 6) * 30); // Expand radius for many universes
+
+    if (total === 1) {
+      // Single universe at origin
+      return [0, 0, 0];
+    }
+
+    // Calculate angle for this universe (evenly distributed around circle)
+    const angle = (index / total) * Math.PI * 2;
+
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const y = 0; // Keep all on same horizontal plane
+
+    return [x, y, z];
+  },
+
+  toggleUniverseActive: (universeId: string) => {
+    const state = get();
+
+    console.log('🔄 Toggle universe active:', universeId);
+
+    if (state.activeUniverseIds.includes(universeId)) {
+      // Remove from active list
+      console.log('  → Deactivating universe');
+      const newActiveIds = state.activeUniverseIds.filter(id => id !== universeId);
+
+      set({ activeUniverseIds: newActiveIds });
+
+      // Reload the remaining active universes
+      if (newActiveIds.length > 0) {
+        get().loadMultipleUniverses(newActiveIds);
+      } else {
+        // No universes active, clear canvas
+        get().clearCanvas();
+      }
+    } else {
+      // Add to active list
+      console.log('  → Activating universe');
+      const newActiveIds = [...state.activeUniverseIds, universeId];
+
+      set({ activeUniverseIds: newActiveIds });
+
+      // Reload all active universes with new positioning
+      get().loadMultipleUniverses(newActiveIds);
+    }
+
+    console.log('✅ Active universes:', get().activeUniverseIds.length);
+  },
+
+  loadMultipleUniverses: (universeIds: string[]) => {
+    console.log('🌌 ==========================================');
+    console.log('🌌 LOADING MULTIPLE UNIVERSES:', universeIds.length);
+    console.log('🌌 IDs:', universeIds);
+    console.log('🌌 ==========================================');
+
+    const state = get();
+    const allNexuses: Nexus[] = [];
+    const allNodes: { [id: string]: Node } = {};
+
+    universeIds.forEach((universeId, index) => {
+      const universeData = state.universeLibrary[universeId];
+
+      if (!universeData) {
+        console.error('❌ Universe not found:', universeId);
+        return;
+      }
+
+      console.log(`📐 Processing universe ${index + 1}/${universeIds.length}: ${universeData.title}`);
+
+      // Normalize coordinates first
+      const normalized = get().normalizeUniverseCoordinates(universeData);
+
+      // Calculate this universe's position in the multi-universe layout
+      const [offsetX, offsetY, offsetZ] = get().calculateUniversePosition(index, universeIds.length);
+
+      console.log(`  Position offset: [${offsetX}, ${offsetY}, ${offsetZ}]`);
+
+      // Add nexuses with offset
+      normalized.nexuses.forEach(nexus => {
+        allNexuses.push({
+          ...nexus,
+          position: [
+            nexus.position[0] + offsetX,
+            nexus.position[1] + offsetY,
+            nexus.position[2] + offsetZ
+          ] as [number, number, number]
+        });
+      });
+
+      // Add nodes with offset
+      Object.entries(normalized.nodes).forEach(([nodeId, node]) => {
+        allNodes[nodeId] = {
+          ...node,
+          position: [
+            node.position[0] + offsetX,
+            node.position[1] + offsetY,
+            node.position[2] + offsetZ
+          ] as [number, number, number]
+        };
+      });
+    });
+
+    console.log('✅ Loaded:', allNexuses.length, 'nexuses,', Object.keys(allNodes).length, 'nodes');
+
+    // Update canvas with all universes
+    set({
+      nexuses: allNexuses,
+      nodes: allNodes,
+      selectedId: null,
+      showContentOverlay: false,
+      showReplyModal: false,
+    });
+
+    console.log('🌌 ==========================================');
+    console.log('🌌 MULTI-UNIVERSE LOAD COMPLETE');
+    console.log('🌌 ==========================================');
   },
 
   // 📁 FOLDER MANAGEMENT FUNCTIONS
