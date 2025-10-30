@@ -19,6 +19,8 @@ export default function MemoriesPage() {
   const deleteConversation = useCanvasStore(state => state.deleteConversation);
   const renameUniverse = useCanvasStore(state => state.renameUniverse);
   const toggleUniverseActive = useCanvasStore(state => state.toggleUniverseActive);
+  const atomizeUniverse = useCanvasStore(state => state.atomizeUniverse);
+  const getL1Nodes = useCanvasStore(state => state.getL1Nodes);
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
@@ -40,6 +42,10 @@ export default function MemoriesPage() {
   // 🔄 Recovery UI state
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [backups, setBackups] = useState<Array<{id: string; timestamp: number; label: string; date: string}>>([]);
+
+  // 🔬 Atomize UI state
+  const [showAtomizeModal, setShowAtomizeModal] = useState(false);
+  const [isAtomizing, setIsAtomizing] = useState(false);
 
   // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
   useEffect(() => {
@@ -158,6 +164,30 @@ export default function MemoriesPage() {
     setEditTitle('');
   };
 
+  // 🔬 ATOMIZE HANDLERS
+  const handleAtomizeConfirm = async () => {
+    if (!selectedUniverseId) return;
+
+    setShowAtomizeModal(false);
+    setIsAtomizing(true);
+
+    try {
+      const result = await atomizeUniverse(selectedUniverseId);
+
+      if (result.success) {
+        alert(`✅ Successfully atomized universe! Created ${result.newUniverseIds.length} new universes in the "Atomized" folder.`);
+        // Deselect the universe
+        setSelectedUniverseId(null);
+      } else {
+        alert(`❌ Failed to atomize universe: ${result.error}`);
+      }
+    } catch (error) {
+      alert(`❌ Error during atomization: ${error}`);
+    } finally {
+      setIsAtomizing(false);
+    }
+  };
+
   // Close context menu when clicking anywhere
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
@@ -244,6 +274,28 @@ export default function MemoriesPage() {
                 🌌 View Active Universes
               </button>
             )}
+
+            <button
+              onClick={() => setShowAtomizeModal(true)}
+              disabled={!selectedUniverseId}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: selectedUniverseId ? '#10B981' : '#4B5563',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: selectedUniverseId ? 'pointer' : 'not-allowed',
+                opacity: selectedUniverseId ? 1 : 0.6,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              🔬 Atomize
+            </button>
+
             <button
               onClick={() => setShowRecoveryModal(true)}
               style={{
@@ -784,6 +836,195 @@ export default function MemoriesPage() {
               Close
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Atomize Preview Modal */}
+      {showAtomizeModal && selectedUniverseId && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            backgroundColor: '#0A1628',
+            border: '2px solid #10B981',
+            borderRadius: '16px',
+            padding: '32px',
+            maxWidth: '600px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <h2 style={{ color: '#10B981', marginBottom: '16px', fontSize: '24px' }}>
+              🔬 Atomize Universe
+            </h2>
+
+            <div style={{ color: '#E5E7EB', marginBottom: '24px', lineHeight: '1.6' }}>
+              <p style={{ marginBottom: '12px' }}>
+                This will create separate universes from each L1 node in:
+              </p>
+              <p style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#00FFD4',
+                marginBottom: '16px',
+                padding: '12px',
+                backgroundColor: 'rgba(0, 255, 212, 0.1)',
+                borderRadius: '8px'
+              }}>
+                {universeLibrary[selectedUniverseId].title}
+              </p>
+
+              {(() => {
+                const l1Nodes = getL1Nodes(selectedUniverseId);
+                return (
+                  <>
+                    <p style={{ marginBottom: '16px' }}>
+                      <strong>{l1Nodes.length} L1 nodes</strong> will be atomized into separate universes.
+                    </p>
+
+                    {l1Nodes.length > 0 && (
+                      <>
+                        <p style={{ marginBottom: '12px', color: '#9CA3AF' }}>
+                          New universes will be created:
+                        </p>
+                        <div style={{
+                          maxHeight: '200px',
+                          overflow: 'auto',
+                          backgroundColor: '#050A1E',
+                          borderRadius: '8px',
+                          padding: '12px',
+                          marginBottom: '16px'
+                        }}>
+                          {l1Nodes.map((node, index) => (
+                            <div
+                              key={node.id}
+                              style={{
+                                padding: '8px',
+                                marginBottom: '8px',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                borderLeft: '3px solid #10B981',
+                                borderRadius: '4px',
+                                fontSize: '14px'
+                              }}
+                            >
+                              {index + 1}. {node.semanticTitle || node.content.substring(0, 60)}
+                              {node.content.length > 60 ? '...' : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    <p style={{
+                      padding: '12px',
+                      backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      marginBottom: '16px'
+                    }}>
+                      📁 All new universes will be saved in the <strong>"Atomized"</strong> folder.
+                    </p>
+
+                    <p style={{ color: '#9CA3AF', fontSize: '14px' }}>
+                      ℹ️ The original universe will remain intact.
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleAtomizeConfirm}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: '#10B981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                🔬 Confirm Atomize
+              </button>
+
+              <button
+                onClick={() => setShowAtomizeModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#9CA3AF',
+                  border: '2px solid #4B5563',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Spinner Overlay */}
+      {isAtomizing && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.9)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10001
+        }}>
+          <div style={{
+            width: '80px',
+            height: '80px',
+            border: '8px solid rgba(16, 185, 129, 0.2)',
+            borderTop: '8px solid #10B981',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+          <p style={{
+            marginTop: '24px',
+            color: '#10B981',
+            fontSize: '20px',
+            fontWeight: 'bold'
+          }}>
+            🔬 Atomizing universe...
+          </p>
+          <p style={{
+            marginTop: '8px',
+            color: '#9CA3AF',
+            fontSize: '14px'
+          }}>
+            Creating separate universes from L1 nodes
+          </p>
         </div>
       )}
 

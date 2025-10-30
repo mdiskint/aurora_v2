@@ -381,6 +381,10 @@ interface CanvasStore {
   renameFolder: (folderId: string, newName: string) => void;
   deleteFolder: (folderId: string) => void;
   moveUniverseToFolder: (universeId: string, folderId: string) => void;
+
+  // 🔬 ATOMIZE UNIVERSE
+  atomizeUniverse: (universeId: string) => Promise<{success: boolean; newUniverseIds: string[]; error?: string}>;
+  getL1Nodes: (universeId: string) => Node[];
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -3230,6 +3234,157 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     console.log('📁 Moved universe', universeId, 'to folder', folderId);
     get().saveToLocalStorage();
+  },
+
+  // 🔬 ATOMIZE UNIVERSE
+  getL1Nodes: (universeId: string): Node[] => {
+    const state = get();
+    const universe = state.universeLibrary[universeId];
+
+    if (!universe) {
+      console.error('❌ Universe not found:', universeId);
+      return [];
+    }
+
+    // Get all nexus IDs from this universe
+    const nexusIds = universe.nexuses.map(n => n.id);
+
+    // Find all nodes whose parentId is a nexus (these are L1 nodes)
+    const l1Nodes: Node[] = [];
+    Object.values(universe.nodes).forEach(node => {
+      if (nexusIds.includes(node.parentId)) {
+        l1Nodes.push(node);
+      }
+    });
+
+    console.log('🔬 Found', l1Nodes.length, 'L1 nodes in universe', universeId);
+    return l1Nodes;
+  },
+
+  atomizeUniverse: async (universeId: string): Promise<{success: boolean; newUniverseIds: string[]; error?: string}> => {
+    const state = get();
+    const universe = state.universeLibrary[universeId];
+
+    if (!universe) {
+      return { success: false, newUniverseIds: [], error: 'Universe not found' };
+    }
+
+    console.log('🔬 ==========================================');
+    console.log('🔬 ATOMIZING UNIVERSE:', universe.title);
+    console.log('🔬 ==========================================');
+
+    try {
+      const newUniverseIds: string[] = [];
+
+      // Get all L1 nodes
+      const l1Nodes = get().getL1Nodes(universeId);
+
+      if (l1Nodes.length === 0) {
+        return { success: false, newUniverseIds: [], error: 'No L1 nodes found to atomize' };
+      }
+
+      // Create "Atomized" folder if it doesn't exist
+      let atomizedFolderId = Object.keys(state.folders).find(
+        folderId => state.folders[folderId].name === 'Atomized'
+      );
+
+      if (!atomizedFolderId) {
+        atomizedFolderId = get().createFolder('Atomized', '#F59E0B');
+        console.log('🔬 Created Atomized folder:', atomizedFolderId);
+      }
+
+      // Helper function to get all descendants of a node
+      const getAllDescendants = (nodeId: string, allNodes: { [id: string]: Node }): { [id: string]: Node } => {
+        const descendants: { [id: string]: Node } = {};
+
+        // Add all children recursively
+        Object.values(allNodes).forEach(node => {
+          if (node.parentId === nodeId) {
+            descendants[node.id] = { ...node };
+            // Recursively get children's descendants
+            const childDescendants = getAllDescendants(node.id, allNodes);
+            Object.assign(descendants, childDescendants);
+          }
+        });
+
+        return descendants;
+      };
+
+      // For each L1 node, create a new universe
+      for (let i = 0; i < l1Nodes.length; i++) {
+        const l1Node = l1Nodes[i];
+        console.log(`🔬 Processing L1 node ${i + 1}/${l1Nodes.length}:`, l1Node.content.substring(0, 50) + '...');
+
+        // Create a new nexus from the L1 node content
+        const newNexusId = `nexus-${Date.now()}-${i}`;
+        const newNexus: Nexus = {
+          id: newNexusId,
+          position: [0, 0, 0], // Normalized position
+          content: l1Node.content,
+          title: l1Node.semanticTitle || l1Node.content.substring(0, 50),
+          type: 'social'
+        };
+
+        // Get all descendant nodes of this L1 node
+        const descendants = getAllDescendants(l1Node.id, universe.nodes);
+
+        // Update descendant parentIds: the L1 node's parent becomes the new nexus
+        const newNodes: { [id: string]: Node } = {};
+
+        // Add the original L1 node's children as direct children of the new nexus
+        Object.values(descendants).forEach(node => {
+          if (node.parentId === l1Node.id) {
+            // Direct children of L1 become children of nexus
+            newNodes[node.id] = {
+              ...node,
+              parentId: newNexusId
+            };
+          } else {
+            // Keep other descendants as-is
+            newNodes[node.id] = { ...node };
+          }
+        });
+
+        // Create the new universe
+        const newUniverseId = `universe-${Date.now()}-${i}`;
+        const newUniverse: UniverseData = {
+          nexuses: [newNexus],
+          nodes: newNodes,
+          cameraPosition: [10, 8, 15],
+          title: `${universe.title} - ${newNexus.title}`,
+          lastModified: Date.now(),
+          folderId: atomizedFolderId
+        };
+
+        // Add to library
+        set(state => ({
+          universeLibrary: {
+            ...state.universeLibrary,
+            [newUniverseId]: newUniverse
+          }
+        }));
+
+        newUniverseIds.push(newUniverseId);
+        console.log(`🔬 Created new universe:`, newUniverse.title);
+
+        // Small delay to ensure unique timestamps
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+
+      // Save to localStorage
+      get().saveToLocalStorage();
+
+      console.log('🔬 ==========================================');
+      console.log('🔬 ATOMIZATION COMPLETE!');
+      console.log('🔬 Created', newUniverseIds.length, 'new universes');
+      console.log('🔬 ==========================================');
+
+      return { success: true, newUniverseIds };
+
+    } catch (error) {
+      console.error('❌ Error atomizing universe:', error);
+      return { success: false, newUniverseIds: [], error: String(error) };
+    }
   },
 
   // 🛡️ BACKUP LIBRARY
