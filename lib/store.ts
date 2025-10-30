@@ -765,11 +765,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
 
-      return { nexuses: [newNexus] }; // Start fresh with just this nexus
+      return {
+        nexuses: [newNexus], // Start fresh with just this nexus
+        activeUniverseId: newUniverseId // Set as active universe
+      };
     });
 
     // 🌌 STEP 4: Auto-save the new universe to library
     console.log('🆕   💾 Auto-saving new universe to library...');
+    console.log('🆕   Active universe ID:', get().activeUniverseId);
     get().saveCurrentUniverse();
     console.log('🆕   ✅ New universe created and set as active');
     console.log('🆕 ==========================================');
