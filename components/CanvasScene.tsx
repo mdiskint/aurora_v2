@@ -1915,8 +1915,13 @@ export default function CanvasScene() {
   const createMultiConnection = useCanvasStore((state) => state.createMultiConnection);
   const deleteNode = useCanvasStore((state) => state.deleteNode);
   const deleteConversation = useCanvasStore((state) => state.deleteConversation);
+  const activeUniverseId = useCanvasStore((state) => state.activeUniverseId);
+  const universeLibrary = useCanvasStore((state) => state.universeLibrary);
+  const renameUniverse = useCanvasStore((state) => state.renameUniverse);
 
   const [isHoldingC, setIsHoldingC] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
 
   // Show section navigator for any universe with nexuses
   const hasUniverse = nexuses.length > 0;
@@ -2052,9 +2057,104 @@ export default function CanvasScene() {
     };
   }, []);
 
+  // Get current universe data
+  const currentUniverse = activeUniverseId ? universeLibrary[activeUniverseId] : null;
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
       <Controls />
+
+      {/* Universe Title - editable on right-click */}
+      {currentUniverse && (
+        <div style={{
+          position: 'absolute',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 100,
+          pointerEvents: 'auto'
+        }}>
+          {isEditingTitle ? (
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value.slice(0, 80))}
+                onBlur={() => {
+                  if (activeUniverseId) {
+                    renameUniverse(activeUniverseId, editTitle);
+                  }
+                  setIsEditingTitle(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && activeUniverseId) {
+                    renameUniverse(activeUniverseId, editTitle);
+                    setIsEditingTitle(false);
+                  }
+                  if (e.key === 'Escape') {
+                    setIsEditingTitle(false);
+                  }
+                }}
+                autoFocus
+                style={{
+                  padding: '12px 20px',
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  backgroundColor: 'rgba(26, 31, 58, 0.9)',
+                  color: '#FFD700',
+                  border: '2px solid #00FFD4',
+                  borderRadius: '8px',
+                  outline: 'none',
+                  textAlign: 'center',
+                  minWidth: '300px'
+                }}
+              />
+              <div style={{
+                position: 'absolute',
+                bottom: '-20px',
+                right: '4px',
+                fontSize: '10px',
+                color: editTitle.length > 80 ? '#EF4444' : 'rgba(255, 255, 255, 0.4)'
+              }}>
+                {editTitle.length}/80
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h1
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setEditTitle(currentUniverse.title);
+                  setIsEditingTitle(true);
+                }}
+                style={{
+                  fontSize: '28px',
+                  fontWeight: 'bold',
+                  color: '#FFD700',
+                  textShadow: '0 0 10px rgba(255, 215, 0, 0.5)',
+                  cursor: 'context-menu',
+                  padding: '12px 20px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(26, 31, 58, 0.7)',
+                  userSelect: 'none',
+                  margin: 0
+                }}
+              >
+                {currentUniverse.title}
+              </h1>
+              <div style={{
+                fontSize: '11px',
+                color: 'rgba(255, 255, 255, 0.4)',
+                textAlign: 'center',
+                marginTop: '4px'
+              }}>
+                Right-click to rename
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <UnifiedNodeModal />
       <ConnectionModeHint isHoldingC={isHoldingC} selectedCount={selectedNodesForConnection.length} />
       {hasUniverse && <SectionNavigator />}

@@ -366,6 +366,7 @@ interface CanvasStore {
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => void;
   clearCanvas: () => void;
   loadUniverse: (universeId: string) => void;
+  renameUniverse: (universeId: string, newTitle: string) => boolean;
 
   // 📁 FOLDER MANAGEMENT
   createFolder: (name: string, color: string) => string;
@@ -2886,6 +2887,51 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     // TODO: Restore camera position (will be implemented in step 8)
     // This will require integration with the camera controls in CanvasScene
+  },
+
+  renameUniverse: (universeId: string, newTitle: string): boolean => {
+    console.log('✏️ Renaming universe:', universeId);
+
+    // Validate title
+    const trimmedTitle = newTitle.trim();
+
+    if (!trimmedTitle) {
+      console.error('❌ Cannot rename to empty title');
+      return false;
+    }
+
+    if (trimmedTitle.length > 80) {
+      console.error('❌ Title too long (max 80 characters)');
+      return false;
+    }
+
+    const state = get();
+    const universe = state.universeLibrary[universeId];
+
+    if (!universe) {
+      console.error('❌ Universe not found');
+      return false;
+    }
+
+    console.log('  Old title:', universe.title);
+    console.log('  New title:', trimmedTitle);
+
+    set({
+      universeLibrary: {
+        ...state.universeLibrary,
+        [universeId]: {
+          ...universe,
+          title: trimmedTitle,
+          lastModified: Date.now()
+        }
+      }
+    });
+
+    // Save to localStorage
+    get().saveToLocalStorage();
+    console.log('✅ Universe renamed and saved');
+
+    return true;
   },
 
   // 📁 FOLDER MANAGEMENT FUNCTIONS

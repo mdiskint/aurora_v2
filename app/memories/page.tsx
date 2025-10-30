@@ -16,11 +16,21 @@ export default function MemoriesPage() {
   const moveUniverseToFolder = useCanvasStore(state => state.moveUniverseToFolder);
   const loadUniverse = useCanvasStore(state => state.loadUniverse);
   const deleteConversation = useCanvasStore(state => state.deleteConversation);
+  const renameUniverse = useCanvasStore(state => state.renameUniverse);
 
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedColor, setSelectedColor] = useState('#8B5CF6');
+
+  // ✏️ Universe rename state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    universeId: string;
+  } | null>(null);
+  const [editingUniverseId, setEditingUniverseId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
 
   // 🔄 Recovery UI state
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -112,6 +122,43 @@ export default function MemoriesPage() {
       alert('❌ Failed to restore backup');
     }
   };
+
+  // ✏️ RENAME HANDLERS
+  const handleContextMenu = (e: React.MouseEvent, universeId: string) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      universeId: universeId
+    });
+  };
+
+  const handleRename = (universeId: string, currentTitle: string) => {
+    setEditingUniverseId(universeId);
+    setEditTitle(currentTitle);
+    setContextMenu(null);
+  };
+
+  const handleSaveRename = (universeId: string) => {
+    const success = renameUniverse(universeId, editTitle);
+
+    if (success) {
+      setEditingUniverseId(null);
+      setEditTitle('');
+    }
+  };
+
+  const handleCancelRename = () => {
+    setEditingUniverseId(null);
+    setEditTitle('');
+  };
+
+  // Close context menu when clicking anywhere
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
   // Group universes by folder
   const universesByFolder: { [folderId: string]: typeof universeLibrary } = {};
@@ -269,6 +316,7 @@ export default function MemoriesPage() {
                       .map(([universeId, universeData]) => (
                         <div
                           key={universeId}
+                          onContextMenu={(e) => handleContextMenu(e, universeId)}
                           style={{
                             backgroundColor: '#0A1628',
                             border: '2px solid #8B5CF6',
@@ -276,14 +324,52 @@ export default function MemoriesPage() {
                             padding: '16px'
                           }}
                         >
-                          <h3 style={{
-                            color: '#00FFD4',
-                            fontSize: '16px',
-                            marginBottom: '8px',
-                            wordBreak: 'break-word'
-                          }}>
-                            {universeData.title}
-                          </h3>
+                          {/* Title - editable or static */}
+                          {editingUniverseId === universeId ? (
+                            <div style={{ position: 'relative', marginBottom: '8px' }}>
+                              <input
+                                type="text"
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value.slice(0, 80))}
+                                onBlur={() => handleSaveRename(universeId)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveRename(universeId);
+                                  if (e.key === 'Escape') handleCancelRename();
+                                }}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px',
+                                  fontSize: '16px',
+                                  fontWeight: 'bold',
+                                  backgroundColor: '#050A1E',
+                                  color: '#00FFD4',
+                                  border: '2px solid #00FFD4',
+                                  borderRadius: '6px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <div style={{
+                                position: 'absolute',
+                                bottom: '-18px',
+                                right: '4px',
+                                fontSize: '10px',
+                                color: editTitle.length > 80 ? '#EF4444' : 'rgba(255, 255, 255, 0.4)'
+                              }}>
+                                {editTitle.length}/80
+                              </div>
+                            </div>
+                          ) : (
+                            <h3 style={{
+                              color: '#00FFD4',
+                              fontSize: '16px',
+                              marginBottom: '8px',
+                              wordBreak: 'break-word'
+                            }}>
+                              {universeData.title}
+                            </h3>
+                          )}
 
                           <div style={{
                             color: '#6B7280',
@@ -587,6 +673,44 @@ export default function MemoriesPage() {
               Close
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            backgroundColor: '#0A1628',
+            border: '2px solid #00FFD4',
+            borderRadius: '8px',
+            padding: '8px 0',
+            zIndex: 10000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+          }}
+        >
+          <button
+            onClick={() => {
+              const universe = universeLibrary[contextMenu.universeId];
+              handleRename(contextMenu.universeId, universe.title);
+            }}
+            style={{
+              width: '100%',
+              padding: '12px 20px',
+              backgroundColor: 'transparent',
+              color: 'white',
+              border: 'none',
+              textAlign: 'left',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a2942'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            ✏️ Rename Universe
+          </button>
         </div>
       )}
     </div>
