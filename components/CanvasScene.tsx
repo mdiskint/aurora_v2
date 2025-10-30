@@ -983,6 +983,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
     console.log('Node:', draggedNode);
     console.log('═══════════════════════════════════');
 
+    // CRITICAL: Save original universe BEFORE any changes
+    console.log('💾 Step 0: Saving original universe before break-off...');
+    const originalUniverseId = useCanvasStore.getState().activeUniverseId;
+    useCanvasStore.getState().saveCurrentUniverse();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    console.log('✅ Original universe saved:', originalUniverseId);
+
     // Prevent multiple break-offs
     setIsBreakingOff(true);
     setIsDragging(false);
@@ -1054,13 +1061,15 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
           await spawnChildNodes(newNexusId, newNodes);
           console.log('✓ Step 6 complete: All nodes birthed');
 
-          // 7. COMPLETE
+          // 7. COMPLETE & SAVE NEW UNIVERSE
           console.log('✓ BREAK-OFF COMPLETE');
           console.log('═══════════════════════════════════');
 
           setTimeout(() => {
-            console.log('💾 Saving complete universe...');
+            console.log('💾 Step 7: Saving new universe...');
             useCanvasStore.getState().saveCurrentUniverse();
+            console.log('✅ New universe saved - both universes now in memory');
+
             setIsBreakingOff(false);
             setTransformingNode(null);
             setDraggedNode(null);
@@ -1077,6 +1086,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
       setDraggedNode(null);
       setDragStartPosition(null);
       setDragCurrentPosition(null);
+
+      // Restore original universe on error
+      if (originalUniverseId) {
+        console.log('🔄 Restoring original universe after error');
+        const store = useCanvasStore.getState();
+        store.activeUniverseId = originalUniverseId;
+      }
     }
   }, [draggedNode, dragCurrentPosition, dragStartPosition, isBreakingOff, nodes, createNexus, fadeOutCurrentUniverse, slideNodeToCenter, transformToNexus, spawnChildNodes]);
 
