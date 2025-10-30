@@ -37,12 +37,12 @@ function TrackedOrbitControls({ enabled = true }: { enabled?: boolean }) {
     };
   }, [camera, saveCurrentUniverse]);
 
-  return <OrbitControls ref={controlsRef} enabled={enabled} enableDamping dampingFactor={0.05} />;
+  return <OrbitControls ref={controlsRef} enabled={enabled} enableDamping dampingFactor={0.05} makeDefault />;
 }
 
 // 📸 Camera Position Manager - Resets camera when active universes change
 function CameraPositionManager() {
-  const { camera } = useThree();
+  const { camera, controls } = useThree();
   const activeUniverseIds = useCanvasStore((state) => state.activeUniverseIds);
   const prevUniverseIds = useRef<string[]>([]);
 
@@ -60,10 +60,9 @@ function CameraPositionManager() {
       console.log('📷   To:', activeUniverseIds);
       console.log('📷 ==========================================');
 
-      // Get current position
-      const startX = camera.position.x;
-      const startY = camera.position.y;
-      const startZ = camera.position.z;
+      // Get current position and target
+      const startPos = camera.position.clone();
+      const startTarget = controls ? (controls as any).target.clone() : new THREE.Vector3(0, 0, 0);
 
       // Calculate target position based on number of active universes
       let targetX, targetY, targetZ;
@@ -86,6 +85,9 @@ function CameraPositionManager() {
         targetZ = 20 + (pullbackFactor * 4);
       }
 
+      const targetPos = new THREE.Vector3(targetX, targetY, targetZ);
+      const targetLookAt = new THREE.Vector3(0, 0, 0);
+
       // Smooth animation
       const duration = 800; // 0.8 seconds
       const startTime = Date.now();
@@ -97,18 +99,34 @@ function CameraPositionManager() {
         // Ease out cubic for smooth deceleration
         const eased = 1 - Math.pow(1 - progress, 3);
 
-        // Interpolate position
-        camera.position.x = startX + (targetX - startX) * eased;
-        camera.position.y = startY + (targetY - startY) * eased;
-        camera.position.z = startZ + (targetZ - startZ) * eased;
+        // Interpolate camera position
+        camera.position.lerpVectors(startPos, targetPos, eased);
 
-        // Reset look target to origin
+        // CRITICAL: Update controls target to origin
+        if (controls) {
+          (controls as any).target.lerpVectors(startTarget, targetLookAt, eased);
+          (controls as any).update();
+        }
+
+        // Also directly set camera lookAt (belt and suspenders)
         camera.lookAt(0, 0, 0);
 
         if (progress < 1) {
           requestAnimationFrame(animateCamera);
         } else {
-          console.log('✅ Camera reset complete at:', [targetX, targetY, targetZ]);
+          // Final확인 - ensure everything is locked to origin
+          camera.position.set(targetX, targetY, targetZ);
+          camera.lookAt(0, 0, 0);
+
+          if (controls) {
+            (controls as any).target.set(0, 0, 0);
+            (controls as any).update();
+          }
+
+          console.log('✅ Camera reset complete');
+          console.log('   Position:', [targetX, targetY, targetZ]);
+          console.log('   Looking at:', [0, 0, 0]);
+          console.log('   Controls target:', controls ? (controls as any).target.toArray() : 'N/A');
         }
       };
 
@@ -116,7 +134,7 @@ function CameraPositionManager() {
     }
 
     prevUniverseIds.current = [...activeUniverseIds];
-  }, [activeUniverseIds, camera]);
+  }, [activeUniverseIds, camera, controls]);
 
   return null;
 }
