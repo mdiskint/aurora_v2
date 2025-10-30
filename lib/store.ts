@@ -2916,6 +2916,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     console.log('  Old title:', universe.title);
     console.log('  New title:', trimmedTitle);
 
+    // Update the universe library
     set({
       universeLibrary: {
         ...state.universeLibrary,
@@ -2926,6 +2927,18 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         }
       }
     });
+
+    // CRITICAL: If this universe is currently active, also update the loaded nexus title
+    if (state.activeUniverseId === universeId && state.nexuses.length > 0) {
+      const updatedNexuses = state.nexuses.map(nexus =>
+        nexus.id === universe.nexuses[0]?.id
+          ? { ...nexus, title: trimmedTitle }
+          : nexus
+      );
+
+      set({ nexuses: updatedNexuses });
+      console.log('✅ Also updated currently loaded nexus title');
+    }
 
     // Save to localStorage
     get().saveToLocalStorage();
