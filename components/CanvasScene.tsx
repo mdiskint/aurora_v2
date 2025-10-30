@@ -2,7 +2,7 @@
 import React from 'react';
 import SectionNavigator from './SectionNavigator';
 import UnifiedNodeModal from './UnifiedNodeModal';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Line, Text3D, Html, Points, PointMaterial } from '@react-three/drei';
 import { useCanvasStore } from '@/lib/store';
@@ -12,9 +12,9 @@ import { useCameraAnimation } from '@/lib/useCameraAnimation';
 import { io } from 'socket.io-client';
 
 // 📸 Camera-tracking OrbitControls component
-function TrackedOrbitControls() {
+function TrackedOrbitControls({ enabled = true }: { enabled?: boolean }) {
   const controlsRef = useRef<any>(null);
-  const saveCurrentUniverse = useCanvasStore((state) => state.saveCurrentUniverse);
+  const saveCurrentUniverse = useCanvasStore ((state) => state.saveCurrentUniverse);
   const { camera } = useThree();
 
   useEffect(() => {
@@ -37,7 +37,7 @@ function TrackedOrbitControls() {
     };
   }, [camera, saveCurrentUniverse]);
 
-  return <OrbitControls ref={controlsRef} enableDamping dampingFactor={0.05} />;
+  return <OrbitControls ref={controlsRef} enabled={enabled} enableDamping dampingFactor={0.05} />;
 }
 
 // 📸 Camera Position Manager - Restores camera when universe loads
@@ -63,7 +63,7 @@ function CameraPositionManager() {
   return null;
 }
 
-function NodeSparkles({ position }: { position: [number, number, number] }) {
+function NodeSparkles({ position, opacity = 1 }: { position: [number, number, number]; opacity?: number }) {
   const pointsRef = useRef<any>();
 
   // Create sparkle positions in a ring around the node
@@ -96,14 +96,75 @@ function NodeSparkles({ position }: { position: [number, number, number] }) {
           color="#FFD700"
           size={0.08}
           sizeAttenuation={true}
-          opacity={0.9}
+          opacity={0.9 * opacity}
         />
       </Points>
     </group>
   );
 }
 
-function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter, onPointerLeave, scale = 1 }: any) {
+// 💥 PARTICLE BURST EFFECT - Triggered on break-off
+function ParticleBurst({ position, onComplete }: { position: [number, number, number]; onComplete: () => void }) {
+  const particles = useMemo(() => {
+    const count = 30;
+    const temp = [];
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const velocity = 0.15 + Math.random() * 0.1;
+
+      temp.push({
+        position: [...position] as [number, number, number],
+        velocity: [
+          Math.sin(phi) * Math.cos(theta) * velocity,
+          Math.sin(phi) * Math.sin(theta) * velocity,
+          Math.cos(phi) * velocity,
+        ] as [number, number, number],
+        life: 1.0,
+      });
+    }
+    return temp;
+  }, [position]);
+
+  const particleRefs = useRef(particles);
+  const [isComplete, setIsComplete] = useState(false);
+
+  useFrame(() => {
+    let allDead = true;
+    particleRefs.current.forEach((p) => {
+      p.position[0] += p.velocity[0];
+      p.position[1] += p.velocity[1];
+      p.position[2] += p.velocity[2];
+      p.life -= 0.02;
+      if (p.life > 0) allDead = false;
+    });
+
+    if (allDead && !isComplete) {
+      setIsComplete(true);
+      onComplete();
+    }
+  });
+
+  return (
+    <>
+      {particleRefs.current.map((p, i) => {
+        if (p.life <= 0) return null;
+        return (
+          <mesh key={i} position={p.position}>
+            <sphereGeometry args={[0.08, 8, 8]} />
+            <meshBasicMaterial
+              color="#00FFD4"
+              transparent
+              opacity={p.life * 0.8}
+            />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
+function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerDown, onPointerEnter, onPointerLeave, scale = 1, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   // Rotate the mesh every frame (slowed by 1/3)
@@ -118,21 +179,23 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerEnter
   const finalSize = size * 0.5 * scale;
 
   return (
-    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <dodecahedronGeometry args={[finalSize, 0]} />
       <meshStandardMaterial
         color="#FFD700" // Golden color for connection nodes!
         metalness={1.0}
         roughness={0.0}
         emissive="#FFD700"
-        emissiveIntensity={0.5}
+        emissiveIntensity={0.5 * opacity} // Scale emissive with opacity
         envMapIntensity={3.0}
+        transparent={opacity < 1}
+        opacity={opacity}
       />
     </mesh>
   );
 }
 
-function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, roughness = 0.0, onClick, onPointerEnter, onPointerLeave }: any) {
+function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, roughness = 0.0, onClick, onPointerDown, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   // Rotate the mesh every frame (slowed by 1/3)
@@ -144,7 +207,7 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
   });
 
   return (
-    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} castShadow receiveShadow>
+    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} castShadow receiveShadow>
       {geometry}
       {node.nodeType === 'ai-response' ? (
         // AI responses: Wireframe like nexus
@@ -152,7 +215,7 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
           color={color}
           wireframe={true}
           transparent={true}
-          opacity={1}
+          opacity={opacity}
         />
       ) : (
         // All other nodes: Standard material
@@ -161,9 +224,11 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
           metalness={0.8}
           roughness={roughness}
           emissive={emissive}
-          emissiveIntensity={emissiveIntensity}
+          emissiveIntensity={emissiveIntensity * opacity} // Scale emissive with opacity
           envMapIntensity={0.5}
           flatShading={false}
+          transparent={opacity < 1}
+          opacity={opacity}
         />
       )}
     </mesh>
@@ -171,7 +236,7 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
 }
 
 // NEW: Clean user reply node component
-function RotatingUserReplyNode({ node, size, onClick, onPointerEnter, onPointerLeave }: any) {
+function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   // Debug log
@@ -190,6 +255,7 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerEnter, onPointerL
       ref={meshRef}
       position={node.position}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       castShadow
@@ -199,15 +265,17 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerEnter, onPointerL
       <meshStandardMaterial
         color="#8B5CF6"
         emissive="#8B5CF6"
-        emissiveIntensity={1.5}
+        emissiveIntensity={1.5 * opacity} // Scale emissive with opacity
         metalness={0.0}
         roughness={1.0}
+        transparent={opacity < 1}
+        opacity={opacity}
       />
     </mesh>
   );
 }
 
-function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave }: any) {
+function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   // Rotate the mesh every frame (slowed by 1/3)
@@ -225,18 +293,18 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave }: any) 
         color="#00FF9D"
         wireframe={true}
         transparent={true}
-        opacity={1}
+        opacity={opacity}
       />
     </mesh>
   );
 }
 
-function ConnectionLines() {
+function ConnectionLines({ fadingUniverse }: { fadingUniverse: { excludeNodeId: string; progress: number } | null }) {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const [pulseStates, setPulseStates] = useState<{ [key: string]: number }>({});
   const initializedRef = useRef(false);
-  
+
   // Initialize pulses with random positions
   useEffect(() => {
     if (!initializedRef.current) {
@@ -248,10 +316,10 @@ function ConnectionLines() {
       initializedRef.current = true;
     }
   }, [nodes]);
-  
+
   useFrame(({ clock }) => {
     const time = clock.getElapsedTime();
-    
+
     const newPulseStates: { [key: string]: number } = {};
     Object.values(nodes).forEach((node) => {
       const currentPos = pulseStates[node.id] || Math.random();
@@ -259,10 +327,23 @@ function ConnectionLines() {
     });
     setPulseStates(newPulseStates);
   });
-  
+
   if (nexuses.length === 0) return null;
-  
+
   const nodeArray = Object.values(nodes);
+
+  // 🌫️ Calculate line opacity based on fade state
+  const calculateLineOpacity = (nodeId: string): number => {
+    if (fadingUniverse) {
+      // If this IS the breaking node, hide its connection line immediately
+      if (nodeId === fadingUniverse.excludeNodeId) {
+        return 0;
+      }
+      // All other lines fade out
+      return (1 - fadingUniverse.progress) * 0.5; // Base opacity is 0.5
+    }
+    return 0.5; // Default opacity
+  };
   
   return (
     <>
@@ -293,7 +374,7 @@ function ConnectionLines() {
                         color={rainbowColor}
                         lineWidth={2}
                         transparent
-                        opacity={0.5}
+                        opacity={calculateLineOpacity(node.id)}
                       />
                       {/* Pulse on some lines */}
                       {connIdx % 3 === 0 && (() => {
@@ -307,7 +388,7 @@ function ConnectionLines() {
                             <meshBasicMaterial
                               color={rainbowColor}
                               transparent
-                              opacity={0.6}
+                              opacity={calculateLineOpacity(node.id) * 1.2}
                             />
                           </mesh>
                         );
@@ -334,7 +415,7 @@ function ConnectionLines() {
                 color={rainbowColor}
                 lineWidth={2}
                 transparent
-                opacity={0.5}
+                opacity={calculateLineOpacity(node.id)}
               />
 
               {/* Line from connection node to Node B */}
@@ -343,7 +424,7 @@ function ConnectionLines() {
                 color={rainbowColor}
                 lineWidth={2}
                 transparent
-                opacity={0.5}
+                opacity={calculateLineOpacity(node.id)}
               />
 
               {/* Pulse on line to Node A */}
@@ -358,7 +439,7 @@ function ConnectionLines() {
                     <meshBasicMaterial
                       color={rainbowColor}
                       transparent
-                      opacity={0.6}
+                      opacity={calculateLineOpacity(node.id) * 1.2}
                     />
                   </mesh>
                 );
@@ -376,7 +457,7 @@ function ConnectionLines() {
                     <meshBasicMaterial
                       color={rainbowColor}
                       transparent
-                      opacity={0.6}
+                      opacity={calculateLineOpacity(node.id) * 1.2}
                     />
                   </mesh>
                 );
@@ -413,16 +494,16 @@ function ConnectionLines() {
               color={rainbowColor}
               lineWidth={2}
               transparent
-              opacity={0.5}
+              opacity={calculateLineOpacity(node.id)}
             />
-            
+
             {idx % 2 === 0 && (
               <mesh position={[pulseX, pulseY, pulseZ]}>
                 <sphereGeometry args={[0.12, 16, 16]} />
-                <meshBasicMaterial 
+                <meshBasicMaterial
                   color={rainbowColor}
                   transparent
-                  opacity={0.6}
+                  opacity={calculateLineOpacity(node.id) * 1.2}
                 />
               </mesh>
             )}
@@ -433,11 +514,11 @@ function ConnectionLines() {
   );
 }
 
-function VideoThumbnail({ videoUrl, position }: { videoUrl: string; position: [number, number, number] }) {
+function VideoThumbnail({ videoUrl, position, opacity = 1 }: { videoUrl: string; position: [number, number, number]; opacity?: number }) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Mesh>(null);
   const [videoTexture, setVideoTexture] = useState<THREE.VideoTexture | null>(null);
-  
+
   useEffect(() => {
     const video = document.createElement('video');
     video.src = videoUrl;
@@ -445,48 +526,48 @@ function VideoThumbnail({ videoUrl, position }: { videoUrl: string; position: [n
     video.loop = false;
     video.muted = true;
     video.playsInline = true;
-    
+
     video.addEventListener('loadeddata', () => {
       video.currentTime = 0.1;
     });
-    
+
     const texture = new THREE.VideoTexture(video);
     texture.minFilter = THREE.LinearFilter;
     texture.magFilter = THREE.LinearFilter;
     setVideoTexture(texture);
-    
+
     return () => {
       texture.dispose();
       video.remove();
     };
   }, [videoUrl]);
-  
+
   useFrame(() => {
     if (meshRef.current) {
       meshRef.current.lookAt(camera.position);
     }
   });
-  
+
   if (!videoTexture) return null;
-  
+
   return (
     <mesh ref={meshRef} position={position}>
       <planeGeometry args={[2.8, 2.8]} />
-      <meshBasicMaterial map={videoTexture} transparent opacity={0.9} />
+      <meshBasicMaterial map={videoTexture} transparent opacity={0.9 * opacity} />
     </mesh>
   );
 }
 
-function NexusTitle({ title, position }: { title: string; position: [number, number, number] }) {
+function NexusTitle({ title, position, opacity = 1 }: { title: string; position: [number, number, number]; opacity?: number }) {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
-  
+
   useFrame(() => {
     if (groupRef.current) {
       groupRef.current.lookAt(camera.position);
     }
   });
-  
+
   return (
     <group ref={groupRef} position={[position[0], position[1] + 3, position[2]]}>
       <Html center distanceFactor={10} zIndexRange={[0, 0]}>
@@ -499,6 +580,8 @@ function NexusTitle({ title, position }: { title: string; position: [number, num
           pointerEvents: 'none',
           userSelect: 'none',
           zIndex: 1,
+          opacity: opacity,
+          transition: 'opacity 0.1s linear',
         }}>
           {title}
         </div>
@@ -657,8 +740,424 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const addNodeToConnection = useCanvasStore((state) => state.addNodeToConnection);
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
   const setHoveredNode = useCanvasStore((state) => state.setHoveredNode);
+  const createNexus = useCanvasStore((state) => state.createNexus);
+  const addNode = useCanvasStore((state) => state.addNode);
+
+  // 🚀 DRAG-TO-BREAK STATE
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedNode, setDraggedNode] = useState<string | null>(null);
+  const [dragStartPosition, setDragStartPosition] = useState<[number, number, number] | null>(null);
+  const [dragCurrentPosition, setDragCurrentPosition] = useState<[number, number, number] | null>(null);
+  const [dragDistance, setDragDistance] = useState(0);
+  const [isBreakingOff, setIsBreakingOff] = useState(false);
+  const [particleBursts, setParticleBursts] = useState<Array<{ id: string; position: [number, number, number] }>>([]);
+  const [transformingNode, setTransformingNode] = useState<{ nodeId: string; startTime: number } | null>(null);
+  const [fadingUniverse, setFadingUniverse] = useState<{ excludeNodeId: string; progress: number } | null>(null);
+
+  const BREAK_THRESHOLD = 5; // Units before break-off (changed from 10)
+  const GLOW_START = 3; // Distance when glow starts (changed from 5)
+
+  const { camera, gl } = useThree();
 
   useCameraAnimation();
+
+  // 🎬 ANIMATION STATE for break-off transformation
+  const transformingNodeRef = useRef<THREE.Mesh | null>(null);
+  const allNodeRefs = useRef<Map<string, THREE.Mesh>>(new Map());
+  const allNexusRefs = useRef<Map<string, THREE.Mesh>>(new Map());
+
+  // 🎯 DRAG HANDLERS
+  const handleNodePointerDown = useCallback((e: any, node: any) => {
+    console.log('🎯 POINTER DOWN EVENT FIRED on node:', node.id);
+
+    if (isHoldingC || connectionModeActive || isBreakingOff) {
+      console.log('❌ Drag blocked - isHoldingC:', isHoldingC, 'connectionMode:', connectionModeActive, 'isBreaking:', isBreakingOff);
+      return;
+    }
+
+    // Prevent OrbitControls from interfering
+    e.stopPropagation();
+
+    setIsDragging(true);
+    setDraggedNode(node.id);
+    setDragStartPosition(node.position);
+    setDragCurrentPosition(node.position);
+    setDragDistance(0);
+    console.log('✅ Drag started on node:', node.id);
+  }, [isHoldingC, connectionModeActive, isBreakingOff, gl]);
+
+  // 🎬 ANIMATION HELPERS for break-off sequence
+
+  // Easing functions
+  const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+  const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  // 1. Slide node to center (0,0,0) - 1 second, ease-out cubic
+  const slideNodeToCenter = useCallback((nodeId: string, startPosition: [number, number, number]): Promise<void> => {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const duration = 1000; // 1 second
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const easedProgress = easeOutCubic(progress);
+
+        const newX = startPosition[0] + (0 - startPosition[0]) * easedProgress;
+        const newY = startPosition[1] + (0 - startPosition[1]) * easedProgress;
+        const newZ = startPosition[2] + (0 - startPosition[2]) * easedProgress;
+
+        const currentPos: [number, number, number] = [newX, newY, newZ];
+        setDragCurrentPosition(currentPos);
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          console.log('✅ Node reached center (0,0,0)');
+          resolve();
+        }
+      };
+
+      animate();
+    });
+  }, []);
+
+  // 2. Fade out current universe - 1 second, linear fade
+  const fadeOutCurrentUniverse = useCallback((excludeNodeId: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const duration = 1000; // 1 second
+
+      console.log('  Fading all nodes/nexuses except breaking node:', excludeNodeId);
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Update state with fade progress
+        setFadingUniverse({ excludeNodeId, progress });
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          console.log('  Fade complete');
+          resolve();
+        }
+      };
+
+      animate();
+    });
+  }, []);
+
+  // 3. Transform node to emerald nexus at center - 1 second, ease in-out
+  const transformToNexus = useCallback((nodeId: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const duration = 1000; // 1 second
+      const startScale = 1;
+      const endScale = 2; // 2x larger
+      const startColor = new THREE.Color("#8B5CF6"); // Purple
+      const endColor = new THREE.Color("#00FF9D"); // Emerald green
+
+      console.log('  Transforming: grow + color shift to emerald');
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const easedProgress = easeInOutCubic(progress);
+
+        // Scale animation
+        const scale = startScale + (endScale - startScale) * easedProgress;
+
+        // Color animation
+        const color = new THREE.Color().lerpColors(startColor, endColor, easedProgress);
+
+        // Apply to transforming node if ref exists
+        if (transformingNodeRef.current) {
+          transformingNodeRef.current.scale.set(scale, scale, scale);
+          const material = transformingNodeRef.current.material as THREE.MeshStandardMaterial;
+          if (material) {
+            material.color.copy(color);
+            material.emissive.copy(color);
+            // Gentle continuous pulse
+            material.emissiveIntensity = Math.sin(Date.now() / 400) * 0.15 + 0.25;
+          }
+        }
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          console.log('  Transform complete - now pulsing while waiting for AI');
+
+          // KEEP PULSING after transform completes (while waiting for AI)
+          const continuePulse = () => {
+            if (!isBreakingOff) return; // Stop when break-off completes
+
+            if (transformingNodeRef.current) {
+              const material = transformingNodeRef.current.material as THREE.MeshStandardMaterial;
+              if (material) {
+                material.emissive = endColor;
+                material.emissiveIntensity = Math.sin(Date.now() / 400) * 0.15 + 0.25;
+              }
+            }
+
+            requestAnimationFrame(continuePulse);
+          };
+          continuePulse();
+
+          resolve();
+        }
+      };
+
+      animate();
+    });
+  }, [isBreakingOff]);
+
+  // 4. Fibonacci sphere distribution for child nodes
+  const getFibonacciSpherePosition = useCallback((index: number, total: number, radius: number): [number, number, number] => {
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // ~137.5 degrees
+    const y = 1 - (index / (total - 1)) * 2; // -1 to 1
+    const radiusAtY = Math.sqrt(1 - y * y);
+    const theta = goldenAngle * index;
+
+    const x = Math.cos(theta) * radiusAtY * radius;
+    const z = Math.sin(theta) * radiusAtY * radius;
+    const yPos = y * radius;
+
+    return [x, yPos, z];
+  }, []);
+
+  // 5. Animate individual node birth - 0.6 seconds per node
+  const animateNodeBirth = useCallback((startPos: [number, number, number], endPos: [number, number, number], delay: number): Promise<void> => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const startTime = Date.now();
+        const duration = 600; // 0.6 seconds
+
+        const animate = () => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const easedProgress = easeOutCubic(progress);
+
+          // This would update node position during birth animation
+          // Since we're creating nodes via addNode, they'll spawn with stagger
+
+          if (progress >= 1) {
+            resolve();
+          } else {
+            requestAnimationFrame(animate);
+          }
+        };
+
+        animate();
+      }, delay);
+    });
+  }, []);
+
+  // 6. Spawn child nodes with Fibonacci distribution - 0.8 seconds total
+  const spawnChildNodes = useCallback(async (nexusId: string, newNodes: any[]): Promise<void> => {
+    console.log('🌱 Spawning', newNodes.length, 'child nodes from center...');
+
+    const staggerDelay = 800 / newNodes.length; // Distribute 0.8s across all nodes
+
+    const birthPromises = newNodes.map((nodeData, index) => {
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          console.log(`🌱 Spawning node ${index + 1}/${newNodes.length}`);
+          addNode(nodeData.content, nexusId, undefined, 'ai-response');
+          resolve();
+        }, index * staggerDelay);
+      });
+    });
+
+    await Promise.all(birthPromises);
+    console.log('✅ All child nodes spawned');
+  }, [addNode]);
+
+  // 🔥 BREAK-OFF HANDLER - Called when threshold is crossed during drag
+  const handleBreakOff = useCallback(async () => {
+    if (!draggedNode || !dragCurrentPosition || isBreakingOff) return;
+
+    console.log('═══════════════════════════════════');
+    console.log('🌌 BREAK-OFF SEQUENCE STARTING');
+    console.log('Node:', draggedNode);
+    console.log('═══════════════════════════════════');
+
+    // Prevent multiple break-offs
+    setIsBreakingOff(true);
+    setIsDragging(false);
+
+    const breakingNodeId = draggedNode;
+    const breakPosition = dragCurrentPosition;
+    const startPosition = dragStartPosition!;
+
+    try {
+      // 1. SNAP EFFECT (instant)
+      console.log('✓ Step 1: Snap effect');
+      setParticleBursts((prev) => [...prev, { id: breakingNodeId, position: breakPosition }]);
+      setTransformingNode({ nodeId: breakingNodeId, startTime: Date.now() });
+      setDragDistance(0);
+
+      // 2. START AI GENERATION IN BACKGROUND (don't wait!)
+      console.log('→ Step 2: Starting AI generation (background process)');
+      const nodeData = nodes[breakingNodeId];
+      const generationPromise = fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: nodeData.content }],
+          mode: 'break-off',
+          nodeContent: nodeData.content,
+        }),
+      }).then(res => res.json());
+      // NOTE: We're NOT awaiting this yet! It runs in background.
+
+      // 3. IMMEDIATELY FADE + SLIDE (don't wait for AI!)
+      console.log('→ Step 3: Fading universe + sliding to center (1 second)');
+      await Promise.all([
+        fadeOutCurrentUniverse(breakingNodeId),
+        slideNodeToCenter(breakingNodeId, startPosition)
+      ]);
+      console.log('✓ Step 3 complete: Original universe GONE, node at center');
+      // DON'T clear fade state yet - keep nodes invisible until new universe replaces them
+
+      // 4. TRANSFORM TO NEXUS (1 second) - still don't wait for AI
+      console.log('→ Step 4: Transforming to nexus (1 second)');
+      await transformToNexus(breakingNodeId);
+      console.log('✓ Step 4 complete: Now a nexus at center');
+
+      // 5. NOW wait for AI if it's not done yet
+      console.log('→ Step 5: Checking if AI is ready...');
+      const data = await generationPromise;
+      console.log('✓ Step 5 complete: AI finished -', data.newUniverse?.nexusTitle || 'unnamed');
+
+      if (data.newUniverse) {
+        const { nexusTitle, nexusContent, nodes: newNodes } = data.newUniverse;
+
+        // Create new universe (clears old one, creates new nexus)
+        console.log('🌌 Creating new universe:', nexusTitle);
+
+        // Clear fade state NOW - right before creating new universe
+        setFadingUniverse(null);
+
+        createNexus(nexusTitle, nexusContent);
+
+        // Get the newly created nexus ID
+        const newState = useCanvasStore.getState();
+        const newNexusId = newState.nexuses[0]?.id;
+
+        if (newNexusId) {
+          console.log('✅ New universe created with nexus:', newNexusId);
+
+          // 6. BIRTH CHILD NODES (0.8 seconds)
+          console.log('→ Step 6: Birthing child nodes');
+          await spawnChildNodes(newNexusId, newNodes);
+          console.log('✓ Step 6 complete: All nodes birthed');
+
+          // 7. COMPLETE
+          console.log('✓ BREAK-OFF COMPLETE');
+          console.log('═══════════════════════════════════');
+
+          setTimeout(() => {
+            console.log('💾 Saving complete universe...');
+            useCanvasStore.getState().saveCurrentUniverse();
+            setIsBreakingOff(false);
+            setTransformingNode(null);
+            setDraggedNode(null);
+            setDragStartPosition(null);
+            setDragCurrentPosition(null);
+          }, 100);
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Break-off failed:', error);
+      setIsBreakingOff(false);
+      setTransformingNode(null);
+      setDraggedNode(null);
+      setDragStartPosition(null);
+      setDragCurrentPosition(null);
+    }
+  }, [draggedNode, dragCurrentPosition, dragStartPosition, isBreakingOff, nodes, createNexus, fadeOutCurrentUniverse, slideNodeToCenter, transformToNexus, spawnChildNodes]);
+
+  const handlePointerMove = useCallback((e: any) => {
+    if (!isDragging || !draggedNode || !dragStartPosition || isBreakingOff) return;
+
+    // Calculate new position based on pointer movement
+    const rect = gl.domElement.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Project pointer to 3D space
+    const vector = new THREE.Vector3(x, y, 0.5);
+    vector.unproject(camera);
+    const dir = vector.sub(camera.position).normalize();
+    const distance = -camera.position.z / dir.z;
+    const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+    const currentPos: [number, number, number] = [pos.x, pos.y, pos.z];
+    setDragCurrentPosition(currentPos);
+
+    // Calculate distance from start
+    const dx = currentPos[0] - dragStartPosition[0];
+    const dy = currentPos[1] - dragStartPosition[1];
+    const dz = currentPos[2] - dragStartPosition[2];
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    setDragDistance(dist);
+
+    console.log('📏 Drag distance:', dist.toFixed(2));
+
+    // 🔥 CRITICAL: Auto-break when threshold crossed (no release needed!)
+    if (dist >= BREAK_THRESHOLD) {
+      console.log('═══════════════════════════════════');
+      console.log('🔥 THRESHOLD CROSSED at', dist.toFixed(2), 'units - AUTO BREAKING!');
+      console.log('═══════════════════════════════════');
+
+      // Stop dragging immediately
+      setIsDragging(false);
+
+      // Trigger break-off sequence
+      handleBreakOff();
+    }
+  }, [isDragging, draggedNode, dragStartPosition, isBreakingOff, camera, gl, BREAK_THRESHOLD, handleBreakOff]);
+
+  const handlePointerUp = useCallback(() => {
+    // If break-off is in progress, don't do anything (let animation complete)
+    if (isBreakingOff) {
+      console.log('🎯 Pointer up - break-off in progress, ignoring');
+      return;
+    }
+
+    // Only handle snap-back if we're still dragging and haven't broken off
+    if (isDragging && draggedNode) {
+      console.log('🎯 Pointer up - distance:', dragDistance);
+
+      if (dragDistance < BREAK_THRESHOLD) {
+        // Released before threshold - snap back to original position
+        console.log('↩️ Released before threshold - snapping back');
+        // Node will snap back automatically when we reset dragCurrentPosition
+      }
+
+      // Clean up drag state
+      setIsDragging(false);
+      setDraggedNode(null);
+      setDragStartPosition(null);
+      setDragCurrentPosition(null);
+      setDragDistance(0);
+    }
+  }, [isDragging, draggedNode, dragDistance, isBreakingOff, BREAK_THRESHOLD]);
+
+  // Listen for pointer move/up on window
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+      return () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+      };
+    }
+  }, [isDragging, handlePointerMove, handlePointerUp]);
 
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const nextMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
@@ -750,13 +1249,22 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   
   return (
     <>
+      <TrackedOrbitControls enabled={!isDragging} />
       <CameraLight />
-      <ConnectionLines />
+      <ConnectionLines fadingUniverse={fadingUniverse} />
 
-      {nexuses.map((nexus) => (
+      {nexuses.map((nexus) => {
+        // 🌫️ FADE CONTROL: Calculate opacity for nexuses
+        let nexusOpacity = 1;
+        if (fadingUniverse) {
+          nexusOpacity = 1 - fadingUniverse.progress; // Fade from 1 to 0
+        }
+
+        return (
         <group key={nexus.id}>
           <RotatingNexus
             nexus={nexus}
+            opacity={nexusOpacity}
             onClick={(e: any) => {
               e.stopPropagation();
 
@@ -832,7 +1340,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                 <meshBasicMaterial
                   color="#FFD700"
                   transparent
-                  opacity={0.9}
+                  opacity={0.9 * nexusOpacity}
                 />
               </mesh>
 
@@ -850,7 +1358,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                     <meshBasicMaterial
                       color="#FFD700"
                       transparent
-                      opacity={0.9}
+                      opacity={0.9 * nexusOpacity}
                     />
                   </mesh>
                 );
@@ -862,13 +1370,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
                 <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial 
+                <meshBasicMaterial
                   ref={(mat) => {
                     if (mat) selectedMaterialsRef.current.set(nexus.id, mat);
                   }}
                   color="#FFFF00"
                   transparent
-                  opacity={0.8}
+                  opacity={0.8 * nexusOpacity}
                 />
               </mesh>
               
@@ -894,7 +1402,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                       }}
                       color="#FFFF00"
                       transparent
-                      opacity={0.8}
+                      opacity={0.8 * nexusOpacity}
                     />
                   </mesh>
                 );
@@ -906,13 +1414,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
                 <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial 
+                <meshBasicMaterial
                   ref={(mat) => {
                     if (mat) nextMaterialsRef.current.set(nexus.id, mat);
                   }}
                   color="#00FFFF"
                   transparent
-                  opacity={0.9}
+                  opacity={0.9 * nexusOpacity}
                 />
               </mesh>
               
@@ -938,7 +1446,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                       }}
                       color="#00FFFF"
                       transparent
-                      opacity={0.9}
+                      opacity={0.9 * nexusOpacity}
                     />
                   </mesh>
                 );
@@ -950,13 +1458,13 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
             <>
               <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
                 <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial 
+                <meshBasicMaterial
                   ref={(mat) => {
                     if (mat) alternateMaterialsRef.current.set(nexus.id, mat);
                   }}
                   color="#00FFFF"
                   transparent
-                  opacity={0.8}
+                  opacity={0.8 * nexusOpacity}
                 />
               </mesh>
               
@@ -982,7 +1490,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                       }}
                       color="#00FFFF"
                       transparent
-                      opacity={0.8}
+                      opacity={0.8 * nexusOpacity}
                     />
                   </mesh>
                 );
@@ -991,11 +1499,12 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
           )}
           
           {nexus.videoUrl && (
-            <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} />
+            <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} opacity={nexusOpacity} />
           )}
-          <NexusTitle title={nexus.title} position={nexus.position} />
+          <NexusTitle title={nexus.title} position={nexus.position} opacity={nexusOpacity} />
         </group>
-      ))}
+      );
+      })}
       
       {nodeArray.map((node) => {
         const level = getNodeLevel(node.id);
@@ -1003,11 +1512,32 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
 
         const baseColor = "#A855F7"; // Bright vibrant purple
 
+        // 🌫️ FADE CONTROL: Calculate opacity based on fading state
+        let nodeOpacity = 1;
+        if (fadingUniverse && node.id !== fadingUniverse.excludeNodeId) {
+          nodeOpacity = 1 - fadingUniverse.progress; // Fade from 1 to 0
+        }
+
+        // 🚀 DRAG-TO-BREAK: Override position if this node is being dragged
+        const isBeingDragged = draggedNode === node.id;
+        const displayNode = isBeingDragged && dragCurrentPosition
+          ? { ...node, position: dragCurrentPosition }
+          : node;
+
+        // 🌟 DRAG-TO-BREAK: Add emerald glow if distance > GLOW_START
+        const isDragGlowing = isBeingDragged && dragDistance >= GLOW_START;
+        const glowIntensity = isDragGlowing
+          ? Math.min((dragDistance - GLOW_START) / (BREAK_THRESHOLD - GLOW_START), 1)
+          : 0;
+
         let haloColor = null;
         let haloType = null;
 
-        // NEW: Golden glow for nodes selected in multi-connection mode
-        if (selectedNodesForConnection.includes(node.id)) {
+        // 🌟 Drag glow takes precedence
+        if (isDragGlowing) {
+          haloColor = "#00FFD4"; // Emerald green
+          haloType = 'drag-glow';
+        } else if (selectedNodesForConnection.includes(node.id)) {
           haloColor = "#FFD700"; // Gold color
           haloType = 'connection-selected';
         } else if (glowNodes.selected === node.id) {
@@ -1048,10 +1578,12 @@ if (node.nodeType === 'synthesis') {
     {node.isConnectionNode ? (
       // Render rotating golden star for connection nodes (1.5x larger for meta-inspiration nodes)
       <RotatingConnectionNode
-        node={node}
+        node={displayNode}
         size={size}
         baseColor={baseColor}
         scale={node.id.startsWith('meta-inspiration') ? 1.5 : 1}
+        opacity={nodeOpacity}
+        onPointerDown={(e: any) => handleNodePointerDown(e, node)}
         onClick={(e: any) => {
           e.stopPropagation();
 
@@ -1104,8 +1636,10 @@ if (node.nodeType === 'synthesis') {
     ) : node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? (
       // User reply nodes: Clean purple diamonds
       <RotatingUserReplyNode
-        node={node}
+        node={displayNode}
         size={size}
+        opacity={nodeOpacity}
+        onPointerDown={(e: any) => handleNodePointerDown(e, node)}
         onClick={(e: any) => {
           e.stopPropagation();
 
@@ -1151,13 +1685,15 @@ if (node.nodeType === 'synthesis') {
     ) : (
       // All other nodes: AI responses, synthesis, inspiration
       <RotatingNode
-        node={node}
+        node={displayNode}
         size={size}
         geometry={Geometry}
         color={nodeColor}
         emissive={nodeColor}
         emissiveIntensity={node.nodeType === 'synthesis' ? 0.8 : 0.3}
         roughness={0.0}
+        opacity={nodeOpacity}
+        onPointerDown={(e: any) => handleNodePointerDown(e, node)}
         onClick={(e: any) => {
           e.stopPropagation();
 
@@ -1203,7 +1739,7 @@ if (node.nodeType === 'synthesis') {
     )}
                 {haloColor && (
   <>
-  <mesh position={node.position} rotation={[Math.PI / 2, 0, 0]}>
+  <mesh position={displayNode.position} rotation={[Math.PI / 2, 0, 0]}>
   <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
   <meshBasicMaterial
     ref={(mat) => {
@@ -1219,21 +1755,21 @@ if (node.nodeType === 'synthesis') {
     }}
     color={haloColor}
     transparent
-    opacity={haloType === 'selected' ? 0.8 : 0.9}
+    opacity={(haloType === 'drag-glow' ? 0.5 + glowIntensity * 0.4 : (haloType === 'selected' ? 0.8 : 0.9)) * nodeOpacity}
   />
 </mesh>
                 {Array.from({ length: 20 }).map((_, i) => {
                   const angle = (Math.random() * Math.PI * 2);
                   const sparkleRadius = size * 1.4 + Math.random() * 0.2;
-                  const x = node.position[0] + Math.cos(angle) * sparkleRadius;
-                  const z = node.position[2] + Math.sin(angle) * sparkleRadius;
-                  const y = node.position[1] + (Math.random() - 0.5) * 0.05;
+                  const x = displayNode.position[0] + Math.cos(angle) * sparkleRadius;
+                  const z = displayNode.position[2] + Math.sin(angle) * sparkleRadius;
+                  const y = displayNode.position[1] + (Math.random() - 0.5) * 0.05;
                   const sparkSize = 0.02 + Math.random() * 0.04;
                   
                   return (
                     <mesh key={`sparkle-node-${i}`} position={[x, y, z]}>
                       <sphereGeometry args={[sparkSize, 6, 6]} />
-                      <meshBasicMaterial 
+                      <meshBasicMaterial
                         ref={(mat) => {
                           if (mat) {
                             if (!sparkleMaterialsRef.current.has(node.id)) {
@@ -1244,7 +1780,7 @@ if (node.nodeType === 'synthesis') {
                         }}
                         color={haloColor}
                         transparent
-                        opacity={haloType === 'selected' ? 0.8 : 0.9}
+                        opacity={(haloType === 'selected' ? 0.8 : 0.9) * nodeOpacity}
                       />
                     </mesh>
                   );
@@ -1254,14 +1790,26 @@ if (node.nodeType === 'synthesis') {
 
             {/* Anchor Indicator - Sparkles orbiting around anchored nodes */}
             {node.isAnchored && (
-              <NodeSparkles position={node.position} />
+              <NodeSparkles position={displayNode.position} opacity={nodeOpacity} />
             )}
           </group>
         );
       })}
-      
+
       <ambientLight intensity={0.02} />
       <pointLight position={[10, 10, 10]} intensity={0.1} />
+
+      {/* 💥 PARTICLE BURSTS */}
+      {particleBursts.map((burst) => (
+        <ParticleBurst
+          key={burst.id}
+          position={burst.position}
+          onComplete={() => {
+            setParticleBursts((prev) => prev.filter((b) => b.id !== burst.id));
+            console.log('💥 Particle burst complete for:', burst.id);
+          }}
+        />
+      ))}
     </>
   );
 }
@@ -1492,7 +2040,6 @@ export default function CanvasScene() {
       {hasUniverse && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
         <Scene isHoldingC={isHoldingC} />
-        <TrackedOrbitControls />
         <CameraPositionManager />
       </Canvas>
     </div>

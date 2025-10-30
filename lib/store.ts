@@ -2682,9 +2682,9 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       console.log('Current library size:', Object.keys(state.universeLibrary).length);
       console.log('Current universe IDs in library:', Object.keys(state.universeLibrary));
 
-      // Check 1: Do we have an ID?
+      // Check 1: Do we have an ID? (Gracefully skip if missing during transitions)
       if (!state.activeUniverseId) {
-        console.error('❌ SAVE FAILED: No active universe ID');
+        console.log('⏭️ No active universe ID (normal during transitions) - skipping save');
         console.log('───────────────────────────────────');
         return;
       }
