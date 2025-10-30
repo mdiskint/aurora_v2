@@ -213,6 +213,95 @@ IMPORTANT:
       }
     }
 
+    // 🚀 BREAK-OFF MODE: Transform node into new universe
+    if (mode === 'break-off') {
+      console.log('🚀 BREAK-OFF MODE ACTIVATED - Generating new universe from node');
+
+      const nodeContent = userMessage;
+      console.log('📄 Node content:', nodeContent);
+
+      const breakOffPrompt = `A user is breaking off this node into its own universe. The node contains:
+"${nodeContent}"
+
+Create a NEW universe that explores this content in depth. Generate a nexus and 5-12 child nodes that comprehensively explore different aspects, subtopics, or implications of this content.
+
+Format your response as VALID JSON (and ONLY JSON, no other text):
+{
+  "nexusTitle": "brief title (3-7 words) summarizing the new universe",
+  "nexusContent": "overview paragraph that expands on the original node content",
+  "nodes": [
+    {"content": "Subtopic 1: Title\\n\\nDetailed explanation (2-3 sentences minimum)"},
+    {"content": "Subtopic 2: Title\\n\\nDetailed explanation (2-3 sentences minimum)"},
+    ...
+  ]
+}
+
+IMPORTANT:
+- Return ONLY valid JSON, no markdown code blocks
+- Use \\n for line breaks within strings (NOT literal newlines)
+- Each node should be substantive (2-3 sentences minimum)
+- Create 5-12 nodes that deeply explore the content`;
+
+      console.log('📤 Sending break-off universe generation prompt...');
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: 'You are Aurora AI, a universe architect. Generate structured spatial knowledge graphs that explore content deeply. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        messages: [{ role: 'user', content: breakOffPrompt }],
+      });
+
+      console.log('✅ Got response from Claude for break-off');
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+
+      console.log('📝 Raw AI response:', rawResponse);
+
+      try {
+        let newUniverse;
+        try {
+          newUniverse = JSON.parse(rawResponse);
+        } catch (firstError) {
+          console.log('⚠️ Initial parse failed, attempting cleanup...');
+
+          let cleanedResponse = rawResponse.trim();
+          if (cleanedResponse.startsWith('```json')) {
+            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
+          } else if (cleanedResponse.startsWith('```')) {
+            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
+          }
+
+          cleanedResponse = cleanedResponse.replace(
+            /"([^"]|\\")*"/g,
+            (match) => {
+              return match
+                .replace(/\r\n/g, '\\n')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\n')
+                .replace(/\t/g, '\\t');
+            }
+          );
+
+          newUniverse = JSON.parse(cleanedResponse);
+        }
+
+        console.log('✅ Successfully parsed break-off universe:', newUniverse);
+
+        return NextResponse.json({
+          response: `Generated new universe from node`,
+          newUniverse
+        });
+      } catch (parseError) {
+        console.error('❌ Failed to parse break-off JSON:', parseError);
+        console.error('Raw response was:', rawResponse);
+        return NextResponse.json(
+          { error: 'Failed to parse break-off universe structure from AI' },
+          { status: 500 }
+        );
+      }
+    }
+
     // 🧠 DEEP THINKING MODE: Generate exploratory question with progressive depth
     if (mode === 'deep-thinking' && !userMessage.includes('Previous question:')) {
       console.log('🧠 DEEP THINKING: Generating exploratory question with history');
