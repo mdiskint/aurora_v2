@@ -25,6 +25,9 @@ export default function MemoriesPage() {
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedColor, setSelectedColor] = useState('#8B5CF6');
 
+  // 🎯 Universe selection state
+  const [selectedUniverseId, setSelectedUniverseId] = useState<string | null>(null);
+
   // ✏️ Universe rename state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -356,17 +359,40 @@ export default function MemoriesPage() {
                   }}>
                     {Object.entries(folderUniverses)
                       .sort(([,a], [,b]) => b.lastModified - a.lastModified)
-                      .map(([universeId, universeData]) => (
+                      .map(([universeId, universeData]) => {
+                        const isSelected = selectedUniverseId === universeId;
+                        const isActive = activeUniverseIds.includes(universeId);
+
+                        // Determine border color and style based on state
+                        let borderColor = '#8B5CF6'; // Default purple
+                        let borderWidth = '2px';
+                        let boxShadow = 'none';
+                        let backgroundColor = '#0A1628';
+
+                        if (isSelected) {
+                          borderColor = '#FFD700'; // Gold for selected
+                          borderWidth = '3px';
+                          boxShadow = '0 0 20px rgba(255, 215, 0, 0.4)';
+                          backgroundColor = 'rgba(255, 215, 0, 0.05)'; // Subtle gold tint
+                        } else if (isActive) {
+                          borderColor = '#00FFD4'; // Cyan for active
+                          boxShadow = '0 0 20px rgba(0, 255, 212, 0.3)';
+                        }
+
+                        return (
                         <div
                           key={universeId}
+                          onClick={() => setSelectedUniverseId(universeId)}
                           onContextMenu={(e) => handleContextMenu(e, universeId)}
                           style={{
-                            backgroundColor: '#0A1628',
-                            border: `2px solid ${activeUniverseIds.includes(universeId) ? '#00FFD4' : '#8B5CF6'}`,
+                            backgroundColor,
+                            border: `${borderWidth} solid ${borderColor}`,
                             borderRadius: '8px',
                             padding: '16px',
                             position: 'relative',
-                            boxShadow: activeUniverseIds.includes(universeId) ? '0 0 20px rgba(0, 255, 212, 0.3)' : 'none'
+                            boxShadow,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
                           }}
                         >
                           {/* Active checkbox */}
@@ -407,7 +433,10 @@ export default function MemoriesPage() {
 
                           {/* Title - editable or static */}
                           {editingUniverseId === universeId ? (
-                            <div style={{ position: 'relative', marginBottom: '8px' }}>
+                            <div
+                              style={{ position: 'relative', marginBottom: '8px' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <input
                                 type="text"
                                 value={editTitle}
@@ -418,7 +447,6 @@ export default function MemoriesPage() {
                                   if (e.key === 'Escape') handleCancelRename();
                                 }}
                                 autoFocus
-                                onClick={(e) => e.stopPropagation()}
                                 style={{
                                   width: '100%',
                                   padding: '8px',
@@ -487,7 +515,8 @@ export default function MemoriesPage() {
 
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 loadUniverse(universeId);
                                 router.push('/chat');
                               }}
@@ -529,7 +558,8 @@ export default function MemoriesPage() {
                             </button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>
