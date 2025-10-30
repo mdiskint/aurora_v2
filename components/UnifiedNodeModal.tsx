@@ -24,6 +24,12 @@ export default function UnifiedNodeModal() {
   const quotedText = useCanvasStore((state) => state.quotedText);
   const createMetaInspirationNode = useCanvasStore((state) => state.createMetaInspirationNode);
   const toggleAnchor = useCanvasStore((state) => state.toggleAnchor);
+  const getNodeChildrenCount = useCanvasStore((state) => state.getNodeChildrenCount);
+  const deleteNode = useCanvasStore((state) => state.deleteNode);
+
+  // Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteInfo, setDeleteInfo] = useState({ childrenCount: 0 });
 
   // Content editing state
   const [editedContent, setEditedContent] = useState('');
@@ -364,16 +370,26 @@ export default function UnifiedNodeModal() {
         navigateAndShow(children[0].id);
       }
 
+      // Delete/Backspace - delete node
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleDeleteClick();
+      }
+
       // Escape - close modal
       if (e.key === 'Escape') {
         e.preventDefault();
-        setShowContentOverlay(false);
+        if (showDeleteConfirm) {
+          setShowDeleteConfirm(false);
+        } else {
+          setShowContentOverlay(false);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [node, nexus, nodes, nexuses, selectNode, setShowContentOverlay]);
+  }, [node, nexus, nodes, nexuses, selectNode, setShowContentOverlay, showDeleteConfirm]);
 
   // Get all sibling nodes (nodes with same parent) - for UI hint
   const getSiblingNodes = () => {
@@ -579,6 +595,39 @@ export default function UnifiedNodeModal() {
     setTimeout(() => {
       selectNode(metaNodeId, true);
     }, 100);
+  };
+
+  // Handle delete button click
+  const handleDeleteClick = () => {
+    // Check if it's a nexus
+    if (nexus && !node) {
+      alert('Cannot delete nexus. To remove this universe, use the Delete button on the Memories page.');
+      return;
+    }
+
+    if (!node) return;
+
+    // Get children count
+    const childrenCount = getNodeChildrenCount(node.id);
+
+    setDeleteInfo({ childrenCount });
+    setShowDeleteConfirm(true);
+  };
+
+  // Handle confirmed delete
+  const handleConfirmDelete = () => {
+    if (!node) return;
+
+    console.log('🗑️ User confirmed delete');
+
+    // Delete the node (cascade handled in store)
+    deleteNode(node.id);
+
+    // Close confirmation and modal
+    setShowDeleteConfirm(false);
+    setShowContentOverlay(false);
+
+    console.log('✅ Node deleted');
   };
 
   // Handle Socratic/Quiz answer submission
@@ -1370,6 +1419,17 @@ export default function UnifiedNodeModal() {
                   >
                     📝 Quiz Me On This (Test Knowledge)
                   </button>
+
+                  {/* Delete button - only for nodes, not nexuses */}
+                  {node && !nexus && (
+                    <button
+                      onClick={handleDeleteClick}
+                      className="px-4 py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium"
+                      title="Delete this node (Delete key)"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
 
                 {/* Second row: Explore Entire Universe button (only for nexuses) */}
@@ -1388,7 +1448,7 @@ export default function UnifiedNodeModal() {
                 )}
 
                 {/* Keyboard Navigation Hint */}
-                {node && (
+                {node && !showDeleteConfirm && (
                   <div
                     style={{
                       marginTop: '20px',
@@ -1399,7 +1459,53 @@ export default function UnifiedNodeModal() {
                       textAlign: 'center',
                     }}
                   >
-                    ↑↓ parent/child • ←→ siblings • Esc to close
+                    ↑↓ parent/child • ←→ siblings • Delete to remove • Esc to close
+                  </div>
+                )}
+
+                {/* Delete Confirmation Dialog */}
+                {showDeleteConfirm && node && (
+                  <div className="mt-6 p-6 bg-slate-950/80 border-2 border-red-500/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xl font-bold text-red-400 mb-4">
+                      ⚠️ Delete this node?
+                    </div>
+
+                    {/* Node content preview */}
+                    <div className="p-3 bg-purple-900/20 border-l-4 border-purple-500 rounded text-sm text-gray-300 mb-4 max-h-24 overflow-auto">
+                      "{node.content.slice(0, 150)}{node.content.length > 150 ? '...' : ''}"
+                    </div>
+
+                    {/* Children warning */}
+                    {deleteInfo.childrenCount > 0 && (
+                      <div className="p-3 bg-red-900/20 border-l-4 border-red-500 rounded text-sm mb-4">
+                        <strong className="text-red-400">This will also delete:</strong>
+                        <ul className="mt-2 ml-5 list-disc text-gray-300">
+                          <li>{deleteInfo.childrenCount} child node{deleteInfo.childrenCount !== 1 ? 's' : ''}</li>
+                          <li>All their connections</li>
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Warning */}
+                    <div className="p-3 bg-red-900/20 border border-red-500/30 rounded text-sm text-red-400 font-bold text-center mb-4">
+                      ⚠️ This cannot be undone
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1 px-4 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleConfirmDelete}
+                        className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all"
+                      >
+                        Delete Forever
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

@@ -349,6 +349,7 @@ interface CanvasStore {
   toggleActivateConversation: (nexusId: string) => void;
   getActivatedConversations: () => Nexus[];
   deleteConversation: (nexusId: string) => void;
+  getNodeChildrenCount: (nodeId: string) => number;
   deleteNode: (nodeId: string) => void;
   revertToOriginal: (nexusId: string) => void;
   saveToLocalStorage: () => void;
@@ -2458,6 +2459,28 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         alert('⚠️ ERROR: Failed to delete universe!\n\n' + (error as Error).message + '\n\nCheck console for details.');
       }
     }
+  },
+
+  getNodeChildrenCount: (nodeId: string): number => {
+    const state = get();
+    const node = state.nodes[nodeId];
+
+    if (!node) return 0;
+
+    // Helper function to recursively count all descendants
+    const countAllDescendants = (parentId: string, nodes: { [id: string]: Node }): number => {
+      let count = 0;
+      Object.keys(nodes).forEach(nId => {
+        if (nodes[nId].parentId === parentId) {
+          count += 1;
+          // Recursively count children of this node
+          count += countAllDescendants(nId, nodes);
+        }
+      });
+      return count;
+    };
+
+    return countAllDescendants(nodeId, state.nodes);
   },
 
   deleteNode: (nodeId: string) => {
