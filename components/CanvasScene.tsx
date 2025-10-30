@@ -1530,7 +1530,11 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
 
         // 🌫️ FADE CONTROL: Calculate opacity based on fading state
         let nodeOpacity = 1;
-        if (fadingUniverse && node.id !== fadingUniverse.excludeNodeId) {
+
+        // SPECIAL CASE: Transforming node always stays visible
+        if (transformingNode && node.id === transformingNode.nodeId) {
+          nodeOpacity = 1; // Keep fully visible during entire transformation
+        } else if (fadingUniverse && node.id !== fadingUniverse.excludeNodeId) {
           nodeOpacity = 1 - fadingUniverse.progress; // Fade from 1 to 0
         }
 
