@@ -367,6 +367,7 @@ interface CanvasStore {
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => void;
   clearCanvas: () => void;
   loadUniverse: (universeId: string) => void;
+  normalizeUniverseCoordinates: (universeData: UniverseData) => UniverseData;
   renameUniverse: (universeId: string, newTitle: string) => boolean;
 
   // 📁 FOLDER MANAGEMENT
@@ -2896,11 +2897,14 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     console.log('🌌 Last modified:', new Date(universeData.lastModified).toLocaleString());
     console.log('🌌 ==========================================');
 
-    // Load the universe data to the canvas
+    // Normalize coordinates before loading
+    const normalized = get().normalizeUniverseCoordinates(universeData);
+
+    // Load the normalized universe data to the canvas
     set({
       activeUniverseId: universeId,
-      nexuses: universeData.nexuses,
-      nodes: universeData.nodes,
+      nexuses: normalized.nexuses,
+      nodes: normalized.nodes,
       selectedId: null,
       showContentOverlay: false,
       showReplyModal: false,
@@ -2908,8 +2912,59 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     console.log('✅ Universe loaded successfully');
 
-    // TODO: Restore camera position (will be implemented in step 8)
-    // This will require integration with the camera controls in CanvasScene
+    // Camera will be reset by CameraManager in CanvasScene
+  },
+
+  normalizeUniverseCoordinates: (universeData: UniverseData): UniverseData => {
+    console.log('📐 Normalizing universe coordinates...');
+
+    // If no nexuses, return as-is
+    if (universeData.nexuses.length === 0) {
+      console.log('  No nexuses to normalize');
+      return universeData;
+    }
+
+    // Get first nexus position
+    const nexus = universeData.nexuses[0];
+    const [offsetX, offsetY, offsetZ] = nexus.position;
+
+    // If already at origin, return as-is
+    if (offsetX === 0 && offsetY === 0 && offsetZ === 0) {
+      console.log('  Already normalized at origin');
+      return universeData;
+    }
+
+    console.log('  Nexus offset:', [offsetX, offsetY, offsetZ]);
+
+    // Create normalized copies
+    const normalizedNexuses = universeData.nexuses.map(n => ({
+      ...n,
+      position: [
+        n.position[0] - offsetX,
+        n.position[1] - offsetY,
+        n.position[2] - offsetZ
+      ] as [number, number, number]
+    }));
+
+    const normalizedNodes: { [id: string]: Node } = {};
+    Object.entries(universeData.nodes).forEach(([id, node]) => {
+      normalizedNodes[id] = {
+        ...node,
+        position: [
+          node.position[0] - offsetX,
+          node.position[1] - offsetY,
+          node.position[2] - offsetZ
+        ] as [number, number, number]
+      };
+    });
+
+    console.log('✅ Universe normalized to origin');
+
+    return {
+      ...universeData,
+      nexuses: normalizedNexuses,
+      nodes: normalizedNodes
+    };
   },
 
   renameUniverse: (universeId: string, newTitle: string): boolean => {

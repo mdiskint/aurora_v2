@@ -40,7 +40,7 @@ function TrackedOrbitControls({ enabled = true }: { enabled?: boolean }) {
   return <OrbitControls ref={controlsRef} enabled={enabled} enableDamping dampingFactor={0.05} />;
 }
 
-// 📸 Camera Position Manager - Restores camera when universe loads
+// 📸 Camera Position Manager - Resets camera when universe switches
 function CameraPositionManager() {
   const { camera } = useThree();
   const activeUniverseId = useCanvasStore((state) => state.activeUniverseId);
@@ -48,16 +48,54 @@ function CameraPositionManager() {
   const prevUniverseId = useRef<string | null>(null);
 
   useEffect(() => {
-    // Only restore if universe changed (not on initial mount or same universe)
-    if (activeUniverseId && activeUniverseId !== prevUniverseId.current) {
-      const universeData = universeLibrary[activeUniverseId];
-      if (universeData?.cameraPosition) {
-        const [x, y, z] = universeData.cameraPosition;
-        console.log('📸 Restoring camera position:', universeData.cameraPosition);
-        camera.position.set(x, y, z);
-      }
-      prevUniverseId.current = activeUniverseId;
+    // Only act if universe changed (not on initial mount or same universe)
+    if (prevUniverseId.current !== null && activeUniverseId !== prevUniverseId.current) {
+      console.log('📷 ==========================================');
+      console.log('📷 UNIVERSE CHANGED - Resetting camera');
+      console.log('📷   From:', prevUniverseId.current);
+      console.log('📷   To:', activeUniverseId);
+      console.log('📷 ==========================================');
+
+      // Get current position
+      const startX = camera.position.x;
+      const startY = camera.position.y;
+      const startZ = camera.position.z;
+
+      // Default viewing position (same as Canvas default)
+      const targetX = 10;
+      const targetY = 8;
+      const targetZ = 15;
+
+      // Smooth animation
+      const duration = 800; // 0.8 seconds
+      const startTime = Date.now();
+
+      const animateCamera = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Ease out cubic for smooth deceleration
+        const eased = 1 - Math.pow(1 - progress, 3);
+
+        // Interpolate position
+        camera.position.x = startX + (targetX - startX) * eased;
+        camera.position.y = startY + (targetY - startY) * eased;
+        camera.position.z = startZ + (targetZ - startZ) * eased;
+
+        // Reset look target to origin
+        camera.lookAt(0, 0, 0);
+
+        if (progress < 1) {
+          requestAnimationFrame(animateCamera);
+        } else {
+          console.log('✅ Camera reset complete at:', [targetX, targetY, targetZ]);
+        }
+      };
+
+      animateCamera();
     }
+
+    prevUniverseId.current = activeUniverseId;
   }, [activeUniverseId, universeLibrary, camera]);
 
   return null;
