@@ -213,6 +213,120 @@ export default function ChatInterface() {
     return finalContext;
   };
 
+  // 🧠 GAP Mode: Execute parallel tasks
+  const executeParallelTasks = async () => {
+    console.log('🧠 GAP Mode: Executing parallel tasks...');
+
+    setShowProgressModal(true);
+    setIsLoading(true);
+
+    // Initialize progress status
+    const initialProgress: { [key: number]: 'pending' | 'complete' | 'error' } = {};
+    parallelTasks.forEach((_, index) => {
+      initialProgress[index] = 'pending';
+    });
+    setProgressStatus(initialProgress);
+
+    // Build graph structure
+    const graphStructure = buildGraphStructure();
+
+    if (!graphStructure) {
+      setError('No graph structure available');
+      setShowProgressModal(false);
+      setIsLoading(false);
+      return;
+    }
+
+    // Determine parent node
+    const parentId = selectedId || (nexuses.length > 0 ? nexuses[0].id : null);
+
+    if (!parentId) {
+      setError('No parent node found');
+      setShowProgressModal(false);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Execute all tasks in parallel using Promise.all
+      const taskPromises = parallelTasks.map(async (task, index) => {
+        try {
+          console.log(`🧠 GAP Mode: Starting task ${index + 1}/${parallelTasks.length}: ${task.substring(0, 50)}...`);
+
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'gap-parallel',
+              graphStructure: graphStructure,
+              task: task,
+              parentContext: graphStructure.nexus.content
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Task ${index + 1} failed: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+
+          // Update progress to complete
+          setProgressStatus(prev => ({ ...prev, [index]: 'complete' }));
+
+          console.log(`✅ GAP Mode: Task ${index + 1} complete`);
+
+          return { index, content: data.content, success: true };
+        } catch (error) {
+          console.error(`❌ GAP Mode: Task ${index + 1} error:`, error);
+
+          // Update progress to error
+          setProgressStatus(prev => ({ ...prev, [index]: 'error' }));
+
+          return { index, error: error, success: false };
+        }
+      });
+
+      // Wait for all tasks to complete
+      const results = await Promise.all(taskPromises);
+
+      console.log('🧠 GAP Mode: All parallel tasks completed');
+
+      // Wait a moment before creating nodes
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Create nodes for successful tasks
+      const successfulResults = results.filter(r => r.success);
+
+      for (const result of successfulResults) {
+        if (result.content) {
+          console.log(`🧠 GAP Mode: Creating node for task ${result.index + 1}`);
+          addNode(result.content, parentId, undefined, 'ai-response');
+          await new Promise(resolve => setTimeout(resolve, 100)); // Space out node creation
+        }
+      }
+
+      // Close progress modal
+      setShowProgressModal(false);
+      setProgressStatus({});
+
+      const successCount = successfulResults.length;
+      const failCount = results.length - successCount;
+
+      console.log(`✅ GAP Mode: Created ${successCount} nodes`);
+      if (failCount > 0) {
+        console.warn(`⚠️ GAP Mode: ${failCount} tasks failed`);
+      }
+
+    } catch (err) {
+      console.error('🧠 GAP Mode: Parallel execution error:', err);
+      setError('Parallel execution failed');
+      setShowProgressModal(false);
+      setProgressStatus({});
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!message.trim()) return;
 
@@ -228,6 +342,101 @@ export default function ChatInterface() {
     console.log(isSpatialMode ? '🌌 SPATIAL MODE DETECTED' : '💬 Standard chat mode');
     console.log('🎯 isFirstMessage:', isFirstMessage);
     console.log('🎯 selectedId:', selectedId);
+
+    // 🧠 GAP MODE: Check if graph-aware parallel exploration is enabled
+    if (gapModeEnabled && !isSpatialMode) {
+      console.log('🧠 GAP Mode: ENABLED - Using graph-aware AI');
+
+      // Build graph structure
+      const graphStructure = buildGraphStructure();
+
+      if (!graphStructure) {
+        console.log('🧠 GAP Mode: No graph structure available, falling back to standard mode');
+        setError('GAP Mode requires an active universe. Create or load a universe first.');
+        setIsLoading(false);
+        setMessage(userMessage); // Restore message
+        return;
+      }
+
+      try {
+        // Phase 1: Analyze query with graph context
+        console.log('🧠 GAP Mode: Phase 1 - Analyzing query...');
+        const analyzeResponse = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'gap-analyze',
+            graphStructure: graphStructure,
+            question: userMessage
+          }),
+        });
+
+        if (!analyzeResponse.ok) {
+          throw new Error(`Analysis failed: ${analyzeResponse.statusText}`);
+        }
+
+        const analysis = await analyzeResponse.json();
+        console.log('🧠 GAP Mode: Analysis result:', analysis);
+
+        if (analysis.type === 'parallel' && analysis.tasks && analysis.tasks.length > 0) {
+          // Parallel mode: Show planning modal
+          console.log('🧠 GAP Mode: Parallel detected -', analysis.tasks.length, 'tasks');
+          setParallelTasks(analysis.tasks);
+          setPlanningReasoning(analysis.reasoning);
+          setShowPlanningModal(true);
+          setIsLoading(false);
+          return; // Wait for user to confirm execution
+        } else {
+          // Single mode: Execute directly
+          console.log('🧠 GAP Mode: Single response mode');
+
+          const singleResponse = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'gap-single',
+              graphStructure: graphStructure,
+              question: userMessage
+            }),
+          });
+
+          if (!singleResponse.ok) {
+            throw new Error(`Single task failed: ${singleResponse.statusText}`);
+          }
+
+          const singleData = await singleResponse.json();
+          console.log('🧠 GAP Mode: Single task complete');
+
+          // Create AI response node
+          const parentId = selectedId || (nexuses.length > 0 ? nexuses[0].id : null);
+
+          if (!parentId) {
+            throw new Error('No parent node found to attach response');
+          }
+
+          // Wait 300ms before creating node
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          // Create the node
+          const newNodeId = addNode(singleData.content, parentId, undefined, 'ai-response');
+
+          // Wait for camera animation
+          await new Promise(resolve => setTimeout(resolve, 1100));
+
+          // Open modal
+          const { selectNode } = useCanvasStore.getState();
+          selectNode(newNodeId, true);
+
+          console.log('🧠 GAP Mode: Single node created and opened');
+          setIsLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('🧠 GAP Mode: Error:', err);
+        setError('GAP Mode failed. Falling back to standard mode.');
+        // Fall through to standard mode
+      }
+    }
 
     let title = 'Chat';
     let actualPrompt = cleanMessage;
@@ -455,8 +664,8 @@ export default function ChatInterface() {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <div style={{ color: isSpatialModeActive ? '#9333EA' : '#00FFD4', fontSize: '14px', fontWeight: 'bold' }}>
-            {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : '🧠 Aurora Chat'} {!isFirstMessage && '(Full Context Active)'}
+          <div style={{ color: isSpatialModeActive ? '#9333EA' : (gapModeEnabled ? '#8B5CF6' : '#00FFD4'), fontSize: '14px', fontWeight: 'bold' }}>
+            {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : gapModeEnabled ? '🧠 GAP Mode Active' : '🧠 Aurora Chat'} {!isFirstMessage && '(Full Context Active)'}
           </div>
 
           {/* GAP Mode Toggle Button */}
@@ -649,8 +858,7 @@ export default function ChatInterface() {
               <button
                 onClick={() => {
                   setShowPlanningModal(false);
-                  // Execute parallel tasks (to be implemented)
-                  console.log('🧠 GAP Mode: Executing parallel tasks...');
+                  executeParallelTasks();
                 }}
                 style={{
                   flex: 1,
