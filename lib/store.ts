@@ -291,8 +291,15 @@ interface UniverseData {
   nodes: { [id: string]: Node };
   cameraPosition: [number, number, number];
   title: string;
+  createdAt: number;
   lastModified: number;
   folderId?: string;
+}
+
+interface UniverseSnapshot {
+  nexuses: Nexus[];
+  nodes: { [id: string]: Node };
+  createdAt: number;
 }
 
 interface CanvasStore {
@@ -300,6 +307,9 @@ interface CanvasStore {
   activeUniverseId: string | null; // Deprecated: use activeUniverseIds for multi-universe
   activeUniverseIds: string[]; // NEW: Array of currently active universe IDs
   universeLibrary: { [id: string]: UniverseData };
+
+  // 📸 ORIGINAL SNAPSHOTS - Store initial state of universes for true revert
+  originalSnapshots: { [universeId: string]: UniverseSnapshot };
 
   // 📁 FOLDER SYSTEM
   folders: { [id: string]: Folder };
@@ -350,9 +360,15 @@ interface CanvasStore {
   toggleActivateConversation: (nexusId: string) => void;
   getActivatedConversations: () => Nexus[];
   deleteConversation: (nexusId: string) => void;
+  deleteUniverseById: (universeId: string) => void;
   getNodeChildrenCount: (nodeId: string) => number;
   deleteNode: (nodeId: string) => void;
+  reparentNode: (nodeId: string, newParentId: string, newPosition: [number, number, number]) => void;
+
+  // 📸 SNAPSHOT SYSTEM
+  createSnapshot: (universeId: string) => void;
   revertToOriginal: (nexusId: string) => void;
+
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
 
@@ -383,7 +399,10 @@ interface CanvasStore {
   moveUniverseToFolder: (universeId: string, folderId: string) => void;
 
   // 🔬 ATOMIZE UNIVERSE
-  atomizeUniverse: (universeId: string) => Promise<{success: boolean; newUniverseIds: string[]; error?: string}>;
+  atomizeUniverse: (
+    universeId: string,
+    onProgress?: (current: number, total: number, status: string, errors: string[]) => void
+  ) => Promise<{success: boolean; newUniverseIds: string[]; error?: string; errors: string[]}>;
   getL1Nodes: (universeId: string) => Node[];
 }
 
@@ -392,6 +411,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   activeUniverseId: null,
   activeUniverseIds: [], // NEW: Start with no active universes
   universeLibrary: {},
+
+  // 📸 ORIGINAL SNAPSHOTS - Start with no snapshots
+  originalSnapshots: {},
 
   // 📁 FOLDER SYSTEM - Start with default folder
   folders: {
@@ -455,6 +477,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     const dataToSave = {
       universeLibrary: state.universeLibrary,
+      originalSnapshots: state.originalSnapshots,
       folders: state.folders,
       activatedConversations: state.activatedConversations,
       timestamp: Date.now(),
@@ -557,6 +580,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       let universeLibrary = await loadAllUniverses();
       let folders: any = {};
       let activatedConversations: string[] = [];
+      let originalSnapshots: { [id: string]: UniverseSnapshot } = {};
 
       // If IndexedDB is empty, try localStorage as fallback and migrate
       if (Object.keys(universeLibrary).length === 0) {
@@ -643,6 +667,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         universeLibrary = data.universeLibrary || {};
         folders = data.folders || {};
         activatedConversations = data.activatedConversations || [];
+        originalSnapshots = data.originalSnapshots || {};
 
         const universeCount = Object.keys(universeLibrary).length;
         if (universeCount > 0) {
@@ -655,12 +680,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           console.log('✅ Migration complete!');
         }
       } else {
-        // Load folders and activated conversations from localStorage (could move to IndexedDB later)
+        // Load folders, snapshots and activated conversations from localStorage (could move to IndexedDB later)
         const localData = localStorage.getItem('aurora-portal-data');
         if (localData) {
           const data = JSON.parse(localData);
           folders = data.folders || {};
           activatedConversations = data.activatedConversations || [];
+          originalSnapshots = data.originalSnapshots || {};
         }
       }
 
@@ -702,6 +728,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       set({
         universeLibrary,
+        originalSnapshots,
         folders,
         activatedConversations: activatedConversations || [],
         // Canvas stays blank - user loads universes from Memories
@@ -2473,6 +2500,68 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     }
   },
 
+  deleteUniverseById: (universeId: string) => {
+    console.log('🗑️ ==========================================');
+    console.log('🗑️ DELETE UNIVERSE BY ID:', universeId);
+    console.log('🗑️ ==========================================');
+
+    try {
+      const state = get();
+
+      // Check if universe exists
+      if (!state.universeLibrary[universeId]) {
+        console.error('🗑️   ❌ Universe not found:', universeId);
+        alert('⚠️ Universe not found!');
+        return;
+      }
+
+      const universeTitle = state.universeLibrary[universeId].title;
+      console.log('🗑️   Deleting universe:', universeTitle);
+
+      set((state) => {
+        // Remove from library
+        const updatedLibrary = { ...state.universeLibrary };
+        delete updatedLibrary[universeId];
+
+        // Remove from active universes if present
+        const updatedActiveIds = state.activeUniverseIds.filter(id => id !== universeId);
+
+        // Clear canvas if this was the only active universe
+        const clearedNexuses = updatedActiveIds.length === 0 ? [] : state.nexuses;
+        const clearedNodes = updatedActiveIds.length === 0 ? {} : state.nodes;
+
+        console.log('🗑️   Removed from library');
+        console.log('🗑️   Active universes before:', state.activeUniverseIds.length);
+        console.log('🗑️   Active universes after:', updatedActiveIds.length);
+
+        return {
+          universeLibrary: updatedLibrary,
+          activeUniverseIds: updatedActiveIds,
+          activeUniverseId: updatedActiveIds.length > 0 ? updatedActiveIds[0] : null,
+          nexuses: clearedNexuses,
+          nodes: clearedNodes,
+          selectedId: null,
+          showContentOverlay: false
+        };
+      });
+
+      // Delete from IndexedDB
+      deleteUniverseFromDB(universeId).then(() => {
+        console.log('🗑️   ✅ Deleted from IndexedDB');
+      });
+
+      // Save to localStorage
+      get().saveToLocalStorage();
+
+      console.log('🗑️   ✅ DELETE COMPLETE');
+      console.log('🗑️ ==========================================');
+
+    } catch (error) {
+      console.error('❌ Error deleting universe:', error);
+      alert('⚠️ Failed to delete universe: ' + (error as Error).message);
+    }
+  },
+
   getNodeChildrenCount: (nodeId: string): number => {
     const state = get();
     const node = state.nodes[nodeId];
@@ -2572,6 +2661,143 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     get().saveToLocalStorage();
   },
 
+  reparentNode: (nodeId: string, newParentId: string, newPosition: [number, number, number]) => {
+    console.log('🔀 ==========================================');
+    console.log('🔀 REPARENTING NODE');
+    console.log('🔀   Node:', nodeId);
+    console.log('🔀   New Parent:', newParentId);
+    console.log('🔀   New Position:', newPosition);
+    console.log('🔀 ==========================================');
+
+    set((state) => {
+      const node = state.nodes[nodeId];
+      if (!node) {
+        console.error('❌ Node not found:', nodeId);
+        return state;
+      }
+
+      const oldParentId = node.parentId;
+
+      // Check if new parent is a nexus
+      const isNexusParent = state.nexuses.some(n => n.id === newParentId);
+      const newParentNode = state.nodes[newParentId];
+
+      // Determine new node type based on parent level
+      let newNodeType = node.nodeType;
+      if (isNexusParent) {
+        // Attached to nexus → becomes L1 (keep original type but reset level)
+        // User replies stay user-reply, AI stays ai-response, etc.
+        console.log('🔀 Attaching to nexus - node remains', newNodeType);
+      } else if (newParentNode) {
+        // Keep the semantic type (user-reply, ai-response, etc.)
+        console.log('🔀 Attaching to node - keeping type', newNodeType);
+      }
+
+      const updatedNodes = { ...state.nodes };
+
+      // Remove from old parent's children array
+      if (oldParentId && updatedNodes[oldParentId]) {
+        updatedNodes[oldParentId] = {
+          ...updatedNodes[oldParentId],
+          children: updatedNodes[oldParentId].children.filter(id => id !== nodeId)
+        };
+      }
+
+      // Add to new parent's children array
+      if (updatedNodes[newParentId]) {
+        updatedNodes[newParentId] = {
+          ...updatedNodes[newParentId],
+          children: [...updatedNodes[newParentId].children, nodeId]
+        };
+      }
+
+      // Update the node itself
+      updatedNodes[nodeId] = {
+        ...node,
+        parentId: newParentId,
+        position: newPosition,
+        nodeType: newNodeType
+      };
+
+      console.log('✅ Node reparented successfully');
+
+      return {
+        nodes: updatedNodes
+      };
+    });
+
+    // 💾 SAVE TO LOCALSTORAGE
+    get().saveToLocalStorage();
+  },
+
+  // 📸 CREATE SNAPSHOT - Store original state for true revert
+  createSnapshot: (universeId: string) => {
+    console.log('📸 ==========================================');
+    console.log('📸 CREATE SNAPSHOT:', new Date().toLocaleTimeString());
+    console.log('📸   Universe ID:', universeId);
+
+    try {
+      const state = get();
+
+      // Check if universe exists in library
+      if (!state.universeLibrary[universeId]) {
+        console.error('📸   ❌ Universe not found in library');
+        console.error('📸   Looking for ID:', universeId);
+        console.error('📸   Available IDs:', Object.keys(state.universeLibrary));
+        return;
+      }
+
+      // Check if snapshot already exists
+      if (state.originalSnapshots[universeId]) {
+        console.log('📸   ℹ️ Snapshot already exists for this universe - skipping');
+        console.log('📸   Original snapshot created:', new Date(state.originalSnapshots[universeId].createdAt).toLocaleString());
+        return;
+      }
+
+      const universe = state.universeLibrary[universeId];
+      console.log('📸   Universe title:', universe.title);
+      console.log('📸   Capturing:', universe.nexuses.length, 'nexuses and', Object.keys(universe.nodes).length, 'nodes');
+
+      // Create deep copy of nexuses and nodes (only L1 nodes)
+      const l1Nodes: { [id: string]: Node } = {};
+      Object.entries(universe.nodes).forEach(([nodeId, node]) => {
+        if (node.parentId === universeId) {
+          // Deep copy the L1 node
+          l1Nodes[nodeId] = { ...node };
+        }
+      });
+
+      const snapshot: UniverseSnapshot = {
+        nexuses: universe.nexuses.map(n => ({ ...n })), // Deep copy
+        nodes: l1Nodes,
+        createdAt: Date.now()
+      };
+
+      console.log('📸   Snapshot contains:', snapshot.nexuses.length, 'nexuses and', Object.keys(snapshot.nodes).length, 'L1 nodes');
+
+      // Store snapshot
+      set((state) => ({
+        originalSnapshots: {
+          ...state.originalSnapshots,
+          [universeId]: snapshot
+        }
+      }));
+
+      console.log('📸   ✅ Snapshot created successfully');
+      console.log('📸 ==========================================');
+
+      // Save to localStorage
+      get().saveToLocalStorage();
+
+    } catch (error) {
+      console.error('❌ ==========================================');
+      console.error('❌ CRITICAL ERROR in createSnapshot:', error);
+      console.error('❌   Error message:', (error as Error).message);
+      console.error('❌   Universe ID:', universeId);
+      console.error('❌ ==========================================');
+    }
+  },
+
   // 🔄 REVERT TO ORIGINAL - Keep only nexus + L1 nodes
   revertToOriginal: (nexusId: string) => {
     console.log('🔄 ==========================================');
@@ -2584,6 +2810,12 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       // Check if universe exists in library
       if (!state.universeLibrary[nexusId]) {
         console.error('🔄   ❌ Universe not found in library');
+        console.error('🔄   Looking for ID:', nexusId);
+        console.error('🔄   Available IDs:', Object.keys(state.universeLibrary));
+
+        if (typeof window !== 'undefined') {
+          alert(`⚠️ Cannot revert: Universe not found in library!\n\nLooking for: ${nexusId}\n\nThis may happen if the universe wasn't saved before export.`);
+        }
         return;
       }
 
@@ -2591,19 +2823,47 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       console.log('🔄   Universe title:', universe.title);
       console.log('🔄   Total nodes before:', Object.keys(universe.nodes).length);
 
-      // Keep only L1 nodes (nodes whose parent is the nexus)
-      const l1Nodes: { [id: string]: Node } = {};
-      Object.entries(universe.nodes).forEach(([nodeId, node]) => {
-        if (node.parentId === nexusId) {
-          l1Nodes[nodeId] = node;
-        }
-      });
+      // Check if snapshot exists
+      const snapshot = state.originalSnapshots[nexusId];
 
-      const l1NodeCount = Object.keys(l1Nodes).length;
-      const removedCount = Object.keys(universe.nodes).length - l1NodeCount;
+      let restoredNodes: { [id: string]: Node };
+      let restoredNexuses: Nexus[];
 
-      console.log('🔄   L1 nodes kept:', l1NodeCount);
-      console.log('🔄   Exploration nodes removed:', removedCount);
+      if (snapshot) {
+        // TRUE REVERT: Restore from snapshot (includes deleted L1 nodes)
+        console.log('🔄   📸 Snapshot found! Restoring from snapshot created:', new Date(snapshot.createdAt).toLocaleString());
+        console.log('🔄   📸 Snapshot contains:', snapshot.nexuses.length, 'nexuses and', Object.keys(snapshot.nodes).length, 'L1 nodes');
+
+        // Deep copy from snapshot
+        restoredNodes = {};
+        Object.entries(snapshot.nodes).forEach(([id, node]) => {
+          restoredNodes[id] = { ...node };
+        });
+        restoredNexuses = snapshot.nexuses.map(n => ({ ...n }));
+
+        const removedCount = Object.keys(universe.nodes).length - Object.keys(restoredNodes).length;
+        console.log('🔄   📸 L1 nodes restored:', Object.keys(restoredNodes).length);
+        console.log('🔄   📸 Exploration nodes removed:', removedCount);
+
+      } else {
+        // FALLBACK: Filter L1 nodes (cannot restore deleted nodes)
+        console.log('🔄   ⚠️ No snapshot found - falling back to filter method');
+        console.log('🔄   ⚠️ Note: Deleted L1 nodes cannot be restored without a snapshot');
+
+        restoredNodes = {};
+        Object.entries(universe.nodes).forEach(([nodeId, node]) => {
+          if (node.parentId === nexusId) {
+            restoredNodes[nodeId] = node;
+          }
+        });
+        restoredNexuses = universe.nexuses;
+
+        const l1NodeCount = Object.keys(restoredNodes).length;
+        const removedCount = Object.keys(universe.nodes).length - l1NodeCount;
+
+        console.log('🔄   L1 nodes kept:', l1NodeCount);
+        console.log('🔄   Exploration nodes removed:', removedCount);
+      }
 
       // Update universe in library
       set((state) => {
@@ -2611,7 +2871,8 @@ createConnection: (nodeAId: string, nodeBId: string) => {
           ...state.universeLibrary,
           [nexusId]: {
             ...universe,
-            nodes: l1Nodes,
+            nexuses: restoredNexuses,
+            nodes: restoredNodes,
             lastModified: Date.now()
           }
         };
@@ -2621,7 +2882,8 @@ createConnection: (nodeAId: string, nodeBId: string) => {
           console.log('🔄   Updating active canvas state');
           return {
             universeLibrary: updatedLibrary,
-            nodes: l1Nodes
+            nexuses: restoredNexuses,
+            nodes: restoredNodes
           };
         }
 
@@ -2773,6 +3035,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         nodes: state.nodes,
         cameraPosition: cameraPosition || [0, 20, 30],
         title,
+        createdAt: existingUniverse?.createdAt || Date.now(), // Preserve creation time or set new
         lastModified: Date.now(),
         folderId: folderId,  // 🔥 CRITICAL: Preserve folderId
       };
@@ -3261,12 +3524,15 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     return l1Nodes;
   },
 
-  atomizeUniverse: async (universeId: string): Promise<{success: boolean; newUniverseIds: string[]; error?: string}> => {
+  atomizeUniverse: async (
+    universeId: string,
+    onProgress?: (current: number, total: number, status: string, errors: string[]) => void
+  ): Promise<{success: boolean; newUniverseIds: string[]; error?: string; errors: string[]}> => {
     const state = get();
     const universe = state.universeLibrary[universeId];
 
     if (!universe) {
-      return { success: false, newUniverseIds: [], error: 'Universe not found' };
+      return { success: false, newUniverseIds: [], error: 'Universe not found', errors: [] };
     }
 
     console.log('🔬 ==========================================');
@@ -3275,12 +3541,18 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     try {
       const newUniverseIds: string[] = [];
+      const errors: string[] = [];
 
       // Get all L1 nodes
       const l1Nodes = get().getL1Nodes(universeId);
 
       if (l1Nodes.length === 0) {
-        return { success: false, newUniverseIds: [], error: 'No L1 nodes found to atomize' };
+        return { success: false, newUniverseIds: [], error: 'No L1 nodes found to atomize', errors: [] };
+      }
+
+      // Report initial progress
+      if (onProgress) {
+        onProgress(0, l1Nodes.length, 'Starting atomization...', errors);
       }
 
       // Create "Atomized" folder if it doesn't exist
@@ -3293,97 +3565,167 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         console.log('🔬 Created Atomized folder:', atomizedFolderId);
       }
 
-      // Helper function to get all descendants of a node
-      const getAllDescendants = (nodeId: string, allNodes: { [id: string]: Node }): { [id: string]: Node } => {
-        const descendants: { [id: string]: Node } = {};
-
-        // Add all children recursively
-        Object.values(allNodes).forEach(node => {
-          if (node.parentId === nodeId) {
-            descendants[node.id] = { ...node };
-            // Recursively get children's descendants
-            const childDescendants = getAllDescendants(node.id, allNodes);
-            Object.assign(descendants, childDescendants);
-          }
-        });
-
-        return descendants;
-      };
-
-      // For each L1 node, create a new universe
+      // For each L1 node, call API and create a new universe
       for (let i = 0; i < l1Nodes.length; i++) {
         const l1Node = l1Nodes[i];
-        console.log(`🔬 Processing L1 node ${i + 1}/${l1Nodes.length}:`, l1Node.content.substring(0, 50) + '...');
+        const nodeTitle = l1Node.semanticTitle || l1Node.content.substring(0, 50) + '...';
+        console.log(`🔬 Processing L1 node ${i + 1}/${l1Nodes.length}:`, nodeTitle);
 
-        // Create a new nexus from the L1 node content
-        const newNexusId = `nexus-${Date.now()}-${i}`;
-        const newNexus: Nexus = {
-          id: newNexusId,
-          position: [0, 0, 0], // Normalized position
-          content: l1Node.content,
-          title: l1Node.semanticTitle || l1Node.content.substring(0, 50),
-          type: 'social'
-        };
+        // Report progress - starting this universe
+        if (onProgress) {
+          onProgress(i, l1Nodes.length, `Creating universe ${i + 1} of ${l1Nodes.length}: "${nodeTitle}"`, errors);
+        }
 
-        // Get all descendant nodes of this L1 node
-        const descendants = getAllDescendants(l1Node.id, universe.nodes);
+        try {
+          // 🤖 Call API with mode: 'break-off' to generate new L1 nodes
+          console.log('🤖 Calling API to atomize node...');
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: l1Node.content }],
+              mode: 'break-off',
+              nodeContent: l1Node.content,
+            }),
+          });
 
-        // Update descendant parentIds: the L1 node's parent becomes the new nexus
-        const newNodes: { [id: string]: Node } = {};
+          if (!response.ok) {
+            const errorMsg = `Failed to create universe from "${nodeTitle}": API returned ${response.status}`;
+            console.error('❌', errorMsg);
+            errors.push(errorMsg);
+            continue; // Skip this node and continue with others
+          }
 
-        // Add the original L1 node's children as direct children of the new nexus
-        Object.values(descendants).forEach(node => {
-          if (node.parentId === l1Node.id) {
-            // Direct children of L1 become children of nexus
-            newNodes[node.id] = {
-              ...node,
-              parentId: newNexusId
+          const data = await response.json();
+          console.log('✅ API response:', data);
+
+          if (!data.newUniverse || !data.newUniverse.nodes) {
+            const errorMsg = `Failed to create universe from "${nodeTitle}": Invalid API response`;
+            console.error('❌', errorMsg);
+            errors.push(errorMsg);
+            continue;
+          }
+
+          const { nexusTitle, nexusContent, nodes: apiNodes } = data.newUniverse;
+
+          // Create a new nexus from the API response
+          const newNexusId = `nexus-${Date.now()}-${i}`;
+          const newNexus: Nexus = {
+            id: newNexusId,
+            position: [0, 0, 0], // Centered position
+            content: nexusContent || l1Node.content,
+            title: nexusTitle || l1Node.semanticTitle || l1Node.content.substring(0, 50),
+            type: 'social'
+          };
+
+          // Create L1 nodes from API response using Fibonacci sphere distribution
+          const newNodes: { [id: string]: Node } = {};
+          const nexusPos = newNexus.position;
+          const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // 137.5 degrees
+
+          console.log(`🌟 Creating ${apiNodes.length} L1 nodes around nexus...`);
+
+          for (let nodeIndex = 0; nodeIndex < apiNodes.length; nodeIndex++) {
+            const apiNode = apiNodes[nodeIndex];
+
+            // Position using golden angle spiral (same as regular L1 nodes)
+            const baseRadius = 6;
+            const radiusIncrement = 0.4;
+            const radius = baseRadius + (nodeIndex * radiusIncrement);
+
+            const nodesPerRing = 6;
+            const ringIndex = Math.floor(nodeIndex / nodesPerRing);
+            const positionInRing = nodeIndex % nodesPerRing;
+
+            const ringRotationOffset = ringIndex * goldenAngle;
+            const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
+
+            let y = 0;
+            if (ringIndex > 0) {
+              const step = Math.ceil(ringIndex / 2);
+              const direction = ringIndex % 2 === 1 ? 1 : -1;
+              y = step * 2.5 * direction;
+            }
+
+            const x = nexusPos[0] + Math.cos(angle) * radius;
+            const z = nexusPos[2] + Math.sin(angle) * radius;
+
+            const newNodeId = `node-${Date.now()}-${i}-${nodeIndex}`;
+            const newNode: Node = {
+              id: newNodeId,
+              position: [x, y, z],
+              title: apiNode.content.substring(0, 50),
+              content: apiNode.content,
+              parentId: newNexusId,
+              children: [],
+              nodeType: 'ai-response', // Mark as AI-generated
             };
-          } else {
-            // Keep other descendants as-is
-            newNodes[node.id] = { ...node };
+
+            newNodes[newNodeId] = newNode;
+            console.log(`  ✓ L1 node ${nodeIndex + 1}: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+
+            // Small delay to ensure unique IDs
+            await new Promise(resolve => setTimeout(resolve, 5));
           }
-        });
 
-        // Create the new universe
-        const newUniverseId = `universe-${Date.now()}-${i}`;
-        const newUniverse: UniverseData = {
-          nexuses: [newNexus],
-          nodes: newNodes,
-          cameraPosition: [10, 8, 15],
-          title: `${universe.title} - ${newNexus.title}`,
-          lastModified: Date.now(),
-          folderId: atomizedFolderId
-        };
+          // Create the new universe
+          const newUniverseId = `universe-${Date.now()}-${i}`;
+          const newUniverse: UniverseData = {
+            nexuses: [newNexus],
+            nodes: newNodes,
+            cameraPosition: [10, 8, 15],
+            title: newNexus.title,
+            createdAt: Date.now(),
+            lastModified: Date.now(),
+            folderId: atomizedFolderId
+          };
 
-        // Add to library
-        set(state => ({
-          universeLibrary: {
-            ...state.universeLibrary,
-            [newUniverseId]: newUniverse
+          // Add to library
+          set(state => ({
+            universeLibrary: {
+              ...state.universeLibrary,
+              [newUniverseId]: newUniverse
+            }
+          }));
+
+          newUniverseIds.push(newUniverseId);
+          console.log(`🔬 Created new universe: "${newUniverse.title}" with ${apiNodes.length} L1 nodes`);
+
+          // Report progress - completed this universe
+          if (onProgress) {
+            onProgress(i + 1, l1Nodes.length, `Completed universe ${i + 1} of ${l1Nodes.length}`, errors);
           }
-        }));
 
-        newUniverseIds.push(newUniverseId);
-        console.log(`🔬 Created new universe:`, newUniverse.title);
-
-        // Small delay to ensure unique timestamps
-        await new Promise(resolve => setTimeout(resolve, 10));
+          // Delay between universes to ensure unique timestamps
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (nodeError) {
+          const errorMsg = `Failed to process "${nodeTitle}": ${String(nodeError)}`;
+          console.error('❌', errorMsg);
+          errors.push(errorMsg);
+        }
       }
 
       // Save to localStorage
       get().saveToLocalStorage();
 
+      // Report final progress
+      if (onProgress) {
+        onProgress(l1Nodes.length, l1Nodes.length, 'Atomization complete!', errors);
+      }
+
       console.log('🔬 ==========================================');
       console.log('🔬 ATOMIZATION COMPLETE!');
       console.log('🔬 Created', newUniverseIds.length, 'new universes');
+      if (errors.length > 0) {
+        console.log('🔬 Errors:', errors.length);
+      }
       console.log('🔬 ==========================================');
 
-      return { success: true, newUniverseIds };
+      return { success: true, newUniverseIds, errors };
 
     } catch (error) {
       console.error('❌ Error atomizing universe:', error);
-      return { success: false, newUniverseIds: [], error: String(error) };
+      return { success: false, newUniverseIds: [], error: String(error), errors: [String(error)] };
     }
   },
 

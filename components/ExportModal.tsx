@@ -126,6 +126,16 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
     setExportSuccess(false);
 
     try {
+      // 💾 CRITICAL: Save current universe to library before export
+      console.log('💾 Saving current universe before export...');
+      useCanvasStore.getState().saveCurrentUniverse();
+      console.log('✅ Universe saved to library');
+
+      // 📸 CRITICAL: Create snapshot before first export if none exists
+      console.log('📸 Checking for snapshot...');
+      useCanvasStore.getState().createSnapshot(currentNexus.id);
+      console.log('✅ Snapshot check complete');
+
       const response = await fetch('/api/export-universe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,6 +186,10 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
       }
 
       console.log('✅ Document exported successfully:', baseFilename);
+      console.log('📄 EXPORT: Setting exportedNexusId to:', currentNexus.id);
+      console.log('📄 EXPORT: Current nexus title:', currentNexus.title);
+      console.log('📄 EXPORT: Universe exists in library?', !!useCanvasStore.getState().universeLibrary[currentNexus.id]);
+
       setExportSuccess(true);
       setExportedNexusId(currentNexus.id);
 
@@ -617,6 +631,11 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={() => {
+                  console.log('🔄 REVERT BUTTON CLICKED');
+                  console.log('🔄   Exported Nexus ID:', exportedNexusId);
+                  console.log('🔄   Universe Library Keys:', Object.keys(useCanvasStore.getState().universeLibrary));
+                  console.log('🔄   Exists in library?', !!useCanvasStore.getState().universeLibrary[exportedNexusId]);
+
                   revertToOriginal(exportedNexusId);
                   setShowRevertModal(false);
                   setExportedNexusId(null);

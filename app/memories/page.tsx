@@ -17,6 +17,7 @@ export default function MemoriesPage() {
   const moveUniverseToFolder = useCanvasStore(state => state.moveUniverseToFolder);
   const loadUniverse = useCanvasStore(state => state.loadUniverse);
   const deleteConversation = useCanvasStore(state => state.deleteConversation);
+  const deleteUniverseById = useCanvasStore(state => state.deleteUniverseById);
   const renameUniverse = useCanvasStore(state => state.renameUniverse);
   const toggleUniverseActive = useCanvasStore(state => state.toggleUniverseActive);
   const atomizeUniverse = useCanvasStore(state => state.atomizeUniverse);
@@ -46,6 +47,12 @@ export default function MemoriesPage() {
   // 🔬 Atomize UI state
   const [showAtomizeModal, setShowAtomizeModal] = useState(false);
   const [isAtomizing, setIsAtomizing] = useState(false);
+  const [atomizeProgress, setAtomizeProgress] = useState({
+    current: 0,
+    total: 0,
+    status: '',
+    errors: [] as string[]
+  });
 
   // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
   useEffect(() => {
@@ -170,12 +177,29 @@ export default function MemoriesPage() {
 
     setShowAtomizeModal(false);
     setIsAtomizing(true);
+    setAtomizeProgress({ current: 0, total: 0, status: 'Starting...', errors: [] });
 
     try {
-      const result = await atomizeUniverse(selectedUniverseId);
+      const result = await atomizeUniverse(selectedUniverseId, (current, total, status, errors) => {
+        // Update progress in real-time
+        setAtomizeProgress({ current, total, status, errors });
+      });
 
       if (result.success) {
-        alert(`✅ Successfully atomized universe! Created ${result.newUniverseIds.length} new universes in the "Atomized" folder.`);
+        const successCount = result.newUniverseIds.length;
+        const failCount = result.errors.length;
+
+        let message = `✅ Atomization complete!\n\n`;
+        message += `Created: ${successCount} new universes\n`;
+
+        if (failCount > 0) {
+          message += `Failed: ${failCount} universes\n\n`;
+          message += `Errors:\n${result.errors.join('\n')}`;
+        }
+
+        message += `\n\nNew universes are in the "Atomized" folder.`;
+        alert(message);
+
         // Deselect the universe
         setSelectedUniverseId(null);
       } else {
@@ -185,6 +209,7 @@ export default function MemoriesPage() {
       alert(`❌ Error during atomization: ${error}`);
     } finally {
       setIsAtomizing(false);
+      setAtomizeProgress({ current: 0, total: 0, status: '', errors: [] });
     }
   };
 
@@ -410,7 +435,7 @@ export default function MemoriesPage() {
                     gap: '16px'
                   }}>
                     {Object.entries(folderUniverses)
-                      .sort(([,a], [,b]) => b.lastModified - a.lastModified)
+                      .sort(([,a], [,b]) => (a.createdAt || 0) - (b.createdAt || 0))
                       .map(([universeId, universeData]) => {
                         const isSelected = selectedUniverseId === universeId;
                         const isActive = activeUniverseIds.includes(universeId);
@@ -539,7 +564,7 @@ export default function MemoriesPage() {
                           }}>
                             <div>{universeData.nexuses.length} nexuses</div>
                             <div>{Object.keys(universeData.nodes).length} nodes</div>
-                            <div>{new Date(universeData.lastModified).toLocaleDateString()}</div>
+                            <div>Created: {new Date(universeData.createdAt || universeData.lastModified).toLocaleDateString()}</div>
                           </div>
 
                           {/* Folder Selector */}
@@ -590,11 +615,7 @@ export default function MemoriesPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (confirm(`Delete "${universeData.title}"?`)) {
-                                  // Find the nexus ID (first nexus in the universe)
-                                  const nexusId = universeData.nexuses[0]?.id;
-                                  if (nexusId) {
-                                    deleteConversation(nexusId);
-                                  }
+                                  deleteUniverseById(universeId);
                                 }
                               }}
                               style={{
@@ -981,7 +1002,7 @@ export default function MemoriesPage() {
         </div>
       )}
 
-      {/* Loading Spinner Overlay */}
+      {/* Loading Spinner Overlay with Progress */}
       {isAtomizing && (
         <div style={{
           position: 'fixed',
@@ -989,12 +1010,13 @@ export default function MemoriesPage() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.9)',
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 10001
+          zIndex: 10001,
+          padding: '20px'
         }}>
           <div style={{
             width: '80px',
@@ -1010,21 +1032,77 @@ export default function MemoriesPage() {
               100% { transform: rotate(360deg); }
             }
           `}</style>
+
           <p style={{
             marginTop: '24px',
             color: '#10B981',
-            fontSize: '20px',
+            fontSize: '24px',
             fontWeight: 'bold'
           }}>
-            🔬 Atomizing universe...
+            🔬 Atomizing Universe
           </p>
+
+          {/* Progress Bar */}
+          {atomizeProgress.total > 0 && (
+            <div style={{
+              width: '400px',
+              marginTop: '20px',
+              backgroundColor: '#1F2937',
+              borderRadius: '10px',
+              overflow: 'hidden',
+              height: '30px',
+              border: '2px solid #374151'
+            }}>
+              <div style={{
+                width: `${(atomizeProgress.current / atomizeProgress.total) * 100}%`,
+                height: '100%',
+                backgroundColor: '#10B981',
+                transition: 'width 0.3s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}>
+                {atomizeProgress.current} / {atomizeProgress.total}
+              </div>
+            </div>
+          )}
+
+          {/* Status Text */}
           <p style={{
-            marginTop: '8px',
-            color: '#9CA3AF',
-            fontSize: '14px'
+            marginTop: '16px',
+            color: '#D1D5DB',
+            fontSize: '16px',
+            textAlign: 'center',
+            maxWidth: '600px',
+            lineHeight: '1.5'
           }}>
-            Creating separate universes from L1 nodes
+            {atomizeProgress.status || 'Creating separate universes from L1 nodes...'}
           </p>
+
+          {/* Error Count */}
+          {atomizeProgress.errors.length > 0 && (
+            <p style={{
+              marginTop: '12px',
+              color: '#EF4444',
+              fontSize: '14px'
+            }}>
+              ⚠️ {atomizeProgress.errors.length} error{atomizeProgress.errors.length > 1 ? 's' : ''} encountered
+            </p>
+          )}
+
+          {/* Estimated Time */}
+          {atomizeProgress.total > 0 && atomizeProgress.current < atomizeProgress.total && (
+            <p style={{
+              marginTop: '12px',
+              color: '#9CA3AF',
+              fontSize: '14px'
+            }}>
+              Estimated time remaining: ~{Math.ceil((atomizeProgress.total - atomizeProgress.current) * 10 / 60)} min
+            </p>
+          )}
         </div>
       )}
 

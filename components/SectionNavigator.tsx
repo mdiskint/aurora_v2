@@ -20,7 +20,12 @@ export default function SectionNavigator() {
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const getAnchoredNodes = useCanvasStore((state) => state.getAnchoredNodes);
+  const reparentNode = useCanvasStore((state) => state.reparentNode);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // 🎯 DRAG-AND-DROP STATE
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
   // Get all anchored nodes
   const anchoredNodes = getAnchoredNodes();
@@ -80,6 +85,217 @@ export default function SectionNavigator() {
     selectNode(id, true);
   };
 
+  // 🎯 DRAG-AND-DROP HANDLERS
+
+  // Check if a node is an ancestor of another (prevent circular reparenting)
+  const isAncestor = (potentialAncestorId: string, nodeId: string): boolean => {
+    let currentId = nodeId;
+    while (currentId) {
+      if (currentId === potentialAncestorId) return true;
+      const currentNode = nodes[currentId];
+      if (!currentNode) break;
+      currentId = currentNode.parentId;
+    }
+    return false;
+  };
+
+  // Calculate hierarchy level of a node (1 = L1, 2 = L2, 3+ = L3+)
+  const getNodeLevel = (nodeId: string): number => {
+    const node = nodes[nodeId];
+    if (!node) return 0;
+
+    // Check if parent is a nexus
+    const isParentNexus = nexuses.some(n => n.id === node.parentId);
+    if (isParentNexus) return 1; // L1
+
+    // Recursively get parent's level and add 1
+    return getNodeLevel(node.parentId) + 1;
+  };
+
+  // Calculate new position for reparented node using Fibonacci sphere distribution
+  const calculateNewPosition = (parentId: string, siblingIndex: number): [number, number, number] => {
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // 137.5 degrees
+
+    // Determine what level this node will be at after reparenting
+    const isParentNexus = nexuses.some(n => n.id === parentId);
+    let baseRadius: number;
+
+    if (isParentNexus) {
+      // L1: 8 units from nexus
+      baseRadius = 8;
+    } else {
+      // Get parent's level to determine this node's level
+      const parentLevel = getNodeLevel(parentId);
+      if (parentLevel === 1) {
+        // Parent is L1, so this becomes L2
+        baseRadius = 5;
+      } else {
+        // Parent is L2+, so this becomes L3+
+        baseRadius = 3;
+      }
+    }
+
+    // Get parent position (either nexus or node)
+    const parentNexus = nexuses.find(n => n.id === parentId);
+    const parentNode = nodes[parentId];
+    const parentPos = parentNexus ? parentNexus.position : parentNode ? parentNode.position : [0, 0, 0];
+
+    // Calculate position using Fibonacci sphere distribution
+    const radiusIncrement = 0.3;
+    const radius = baseRadius + (siblingIndex * radiusIncrement);
+
+    if (isParentNexus) {
+      // L1 nodes: Position around nexus in a ring
+      const angle = siblingIndex * goldenAngle;
+      const yOffset = Math.sin(siblingIndex * 0.5) * 1.2;
+
+      return [
+        parentPos[0] + radius * Math.cos(angle),
+        parentPos[1] + yOffset,
+        parentPos[2] + radius * Math.sin(angle)
+      ];
+    } else {
+      // L2+ nodes: Position BEYOND parent, extending outward from nexus
+
+      // Find the nexus for this tree (walk up to find root)
+      let currentNodeId = parentId;
+      let nexusPos: [number, number, number] = [0, 0, 0];
+
+      while (currentNodeId) {
+        const currentNode = nodes[currentNodeId];
+        if (!currentNode) break;
+
+        const parentNexusFound = nexuses.find(n => n.id === currentNode.parentId);
+        if (parentNexusFound) {
+          nexusPos = parentNexusFound.position;
+          break;
+        }
+        currentNodeId = currentNode.parentId;
+      }
+
+      // Calculate vector from nexus to parent (outward direction)
+      const dx = parentPos[0] - nexusPos[0];
+      const dy = parentPos[1] - nexusPos[1];
+      const dz = parentPos[2] - nexusPos[2];
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // Normalize the outward direction
+      const outwardX = distance > 0 ? dx / distance : 1;
+      const outwardY = distance > 0 ? dy / distance : 0;
+      const outwardZ = distance > 0 ? dz / distance : 0;
+
+      // Calculate perpendicular vectors for spiral distribution
+      // Create a perpendicular vector using cross product with up vector
+      const upX = 0, upY = 1, upZ = 0;
+      let perpX = outwardY * upZ - outwardZ * upY;
+      let perpZ = outwardZ * upX - outwardX * upZ;
+      let perpY = outwardX * upY - outwardY * upX;
+
+      // Normalize perpendicular vector
+      const perpLen = Math.sqrt(perpX * perpX + perpY * perpY + perpZ * perpZ);
+      if (perpLen > 0) {
+        perpX /= perpLen;
+        perpY /= perpLen;
+        perpZ /= perpLen;
+      }
+
+      // Create second perpendicular vector (perpendicular to both outward and first perp)
+      const perp2X = outwardY * perpZ - outwardZ * perpY;
+      const perp2Y = outwardZ * perpX - outwardX * perpZ;
+      const perp2Z = outwardX * perpY - outwardY * perpX;
+
+      // Apply golden angle spiral around the outward direction
+      const angle = siblingIndex * goldenAngle;
+      const spiralRadius = radius * 0.4; // Smaller spiral around the outward vector
+
+      // Position = parent + (outward * baseRadius) + spiral around outward axis
+      return [
+        parentPos[0] + (outwardX * radius) + (perpX * Math.cos(angle) + perp2X * Math.sin(angle)) * spiralRadius,
+        parentPos[1] + (outwardY * radius) + (perpY * Math.cos(angle) + perp2Y * Math.sin(angle)) * spiralRadius,
+        parentPos[2] + (outwardZ * radius) + (perpZ * Math.cos(angle) + perp2Z * Math.sin(angle)) * spiralRadius
+      ];
+    }
+  };
+
+  // Recursively recalculate positions for a node and all its descendants
+  const recalculateSubtreePositions = (nodeId: string, newParentId: string) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+
+    // Get sibling index (position among parent's children)
+    const parentNode = nodes[newParentId];
+    const parentNexus = nexuses.find(n => n.id === newParentId);
+    const siblings = parentNode
+      ? parentNode.children
+      : parentNexus
+      ? Object.values(nodes).filter(n => n.parentId === newParentId).map(n => n.id)
+      : [];
+    const siblingIndex = siblings.indexOf(nodeId);
+
+    // Calculate new position for this node
+    const newPosition = calculateNewPosition(newParentId, siblingIndex >= 0 ? siblingIndex : 0);
+
+    // Update this node's position (reparentNode already saves to localStorage)
+    reparentNode(nodeId, newParentId, newPosition);
+
+    // Recursively update all children (they keep same parent, just need new positions)
+    node.children.forEach((childId) => {
+      recalculateSubtreePositions(childId, nodeId);
+    });
+  };
+
+  const handleDragStart = (e: React.DragEvent, nodeId: string) => {
+    e.stopPropagation();
+    setDraggedNodeId(nodeId);
+    console.log('🎯 Drag started:', nodeId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Don't allow dropping on itself or its descendants
+    if (draggedNodeId && (targetId === draggedNodeId || isAncestor(draggedNodeId, targetId))) {
+      return;
+    }
+
+    setDropTargetId(targetId);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDropTargetId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, newParentId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedNodeId) return;
+
+    // Prevent dropping on itself or its descendants
+    if (newParentId === draggedNodeId || isAncestor(draggedNodeId, newParentId)) {
+      console.log('❌ Cannot reparent to self or descendant');
+      setDraggedNodeId(null);
+      setDropTargetId(null);
+      return;
+    }
+
+    console.log('🎯 Drop:', draggedNodeId, '→', newParentId);
+
+    // Recalculate positions for the entire subtree
+    recalculateSubtreePositions(draggedNodeId, newParentId);
+
+    // Clear drag state
+    setDraggedNodeId(null);
+    setDropTargetId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedNodeId(null);
+    setDropTargetId(null);
+  };
+
   // Helper function to get meaningful node label
   const getNodeLabel = (nodeData: Node | { id: string; title: string; content: string }) => {
     // If this is a Node with semanticTitle, use it
@@ -120,20 +336,35 @@ export default function SectionNavigator() {
       ? getNodeTypeIcon(treeNode.data.nodeType)
       : null;
 
+    // Visual feedback for drag-and-drop
+    const isBeingDragged = draggedNodeId === treeNode.id;
+    const isDropTarget = dropTargetId === treeNode.id;
+    const isDragActive = draggedNodeId !== null;
+
     return (
       <>
         <div
+          draggable={!isNexus} // Only nodes are draggable (not nexuses)
+          onDragStart={(e) => handleDragStart(e, treeNode.id)}
+          onDragOver={(e) => handleDragOver(e, treeNode.id)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, treeNode.id)}
+          onDragEnd={handleDragEnd}
           onClick={() => handleClick(treeNode.id)}
           style={{
             padding: '8px 12px',
             paddingLeft: `${12 + indent}px`,
             marginBottom: isNexus ? '8px' : '4px',
             borderRadius: '6px',
-            cursor: 'pointer',
-            backgroundColor: selectedId === treeNode.id
+            cursor: isBeingDragged ? 'grabbing' : !isNexus ? 'grab' : 'pointer',
+            backgroundColor: isDropTarget
+              ? 'rgba(34, 197, 94, 0.3)' // Green for drop target
+              : selectedId === treeNode.id
               ? 'rgba(147, 51, 234, 0.3)'
               : 'transparent',
-            border: selectedId === treeNode.id
+            border: isDropTarget
+              ? '2px solid #22C55E' // Green border for drop target
+              : selectedId === treeNode.id
               ? '2px solid #9333EA'
               : '2px solid transparent',
             color: selectedId === treeNode.id
@@ -141,6 +372,7 @@ export default function SectionNavigator() {
               : isNexus
               ? 'white'
               : '#D1D5DB',
+            opacity: isBeingDragged ? 0.5 : 1,
             transition: 'all 0.2s',
             fontSize: isNexus ? '13px' : '12px',
             fontWeight: selectedId === treeNode.id ? 'bold' : isNexus ? 'bold' : 'normal',
@@ -149,14 +381,16 @@ export default function SectionNavigator() {
             display: 'flex',
             alignItems: 'flex-start',
             gap: '6px',
+            transform: isDropTarget ? 'scale(1.05)' : 'scale(1)',
+            boxShadow: isDropTarget ? '0 0 10px rgba(34, 197, 94, 0.5)' : 'none',
           }}
           onMouseEnter={(e) => {
-            if (selectedId !== treeNode.id) {
+            if (selectedId !== treeNode.id && !isDragActive) {
               e.currentTarget.style.backgroundColor = 'rgba(147, 51, 234, 0.15)';
             }
           }}
           onMouseLeave={(e) => {
-            if (selectedId !== treeNode.id) {
+            if (selectedId !== treeNode.id && !isDragActive) {
               e.currentTarget.style.backgroundColor = 'transparent';
             }
           }}

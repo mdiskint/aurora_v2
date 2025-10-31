@@ -799,7 +799,7 @@ function CameraLight() {
   );
 }
 
-function Scene({ isHoldingC }: { isHoldingC: boolean }) {
+function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
   const selectNode = useCanvasStore((state) => state.selectNode);
@@ -830,8 +830,8 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const [transformingNode, setTransformingNode] = useState<{ nodeId: string; startTime: number } | null>(null);
   const [fadingUniverse, setFadingUniverse] = useState<{ excludeNodeId: string; progress: number } | null>(null);
 
-  const BREAK_THRESHOLD = 5; // Units before break-off (changed from 10)
-  const GLOW_START = 3; // Distance when glow starts (changed from 5)
+  const BREAK_THRESHOLD = 5; // Units from center (0,0,0) before break-off
+  const GLOW_START = 3; // Distance when glow starts for break-off
 
   const { camera, gl } = useThree();
 
@@ -846,8 +846,8 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
   const handleNodePointerDown = useCallback((e: any, node: any) => {
     console.log('🎯 POINTER DOWN EVENT FIRED on node:', node.id);
 
-    if (isHoldingC || connectionModeActive || isBreakingOff) {
-      console.log('❌ Drag blocked - isHoldingC:', isHoldingC, 'connectionMode:', connectionModeActive, 'isBreaking:', isBreakingOff);
+    if (isHoldingShift || connectionModeActive || isBreakingOff) {
+      console.log('❌ Drag blocked - isHoldingShift:', isHoldingShift, 'connectionMode:', connectionModeActive, 'isBreaking:', isBreakingOff);
       return;
     }
 
@@ -860,7 +860,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
     setDragCurrentPosition(node.position);
     setDragDistance(0);
     console.log('✅ Drag started on node:', node.id);
-  }, [isHoldingC, connectionModeActive, isBreakingOff, gl]);
+  }, [isHoldingShift, connectionModeActive, isBreakingOff]);
 
   // 🎬 ANIMATION HELPERS for break-off sequence
 
@@ -1190,19 +1190,14 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
     const currentPos: [number, number, number] = [pos.x, pos.y, pos.z];
     setDragCurrentPosition(currentPos);
 
-    // Calculate distance from start
-    const dx = currentPos[0] - dragStartPosition[0];
-    const dy = currentPos[1] - dragStartPosition[1];
-    const dz = currentPos[2] - dragStartPosition[2];
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    setDragDistance(dist);
+    // Calculate distance from center (0,0,0) for break-off detection
+    const distFromCenter = Math.sqrt(currentPos[0] ** 2 + currentPos[1] ** 2 + currentPos[2] ** 2);
+    setDragDistance(distFromCenter);
 
-    console.log('📏 Drag distance:', dist.toFixed(2));
-
-    // 🔥 CRITICAL: Auto-break when threshold crossed (no release needed!)
-    if (dist >= BREAK_THRESHOLD) {
+    // 🔥 BREAK-OFF: Check if dragged >5 units from center (0,0,0)
+    if (distFromCenter >= BREAK_THRESHOLD) {
       console.log('═══════════════════════════════════');
-      console.log('🔥 THRESHOLD CROSSED at', dist.toFixed(2), 'units - AUTO BREAKING!');
+      console.log('🔥 BREAK-OFF THRESHOLD CROSSED at', distFromCenter.toFixed(2), 'units from center');
       console.log('═══════════════════════════════════');
 
       // Stop dragging immediately
@@ -1211,7 +1206,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
       // Trigger break-off sequence
       handleBreakOff();
     }
-  }, [isDragging, draggedNode, dragStartPosition, isBreakingOff, camera, gl, BREAK_THRESHOLD, handleBreakOff]);
+  }, [isDragging, draggedNode, isBreakingOff, camera, gl, BREAK_THRESHOLD, handleBreakOff]);
 
   const handlePointerUp = useCallback(() => {
     // If break-off is in progress, don't do anything (let animation complete)
@@ -1220,15 +1215,9 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
       return;
     }
 
-    // Only handle snap-back if we're still dragging and haven't broken off
-    if (isDragging && draggedNode) {
-      console.log('🎯 Pointer up - distance:', dragDistance);
-
-      if (dragDistance < BREAK_THRESHOLD) {
-        // Released before threshold - snap back to original position
-        console.log('↩️ Released before threshold - snapping back');
-        // Node will snap back automatically when we reset dragCurrentPosition
-      }
+    // Only handle drag end if we're still dragging
+    if (isDragging && draggedNode && dragCurrentPosition) {
+      console.log('🎯 Pointer up - releasing drag');
 
       // Clean up drag state
       setIsDragging(false);
@@ -1237,7 +1226,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
       setDragCurrentPosition(null);
       setDragDistance(0);
     }
-  }, [isDragging, draggedNode, dragDistance, isBreakingOff, BREAK_THRESHOLD]);
+  }, [isDragging, draggedNode, dragCurrentPosition, isBreakingOff]);
 
   // Listen for pointer move/up on window
   useEffect(() => {
@@ -1367,7 +1356,7 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
                 lastClick.nexusId === nexus.id &&
                 (now - lastClick.timestamp) < 300;
 
-              if (isDoubleClick && !isHoldingC && !connectionModeActive) {
+              if (isDoubleClick && !isHoldingShift && !connectionModeActive) {
                 console.log('🌌 DOUBLE-CLICK detected on nexus:', nexus.id);
                 const metaNodeId = createMetaInspirationNode(nexus.id);
                 console.log('✅ Meta-node created via double-click:', metaNodeId);
@@ -1385,9 +1374,9 @@ function Scene({ isHoldingC }: { isHoldingC: boolean }) {
               // Update last click tracking
               lastNexusClickRef.current = { nexusId: nexus.id, timestamp: now };
 
-              // NEW: Multi-node connection mode (hold C)
-              if (isHoldingC) {
-                console.log('🔗 Adding nexus to selection:', nexus.id);
+              // NEW: Multi-node connection mode (hold Shift)
+              if (isHoldingShift) {
+                console.log('🔗 Adding nexus to selection (Shift held):', nexus.id);
                 addNodeToConnection(nexus.id);
               } else if (connectionModeActive) {
                 if (!connectionModeNodeA) {
@@ -1683,9 +1672,9 @@ if (node.nodeType === 'synthesis') {
         onClick={(e: any) => {
           e.stopPropagation();
 
-          // NEW: Multi-node connection mode (hold C)
-          if (isHoldingC) {
-            console.log('🔗 Adding connection node to selection:', node.id);
+          // NEW: Multi-node connection mode (hold Shift)
+          if (isHoldingShift) {
+            console.log('🔗 Adding connection node to selection (Shift held):', node.id);
             addNodeToConnection(node.id);
           } else if (connectionModeActive) {
             if (!connectionModeNodeA) {
@@ -1739,9 +1728,9 @@ if (node.nodeType === 'synthesis') {
         onClick={(e: any) => {
           e.stopPropagation();
 
-          // NEW: Multi-node connection mode (hold C)
-          if (isHoldingC) {
-            console.log('🔗 Adding node to selection:', node.id);
+          // NEW: Multi-node connection mode (hold Shift)
+          if (isHoldingShift) {
+            console.log('🔗 Adding node to selection (Shift held):', node.id);
             addNodeToConnection(node.id);
           } else if (connectionModeActive) {
             if (!connectionModeNodeA) {
@@ -1793,9 +1782,9 @@ if (node.nodeType === 'synthesis') {
         onClick={(e: any) => {
           e.stopPropagation();
 
-          // NEW: Multi-node connection mode (hold C)
-          if (isHoldingC) {
-            console.log('🔗 Adding node to selection:', node.id);
+          // NEW: Multi-node connection mode (hold Shift)
+          if (isHoldingShift) {
+            console.log('🔗 Adding node to selection (Shift held):', node.id);
             addNodeToConnection(node.id);
           } else if (connectionModeActive) {
             if (!connectionModeNodeA) {
@@ -1910,8 +1899,8 @@ if (node.nodeType === 'synthesis') {
   );
 }
 
-function ConnectionModeHint({ isHoldingC, selectedCount }: { isHoldingC: boolean; selectedCount: number }) {
-  if (!isHoldingC && selectedCount === 0) return null;
+function ConnectionModeHint({ isHoldingShift, selectedCount }: { isHoldingShift: boolean; selectedCount: number }) {
+  if (!isHoldingShift && selectedCount === 0) return null;
 
   return (
     <div style={{
@@ -1930,10 +1919,10 @@ function ConnectionModeHint({ isHoldingC, selectedCount }: { isHoldingC: boolean
       border: '3px solid #FFD700',
       textAlign: 'center',
     }}>
-      {isHoldingC && selectedCount === 0 && (
-        <div>🔗 Hold C and click nodes to connect...</div>
+      {isHoldingShift && selectedCount === 0 && (
+        <div>🔗 Hold Shift and click nodes to connect...</div>
       )}
-      {isHoldingC && selectedCount > 0 && (
+      {isHoldingShift && selectedCount > 0 && (
         <div>
           <div>🔗 {selectedCount} node{selectedCount > 1 ? 's' : ''} selected</div>
           <div style={{ fontSize: '16px', marginTop: '8px', opacity: 0.8 }}>
@@ -1995,7 +1984,7 @@ export default function CanvasScene() {
   const universeLibrary = useCanvasStore((state) => state.universeLibrary);
   const renameUniverse = useCanvasStore((state) => state.renameUniverse);
 
-  const [isHoldingC, setIsHoldingC] = useState(false);
+  const [isHoldingShift, setIsHoldingShift] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
 
@@ -2010,12 +1999,12 @@ export default function CanvasScene() {
   // Keyboard handling moved to parent component
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'c' || e.key === 'C') && !isHoldingC) {
-        console.log('🔗 Multi-connection mode ACTIVE - Click nodes to select');
-        setIsHoldingC(true);
+      if (e.shiftKey && !isHoldingShift) {
+        console.log('🔗 Multi-connection mode ACTIVE - Hold Shift and click nodes to select');
+        setIsHoldingShift(true);
       } else if (e.key === 'Escape') {
         console.log('❌ Cancelled connection mode');
-        setIsHoldingC(false);
+        setIsHoldingShift(false);
         clearConnectionMode();
       } else if (e.key === 'Delete' && selectedId) {
         // Handle deletion of selected node or nexus (Delete key only, not 'x')
@@ -2054,9 +2043,9 @@ export default function CanvasScene() {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'c' || e.key === 'C') {
-        console.log('🔗 C key released');
-        setIsHoldingC(false);
+      if (e.key === 'Shift') {
+        console.log('🔗 Shift key released');
+        setIsHoldingShift(false);
 
         // Create connection if 2+ nodes selected
         if (selectedNodesForConnection.length >= 2) {
@@ -2076,7 +2065,7 @@ export default function CanvasScene() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isHoldingC, selectedNodesForConnection, createMultiConnection, clearConnectionMode, selectedId, nexuses, nodes, deleteNode, deleteConversation]);
+  }, [isHoldingShift, selectedNodesForConnection, createMultiConnection, clearConnectionMode, selectedId, nexuses, nodes, deleteNode, deleteConversation]);
 
   useEffect(() => {
     console.log('🔵 useEffect running, attempting connection...');
@@ -2234,10 +2223,10 @@ export default function CanvasScene() {
       )}
 
       <UnifiedNodeModal />
-      <ConnectionModeHint isHoldingC={isHoldingC} selectedCount={selectedNodesForConnection.length} />
+      <ConnectionModeHint isHoldingShift={isHoldingShift} selectedCount={selectedNodesForConnection.length} />
       {hasUniverse && <SectionNavigator />}
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-        <Scene isHoldingC={isHoldingC} />
+        <Scene isHoldingShift={isHoldingShift} />
         <CameraPositionManager />
       </Canvas>
     </div>

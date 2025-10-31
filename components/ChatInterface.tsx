@@ -238,6 +238,14 @@ export default function ChatInterface() {
         useCanvasStore.getState().saveCurrentUniverse();
         console.log('✅ Universe saved to library');
 
+        // 📸 Create snapshot of original state (nexus + initial L1 nodes)
+        console.log('📸 Creating snapshot of original universe state...');
+        const activeId = useCanvasStore.getState().activeUniverseId;
+        if (activeId) {
+          useCanvasStore.getState().createSnapshot(activeId);
+          console.log('✅ Snapshot created for universe:', activeId);
+        }
+
         // 🌌 Don't update conversation history for Explore commands
         // The universe structure IS the conversation, not a message exchange
         console.log('🌌 Explore command complete - conversation history unchanged');
