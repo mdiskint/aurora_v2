@@ -607,6 +607,196 @@ Would you like another question?`;
       });
     }
 
+    // 🧠 GAP MODE: gap-analyze - Analyze query with graph structure
+    if (mode === 'gap-analyze') {
+      console.log('🧠 GAP MODE: gap-analyze - Analyzing query with graph structure');
+
+      const { graphStructure, question } = body;
+
+      if (!graphStructure) {
+        return NextResponse.json(
+          { error: 'Graph structure required for GAP mode' },
+          { status: 400 }
+        );
+      }
+
+      console.log('🧠 Graph context:', {
+        nexus: graphStructure.nexus.title,
+        nodeCount: graphStructure.nodes.length,
+        connections: graphStructure.connections.length
+      });
+
+      const analyzePrompt = `You are analyzing a user's question in the context of their knowledge graph.
+
+GRAPH STRUCTURE:
+Nexus: ${graphStructure.nexus.title}
+${graphStructure.nexus.content}
+
+Existing Nodes (${graphStructure.nodes.length}):
+${graphStructure.nodes.map((n: any, i: number) =>
+  `${i+1}. [L${n.level}] ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
+).join('\n')}
+
+USER QUESTION: "${question}"
+
+Analyze this question and determine:
+1. Can this question be broken into 2-5 INDEPENDENT parallel explorations?
+2. Or should it be answered as a single cohesive response?
+
+Criteria for PARALLEL:
+- Question explicitly asks about multiple things ("explore X, Y, and Z")
+- Question can naturally split into independent subtopics
+- Each subtopic can be explored independently without depending on others
+- User says "explore", "break down", "analyze different aspects"
+
+Criteria for SINGLE:
+- Question asks for one coherent answer
+- Question requires synthesis across topics
+- Question is about relationships between things (needs integrated answer)
+- Question is a follow-up that builds on existing conversation
+
+Respond in VALID JSON format:
+{
+  "type": "parallel" OR "single",
+  "reasoning": "brief explanation of why",
+  "tasks": ["task 1", "task 2", "task 3"] (ONLY if type is "parallel", otherwise omit)
+}
+
+IMPORTANT: Return ONLY the JSON, no other text.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: 'You are a graph-aware AI analyzer. Assess whether questions should be answered in parallel or as a single response.',
+        messages: [{ role: 'user', content: analyzePrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+
+      try {
+        const analysisResult = JSON.parse(rawResponse.trim());
+        console.log('🧠 Analysis result:', analysisResult);
+
+        return NextResponse.json(analysisResult);
+      } catch (error) {
+        console.error('❌ Failed to parse gap-analyze response:', error);
+        console.error('Raw response:', rawResponse);
+        return NextResponse.json(
+          { error: 'Failed to parse analysis response' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 🧠 GAP MODE: gap-parallel - Execute one parallel task with graph awareness
+    if (mode === 'gap-parallel') {
+      console.log('🧠 GAP MODE: gap-parallel - Executing parallel task with graph awareness');
+
+      const { graphStructure, task, parentContext } = body;
+
+      if (!graphStructure || !task) {
+        return NextResponse.json(
+          { error: 'Graph structure and task required for gap-parallel mode' },
+          { status: 400 }
+        );
+      }
+
+      console.log('🧠 Executing task:', task.substring(0, 50) + '...');
+      console.log('🧠 Graph context: Nexus "' + graphStructure.nexus.title + '" with', graphStructure.nodes.length, 'nodes');
+
+      const parallelPrompt = `You are exploring a specific aspect within a knowledge graph.
+
+GRAPH CONTEXT:
+Nexus: ${graphStructure.nexus.title}
+${graphStructure.nexus.content}
+
+Existing explorations (${graphStructure.nodes.length} nodes):
+${graphStructure.nodes.slice(0, 10).map((n: any, i: number) =>
+  `- [L${n.level}] ${n.content.substring(0, 60)}...`
+).join('\n')}
+${graphStructure.nodes.length > 10 ? `... and ${graphStructure.nodes.length - 10} more nodes` : ''}
+
+${parentContext ? `Parent context: ${parentContext}` : ''}
+
+YOUR TASK: ${task}
+
+Provide a comprehensive response (3-5 paragraphs) that:
+1. Explores this specific aspect in depth
+2. Connects to the broader graph context when relevant
+3. Fills gaps in the existing knowledge structure
+4. Provides actionable insights or concrete examples
+
+Write naturally and substantively. This will become a node in the graph.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        system: 'You are a graph-aware AI exploring specific aspects of knowledge. Provide deep, contextual insights.',
+        messages: [{ role: 'user', content: parallelPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const content = textContent && 'text' in textContent ? textContent.text : '';
+
+      console.log('✅ Parallel task completed:', content.substring(0, 100) + '...');
+
+      return NextResponse.json({ content });
+    }
+
+    // 🧠 GAP MODE: gap-single - Execute single task with graph awareness
+    if (mode === 'gap-single') {
+      console.log('🧠 GAP MODE: gap-single - Executing single task with graph awareness');
+
+      const { graphStructure, question } = body;
+
+      if (!graphStructure || !question) {
+        return NextResponse.json(
+          { error: 'Graph structure and question required for gap-single mode' },
+          { status: 400 }
+        );
+      }
+
+      console.log('🧠 Question:', question.substring(0, 50) + '...');
+      console.log('🧠 Graph context: Nexus "' + graphStructure.nexus.title + '" with', graphStructure.nodes.length, 'nodes');
+
+      const singlePrompt = `You are responding to a question within the context of a knowledge graph.
+
+GRAPH STRUCTURE:
+Nexus: ${graphStructure.nexus.title}
+${graphStructure.nexus.content}
+
+Existing explorations (${graphStructure.nodes.length} nodes):
+${graphStructure.nodes.map((n: any, i: number) =>
+  `${i+1}. [L${n.level}] ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
+).join('\n')}
+
+USER QUESTION: "${question}"
+
+Provide a comprehensive response that:
+1. Directly answers the question
+2. Builds on existing knowledge in the graph
+3. Identifies gaps and suggests new directions
+4. Synthesizes connections across the graph when relevant
+5. Provides concrete examples or actionable insights
+
+Write naturally (3-6 paragraphs). This will become a node in the graph.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        system: 'You are a graph-aware AI that provides contextual, synthesized responses based on the entire knowledge structure.',
+        messages: [{ role: 'user', content: singlePrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const content = textContent && 'text' in textContent ? textContent.text : '';
+
+      console.log('✅ Single task completed:', content.substring(0, 100) + '...');
+
+      return NextResponse.json({ content });
+    }
+
     // Standard chat mode
     console.log('📤 Sending to Claude API...');
 

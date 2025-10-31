@@ -19,6 +19,14 @@ export default function ChatInterface() {
   const [spatialSections, setSpatialSections] = useState<Array<{ title: string; type: string }>>([]);
   const [showSpatialNavigator, setShowSpatialNavigator] = useState(false);
 
+  // 🧠 GAP Mode state
+  const [gapModeEnabled, setGapModeEnabled] = useState(false);
+  const [showPlanningModal, setShowPlanningModal] = useState(false);
+  const [parallelTasks, setParallelTasks] = useState<string[]>([]);
+  const [planningReasoning, setPlanningReasoning] = useState('');
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progressStatus, setProgressStatus] = useState<{ [key: number]: 'pending' | 'complete' | 'error' }>({});
+
   const { nexuses, nodes, createChatNexus, addNode, getActivatedConversations, selectedId } = useCanvasStore();
 
   // 🧠 Track selection state
@@ -33,6 +41,116 @@ export default function ChatInterface() {
       setCurrentParentId(null);
     }
   }, [selectedId]);
+
+  // 🧠 GAP Mode: Build graph structure with compression
+  const buildGraphStructure = () => {
+    console.log('🧠 GAP Mode: Building graph structure...');
+
+    if (nexuses.length === 0) {
+      console.log('🧠 GAP Mode: No universe loaded, returning empty structure');
+      return null;
+    }
+
+    // Get current nexus
+    const currentNexus = selectedId
+      ? nexuses.find(n => n.id === selectedId) || nexuses[0]
+      : nexuses[0];
+
+    if (!currentNexus) {
+      console.log('🧠 GAP Mode: No current nexus found');
+      return null;
+    }
+
+    console.log('🧠 GAP Mode: Current nexus:', currentNexus.title);
+
+    // Helper function to calculate node level
+    const getNodeLevel = (nodeId: string): number => {
+      let level = 0;
+      let currentId = nodeId;
+      let visited = new Set<string>();
+
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        const node = nodes[currentId];
+        if (!node) break;
+
+        // If parent is a nexus, we're at L1
+        if (nexuses.find(n => n.id === node.parentId)) {
+          return 1;
+        }
+
+        // Otherwise, go up one level
+        level++;
+        currentId = node.parentId;
+
+        // Safety check to prevent infinite loops
+        if (level > 20) break;
+      }
+
+      return level;
+    };
+
+    // Collect all nodes in current universe
+    const universeNodes = Object.values(nodes).filter(node => {
+      // Check if node belongs to current universe
+      let currentId = node.id;
+      let visited = new Set<string>();
+
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        if (currentId === currentNexus.id) return true;
+        const n = nodes[currentId];
+        if (!n) break;
+        currentId = n.parentId;
+        if (visited.size > 100) break; // Safety
+      }
+
+      return false;
+    });
+
+    console.log('🧠 GAP Mode: Found', universeNodes.length, 'nodes in universe');
+
+    // Build compressed node data
+    const compressedNodes = universeNodes.map(node => {
+      const level = getNodeLevel(node.id);
+      const isL1 = level === 1;
+
+      return {
+        id: node.id,
+        type: node.nodeType || 'user-reply',
+        content: isL1 ? node.content : node.content.substring(0, 100) + (node.content.length > 100 ? '...' : ''),
+        parentId: node.parentId,
+        level: level,
+        position: node.position
+      };
+    });
+
+    // Build connections
+    const connections = universeNodes.map(node => ({
+      from: node.parentId,
+      to: node.id
+    }));
+
+    const graphStructure = {
+      nexus: {
+        id: currentNexus.id,
+        content: currentNexus.content,
+        title: currentNexus.title,
+        position: currentNexus.position
+      },
+      nodes: compressedNodes,
+      connections: connections
+    };
+
+    // Calculate approximate token count
+    const approxTokens = Math.ceil(JSON.stringify(graphStructure).length / 4);
+    console.log('🧠 GAP Mode: Graph structure built');
+    console.log('🧠 GAP Mode: Nodes:', compressedNodes.length);
+    console.log('🧠 GAP Mode: Connections:', connections.length);
+    console.log('🧠 GAP Mode: Approx tokens:', approxTokens);
+
+    return graphStructure;
+  };
 
   // 🧠 Build full conversation context
   const buildConversationContext = () => {
@@ -336,8 +454,31 @@ export default function ChatInterface() {
           zIndex: 1000,
         }}
       >
-        <div style={{ marginBottom: '12px', color: isSpatialModeActive ? '#9333EA' : '#00FFD4', fontSize: '14px', fontWeight: 'bold' }}>
-          {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : '🧠 Aurora Chat'} {!isFirstMessage && '(Full Context Active)'}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ color: isSpatialModeActive ? '#9333EA' : '#00FFD4', fontSize: '14px', fontWeight: 'bold' }}>
+            {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : '🧠 Aurora Chat'} {!isFirstMessage && '(Full Context Active)'}
+          </div>
+
+          {/* GAP Mode Toggle Button */}
+          <button
+            onClick={() => setGapModeEnabled(!gapModeEnabled)}
+            title="GAP Mode: Enable graph-aware AI that reasons over your entire universe structure. More intelligent but uses more tokens."
+            style={{
+              padding: '6px 12px',
+              backgroundColor: gapModeEnabled ? '#8B5CF6' : '#333',
+              color: gapModeEnabled ? '#fff' : '#666',
+              border: `2px solid ${gapModeEnabled ? '#8B5CF6' : '#555'}`,
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: gapModeEnabled ? '0 0 12px rgba(139, 92, 246, 0.6)' : 'none',
+              animation: gapModeEnabled ? 'pulse 2s ease-in-out infinite' : 'none',
+            }}
+          >
+            🧠 GAP
+          </button>
         </div>
 
         <textarea
@@ -389,9 +530,251 @@ export default function ChatInterface() {
         </button>
       </div>
 
-      <SpatialNavigator 
-        sections={spatialSections} 
-        isVisible={showSpatialNavigator} 
+      {/* GAP Mode: Planning Modal */}
+      {showPlanningModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            backgroundColor: '#0A1628',
+            border: '3px solid #8B5CF6',
+            borderRadius: '16px',
+            padding: '32px',
+            maxWidth: '600px',
+            width: '90%',
+            boxShadow: '0 0 40px rgba(139, 92, 246, 0.4)'
+          }}>
+            <h2 style={{
+              color: '#8B5CF6',
+              fontSize: '24px',
+              marginBottom: '16px',
+              textAlign: 'center'
+            }}>
+              🧠 GRAPH-AWARE PARALLEL EXPLORATION
+            </h2>
+
+            <div style={{
+              backgroundColor: 'rgba(139, 92, 246, 0.1)',
+              border: '1px solid #8B5CF6',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                color: '#E5E7EB',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                marginBottom: '8px'
+              }}>
+                AI Analysis:
+              </div>
+              <div style={{
+                color: '#D1D5DB',
+                fontSize: '14px',
+                lineHeight: '1.6'
+              }}>
+                {planningReasoning}
+              </div>
+            </div>
+
+            <div style={{
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                color: '#E5E7EB',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                marginBottom: '12px'
+              }}>
+                Independent tasks to explore:
+              </div>
+              {parallelTasks.map((task, index) => (
+                <div key={index} style={{
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid #10B981',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px'
+                }}>
+                  <span style={{ color: '#10B981', fontSize: '16px' }}>✓</span>
+                  <span style={{ color: '#D1D5DB', fontSize: '14px', flex: 1 }}>
+                    Task {index + 1}: {task}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              color: '#9CA3AF',
+              fontSize: '13px',
+              marginBottom: '20px',
+              textAlign: 'center'
+            }}>
+              These will be created as sibling nodes.
+              <br />
+              Estimated time: ~{parallelTasks.length * 7} seconds
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowPlanningModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#9CA3AF',
+                  border: '2px solid #4B5563',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowPlanningModal(false);
+                  // Execute parallel tasks (to be implemented)
+                  console.log('🧠 GAP Mode: Executing parallel tasks...');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  backgroundColor: '#8B5CF6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)'
+                }}
+              >
+                Execute Parallel Exploration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GAP Mode: Progress Modal */}
+      {showProgressModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.9)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10001
+        }}>
+          <div style={{
+            backgroundColor: '#0A1628',
+            border: '2px solid #8B5CF6',
+            borderRadius: '16px',
+            padding: '32px',
+            minWidth: '400px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              fontSize: '32px',
+              marginBottom: '16px'
+            }}>⚡</div>
+
+            <h3 style={{
+              color: '#8B5CF6',
+              fontSize: '20px',
+              marginBottom: '20px'
+            }}>
+              EXECUTING PARALLEL EXPLORATION
+            </h3>
+
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              marginBottom: '20px'
+            }}>
+              {parallelTasks.map((task, index) => (
+                <div key={index} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                  borderRadius: '8px'
+                }}>
+                  <span style={{
+                    fontSize: '18px'
+                  }}>
+                    {progressStatus[index] === 'complete' ? '✅' : progressStatus[index] === 'error' ? '❌' : '⏳'}
+                  </span>
+                  <span style={{
+                    color: '#E5E7EB',
+                    fontSize: '14px',
+                    flex: 1,
+                    textAlign: 'left'
+                  }}>
+                    Task {index + 1}: {progressStatus[index] === 'complete' ? 'Complete' : progressStatus[index] === 'error' ? 'Error' : 'In progress...'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                setShowProgressModal(false);
+                setProgressStatus({});
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: 'transparent',
+                color: '#9CA3AF',
+                border: '2px solid #4B5563',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Cancel remaining
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pulse animation for GAP Mode button */}
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% {
+            box-shadow: 0 0 12px rgba(139, 92, 246, 0.6);
+          }
+          50% {
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.9);
+          }
+        }
+      `}</style>
+
+      <SpatialNavigator
+        sections={spatialSections}
+        isVisible={showSpatialNavigator}
       />
     </>
   );
