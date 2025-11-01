@@ -403,6 +403,14 @@ interface CanvasStore {
     universeId: string,
     onProgress?: (current: number, total: number, status: string, errors: string[]) => void
   ) => Promise<{success: boolean; newUniverseIds: string[]; error?: string; errors: string[]}>;
+
+  // 🧠 UNIVERSE ACTIVATION (for GAP Mode cross-universe analysis)
+  activatedUniverseIds: string[];
+  maxActivatedUniverses: number;
+  activateUniverse: (universeId: string) => boolean; // Returns false if limit reached
+  deactivateUniverse: (universeId: string) => void;
+  clearActivatedUniverses: () => void;
+  isUniverseActivated: (universeId: string) => boolean;
   getL1Nodes: (universeId: string) => Node[];
 }
 
@@ -414,6 +422,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   // 📸 ORIGINAL SNAPSHOTS - Start with no snapshots
   originalSnapshots: {},
+
+  // 🧠 UNIVERSE ACTIVATION - For GAP Mode cross-universe analysis
+  activatedUniverseIds: [],
+  maxActivatedUniverses: 5,
 
   // 📁 FOLDER SYSTEM - Start with default folder
   folders: {
@@ -3522,6 +3534,65 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     console.log('🔬 Found', l1Nodes.length, 'L1 nodes in universe', universeId);
     return l1Nodes;
+  },
+
+  // 🧠 UNIVERSE ACTIVATION METHODS
+  activateUniverse: (universeId: string): boolean => {
+    const state = get();
+
+    // Check if already activated
+    if (state.activatedUniverseIds.includes(universeId)) {
+      console.log('🧠 Universe already activated:', universeId);
+      return true;
+    }
+
+    // Check limit
+    if (state.activatedUniverseIds.length >= state.maxActivatedUniverses) {
+      console.warn('🧠 Cannot activate universe - limit reached (5 max)');
+      return false;
+    }
+
+    // Check if universe exists
+    if (!state.universeLibrary[universeId]) {
+      console.error('🧠 Cannot activate - universe not found:', universeId);
+      return false;
+    }
+
+    // Activate
+    set({
+      activatedUniverseIds: [...state.activatedUniverseIds, universeId]
+    });
+
+    console.log('🧠 Activated universe:', state.universeLibrary[universeId].title);
+    console.log('🧠 Total activated:', state.activatedUniverseIds.length + 1);
+
+    return true;
+  },
+
+  deactivateUniverse: (universeId: string): void => {
+    const state = get();
+
+    if (!state.activatedUniverseIds.includes(universeId)) {
+      console.log('🧠 Universe not activated:', universeId);
+      return;
+    }
+
+    set({
+      activatedUniverseIds: state.activatedUniverseIds.filter(id => id !== universeId)
+    });
+
+    console.log('🧠 Deactivated universe:', state.universeLibrary[universeId]?.title || universeId);
+    console.log('🧠 Total activated:', get().activatedUniverseIds.length);
+  },
+
+  clearActivatedUniverses: (): void => {
+    const count = get().activatedUniverseIds.length;
+    set({ activatedUniverseIds: [] });
+    console.log('🧠 Cleared all activated universes (', count, ')');
+  },
+
+  isUniverseActivated: (universeId: string): boolean => {
+    return get().activatedUniverseIds.includes(universeId);
   },
 
   atomizeUniverse: async (

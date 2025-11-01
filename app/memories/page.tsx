@@ -23,6 +23,13 @@ export default function MemoriesPage() {
   const atomizeUniverse = useCanvasStore(state => state.atomizeUniverse);
   const getL1Nodes = useCanvasStore(state => state.getL1Nodes);
 
+  // 🧠 GAP Mode universe activation
+  const activatedUniverseIds = useCanvasStore(state => state.activatedUniverseIds);
+  const activateUniverse = useCanvasStore(state => state.activateUniverse);
+  const deactivateUniverse = useCanvasStore(state => state.deactivateUniverse);
+  const clearActivatedUniverses = useCanvasStore(state => state.clearActivatedUniverses);
+  const maxActivatedUniverses = useCanvasStore(state => state.maxActivatedUniverses);
+
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -355,6 +362,112 @@ export default function MemoriesPage() {
           </div>
         </div>
 
+        {/* 🧠 Active Sources Panel (for GAP Mode) */}
+        {activatedUniverseIds.length > 0 && (
+          <div style={{
+            marginBottom: '32px',
+            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            border: '2px solid #8B5CF6',
+            borderRadius: '12px',
+            padding: '20px'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '16px'
+            }}>
+              <div style={{
+                color: '#8B5CF6',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>🧠</span>
+                <span>ACTIVE SOURCE UNIVERSES ({activatedUniverseIds.length}/{maxActivatedUniverses})</span>
+              </div>
+              <button
+                onClick={() => clearActivatedUniverses()}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                  color: '#8B5CF6',
+                  border: '1px solid #8B5CF6',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(139, 92, 246, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              {activatedUniverseIds.map(universeId => {
+                const universe = universeLibrary[universeId];
+                if (!universe) return null;
+
+                return (
+                  <div
+                    key={universeId}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: '#8B5CF6',
+                      color: 'white',
+                      borderRadius: '20px',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      animation: 'fadeIn 0.3s ease'
+                    }}
+                  >
+                    <span>{universe.title}</span>
+                    <button
+                      onClick={() => deactivateUniverse(universeId)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'white',
+                        cursor: 'pointer',
+                        padding: '0',
+                        fontSize: '16px',
+                        lineHeight: 1
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontSize: '14px',
+              textAlign: 'center'
+            }}>
+              These universes will be analyzed by GAP Mode for cross-universe insights
+            </div>
+          </div>
+        )}
+
         {/* Folders */}
         {Object.values(folders)
           .sort((a, b) => {
@@ -439,6 +552,7 @@ export default function MemoriesPage() {
                       .map(([universeId, universeData]) => {
                         const isSelected = selectedUniverseId === universeId;
                         const isActive = activeUniverseIds.includes(universeId);
+                        const isActivated = activatedUniverseIds.includes(universeId); // 🧠 GAP Mode activation
 
                         // Determine border color and style based on state
                         let borderColor = '#8B5CF6'; // Default purple
@@ -451,8 +565,14 @@ export default function MemoriesPage() {
                           borderWidth = '3px';
                           boxShadow = '0 0 20px rgba(255, 215, 0, 0.4)';
                           backgroundColor = 'rgba(255, 215, 0, 0.05)'; // Subtle gold tint
+                        } else if (isActivated) {
+                          // 🧠 GAP Mode activated universe - purple glow
+                          borderColor = '#8B5CF6'; // Purple for GAP activation
+                          borderWidth = '3px';
+                          boxShadow = '0 0 25px rgba(139, 92, 246, 0.5)';
+                          backgroundColor = 'rgba(139, 92, 246, 0.1)';
                         } else if (isActive) {
-                          borderColor = '#00FFD4'; // Cyan for active
+                          borderColor = '#00FFD4'; // Cyan for active on canvas
                           boxShadow = '0 0 20px rgba(0, 255, 212, 0.3)';
                         }
 
@@ -472,7 +592,7 @@ export default function MemoriesPage() {
                             transition: 'all 0.2s ease'
                           }}
                         >
-                          {/* Active checkbox */}
+                          {/* 🧠 GAP Mode Activation checkbox */}
                           <div style={{
                             position: 'absolute',
                             top: '12px',
@@ -483,27 +603,37 @@ export default function MemoriesPage() {
                           }}>
                             <input
                               type="checkbox"
-                              checked={activeUniverseIds.includes(universeId)}
+                              checked={isActivated}
                               onChange={(e) => {
                                 e.stopPropagation();
-                                toggleUniverseActive(universeId);
+                                if (isActivated) {
+                                  deactivateUniverse(universeId);
+                                } else {
+                                  const success = activateUniverse(universeId);
+                                  if (!success) {
+                                    alert(`Maximum ${maxActivatedUniverses} universes can be activated for GAP Mode`);
+                                  }
+                                }
                               }}
                               style={{
                                 width: '20px',
                                 height: '20px',
                                 cursor: 'pointer',
-                                accentColor: '#00FFD4'
+                                accentColor: '#8B5CF6'
                               }}
-                              title={activeUniverseIds.includes(universeId) ? 'Deactivate universe' : 'Activate universe'}
+                              title={isActivated ? 'Deactivate for GAP Mode' : 'Activate for GAP Mode'}
                             />
-                            {activeUniverseIds.includes(universeId) && (
+                            {isActivated && (
                               <span style={{
                                 fontSize: '10px',
-                                color: '#00FFD4',
+                                color: '#8B5CF6',
                                 fontWeight: 'bold',
-                                textTransform: 'uppercase'
+                                textTransform: 'uppercase',
+                                padding: '2px 6px',
+                                backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                                borderRadius: '4px'
                               }}>
-                                Active
+                                ACTIVATED
                               </span>
                             )}
                           </div>

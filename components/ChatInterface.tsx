@@ -29,6 +29,10 @@ export default function ChatInterface() {
 
   const { nexuses, nodes, createChatNexus, addNode, getActivatedConversations, selectedId } = useCanvasStore();
 
+  // 🧠 GAP Mode: Universe activation
+  const activatedUniverseIds = useCanvasStore(state => state.activatedUniverseIds);
+  const universeLibrary = useCanvasStore(state => state.universeLibrary);
+
   // 🧠 Track selection state
   useEffect(() => {
     if (selectedId) {
@@ -43,113 +47,125 @@ export default function ChatInterface() {
   }, [selectedId]);
 
   // 🧠 GAP Mode: Build graph structure with compression
+  // Now supports multiple universe graphs for cross-universe analysis
   const buildGraphStructure = () => {
     console.log('🧠 GAP Mode: Building graph structure...');
+    console.log('🧠 Activated universes:', activatedUniverseIds.length);
 
-    if (nexuses.length === 0) {
-      console.log('🧠 GAP Mode: No universe loaded, returning empty structure');
+    if (nexuses.length === 0 && activatedUniverseIds.length === 0) {
+      console.log('🧠 GAP Mode: No universe loaded and no activated universes');
       return null;
     }
 
-    // Get current nexus
-    const currentNexus = selectedId
-      ? nexuses.find(n => n.id === selectedId) || nexuses[0]
-      : nexuses[0];
-
-    if (!currentNexus) {
-      console.log('🧠 GAP Mode: No current nexus found');
-      return null;
+    // 🌌 SYNTHESIS MODE: Empty canvas + activated universes = synthesis opportunity
+    if (nexuses.length === 0 && activatedUniverseIds.length > 0) {
+      console.log('🌌 SYNTHESIS MODE: Empty canvas with', activatedUniverseIds.length, 'activated universes');
+      console.log('🌌 This will trigger cross-universe synthesis and create a new universe');
     }
 
-    console.log('🧠 GAP Mode: Current nexus:', currentNexus.title);
-
-    // Helper function to calculate node level
-    const getNodeLevel = (nodeId: string): number => {
-      let level = 0;
-      let currentId = nodeId;
-      let visited = new Set<string>();
-
-      while (currentId && !visited.has(currentId)) {
-        visited.add(currentId);
-        const node = nodes[currentId];
-        if (!node) break;
-
-        // If parent is a nexus, we're at L1
-        if (nexuses.find(n => n.id === node.parentId)) {
-          return 1;
-        }
-
-        // Otherwise, go up one level
-        level++;
-        currentId = node.parentId;
-
-        // Safety check to prevent infinite loops
-        if (level > 20) break;
+    // 🌌 Helper: Build graph for a single universe from library
+    const buildUniverseGraph = (universeId: string) => {
+      const universe = universeLibrary[universeId];
+      if (!universe) {
+        console.warn('🧠 Universe not found:', universeId);
+        return null;
       }
 
-      return level;
-    };
+      console.log('🧠 Building graph for universe:', universe.title);
 
-    // Collect all nodes in current universe
-    const universeNodes = Object.values(nodes).filter(node => {
-      // Check if node belongs to current universe
-      let currentId = node.id;
-      let visited = new Set<string>();
+      const nexus = universe.nexuses[0]; // Get first nexus
+      if (!nexus) return null;
 
-      while (currentId && !visited.has(currentId)) {
-        visited.add(currentId);
-        if (currentId === currentNexus.id) return true;
-        const n = nodes[currentId];
-        if (!n) break;
-        currentId = n.parentId;
-        if (visited.size > 100) break; // Safety
-      }
+      const universeNodes = Object.values(universe.nodes);
 
-      return false;
-    });
-
-    console.log('🧠 GAP Mode: Found', universeNodes.length, 'nodes in universe');
-
-    // Build compressed node data
-    const compressedNodes = universeNodes.map(node => {
-      const level = getNodeLevel(node.id);
-      const isL1 = level === 1;
-
-      return {
+      // Build FULL node data (no compression for cross-universe analysis)
+      const fullNodes = universeNodes.map(node => ({
         id: node.id,
         type: node.nodeType || 'user-reply',
-        content: isL1 ? node.content : node.content.substring(0, 100) + (node.content.length > 100 ? '...' : ''),
+        content: node.content, // FULL content
         parentId: node.parentId,
-        level: level,
-        position: node.position
+        position: node.position,
+        semanticTitle: node.semanticTitle
+      }));
+
+      const connections = universeNodes.map(node => ({
+        from: node.parentId,
+        to: node.id
+      }));
+
+      return {
+        universeId,
+        nexus: {
+          id: nexus.id,
+          content: nexus.content,
+          title: nexus.title,
+          position: nexus.position
+        },
+        nodes: fullNodes,
+        connections
       };
-    });
-
-    // Build connections
-    const connections = universeNodes.map(node => ({
-      from: node.parentId,
-      to: node.id
-    }));
-
-    const graphStructure = {
-      nexus: {
-        id: currentNexus.id,
-        content: currentNexus.content,
-        title: currentNexus.title,
-        position: currentNexus.position
-      },
-      nodes: compressedNodes,
-      connections: connections
     };
 
-    // Calculate approximate token count
-    const approxTokens = Math.ceil(JSON.stringify(graphStructure).length / 4);
-    console.log('🧠 GAP Mode: Graph structure built');
-    console.log('🧠 GAP Mode: Nodes:', compressedNodes.length);
-    console.log('🧠 GAP Mode: Connections:', connections.length);
-    console.log('🧠 GAP Mode: Approx tokens:', approxTokens);
+    // 🎯 Build current universe graph (if loaded on canvas)
+    let currentGraph = null;
+    if (nexuses.length > 0) {
+      const currentNexus = selectedId
+        ? nexuses.find(n => n.id === selectedId) || nexuses[0]
+        : nexuses[0];
 
-    return graphStructure;
+      if (currentNexus) {
+        console.log('🧠 GAP Mode: Current nexus:', currentNexus.title);
+
+        const universeNodes = Object.values(nodes);
+        const fullNodes = universeNodes.map(node => ({
+          id: node.id,
+          type: node.nodeType || 'user-reply',
+          content: node.content, // FULL content
+          parentId: node.parentId,
+          position: node.position,
+          semanticTitle: node.semanticTitle
+        }));
+
+        const connections = universeNodes.map(node => ({
+          from: node.parentId,
+          to: node.id
+        }));
+
+        currentGraph = {
+          nexus: {
+            id: currentNexus.id,
+            content: currentNexus.content,
+            title: currentNexus.title,
+            position: currentNexus.position
+          },
+          nodes: fullNodes,
+          connections
+        };
+
+        console.log('🧠 Current graph: Nodes:', fullNodes.length);
+      }
+    }
+
+    // 🌌 Build activated universe graphs
+    const activatedGraphs = activatedUniverseIds
+      .map(universeId => buildUniverseGraph(universeId))
+      .filter(graph => graph !== null);
+
+    console.log('🧠 GAP Mode: Built', activatedGraphs.length, 'activated universe graphs');
+
+    // Calculate total tokens
+    const totalData = {
+      current: currentGraph,
+      activated: activatedGraphs
+    };
+    const approxTokens = Math.ceil(JSON.stringify(totalData).length / 4);
+    console.log('🧠 GAP Mode: Total graph data - Approx tokens:', approxTokens);
+
+    return {
+      currentGraph,
+      activatedGraphs,
+      hasMultipleUniverses: activatedGraphs.length > 0
+    };
   };
 
   // 🧠 Build full conversation context
@@ -249,18 +265,22 @@ export default function ChatInterface() {
 
     try {
       // Execute all tasks in parallel using Promise.all
+      console.log(`🚀 GAP Mode: Starting all ${parallelTasks.length} parallel API calls at ${new Date().toISOString()}`);
+      const startTime = Date.now();
+
       const taskPromises = parallelTasks.map(async (task, index) => {
+        const taskStartTime = Date.now();
         try {
-          console.log(`🧠 GAP Mode: Starting task ${index + 1}/${parallelTasks.length}: ${task.substring(0, 50)}...`);
+          console.log(`🧠 GAP Mode: Task ${index + 1}/${parallelTasks.length} starting at t+${Date.now() - startTime}ms: ${task.substring(0, 50)}...`);
 
           const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               mode: 'gap-parallel',
-              graphStructure: graphStructure,
-              task: task,
-              parentContext: graphStructure.nexus.content
+              currentGraph: graphStructure.currentGraph,
+              activatedGraphs: graphStructure.activatedGraphs,
+              task: task
             }),
           });
 
@@ -270,26 +290,33 @@ export default function ChatInterface() {
 
           const data = await response.json();
 
+          const taskDuration = Date.now() - taskStartTime;
+          const totalElapsed = Date.now() - startTime;
+
           // Update progress to complete
           setProgressStatus(prev => ({ ...prev, [index]: 'complete' }));
 
-          console.log(`✅ GAP Mode: Task ${index + 1} complete`);
+          console.log(`✅ GAP Mode: Task ${index + 1} completed at t+${totalElapsed}ms (took ${taskDuration}ms)`);
 
-          return { index, content: data.content, success: true };
+          return { index, content: data.content, success: true, duration: taskDuration };
         } catch (error) {
-          console.error(`❌ GAP Mode: Task ${index + 1} error:`, error);
+          const taskDuration = Date.now() - taskStartTime;
+          const totalElapsed = Date.now() - startTime;
+          console.error(`❌ GAP Mode: Task ${index + 1} failed at t+${totalElapsed}ms (took ${taskDuration}ms):`, error);
 
           // Update progress to error
           setProgressStatus(prev => ({ ...prev, [index]: 'error' }));
 
-          return { index, error: error, success: false };
+          return { index, error: error, success: false, duration: taskDuration };
         }
       });
 
       // Wait for all tasks to complete
       const results = await Promise.all(taskPromises);
 
-      console.log('🧠 GAP Mode: All parallel tasks completed');
+      const totalTime = Date.now() - startTime;
+      const avgTime = results.reduce((sum, r) => sum + (r.duration || 0), 0) / results.length;
+      console.log(`✅ GAP Mode: All ${results.length} parallel tasks completed in ${totalTime}ms (avg task: ${Math.round(avgTime)}ms)`);
 
       // Wait a moment before creating nodes
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -358,6 +385,69 @@ export default function ChatInterface() {
         return;
       }
 
+      // 🌌 SYNTHESIS MODE: Empty canvas + activated universes → create synthesis universe
+      const isSynthesisMode = !graphStructure.currentGraph && graphStructure.activatedGraphs.length > 0;
+
+      if (isSynthesisMode) {
+        console.log('🌌 SYNTHESIS MODE: Creating synthesis universe from', graphStructure.activatedGraphs.length, 'activated universes');
+
+        try {
+          const synthesisResponse = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'gap-synthesize',
+              activatedGraphs: graphStructure.activatedGraphs,
+              question: userMessage
+            }),
+          });
+
+          if (!synthesisResponse.ok) {
+            throw new Error(`Synthesis failed: ${synthesisResponse.statusText}`);
+          }
+
+          const synthesisData = await synthesisResponse.json();
+          console.log('✨ Synthesis universe generated:', synthesisData);
+
+          // Create the synthesis universe (similar to spatial mode)
+          if (synthesisData.spatialData) {
+            const { nexusTitle, nexusContent, nodes } = synthesisData.spatialData;
+
+            // Create nexus
+            createChatNexus(nexusTitle, userMessage, nexusContent);
+            setIsFirstMessage(false);
+
+            // Wait for nexus creation
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
+            if (!chatNexus) {
+              throw new Error('Failed to create synthesis nexus');
+            }
+
+            // Create child nodes
+            for (let i = 0; i < nodes.length; i++) {
+              addNode(nodes[i].content, chatNexus.id, undefined, 'ai-response');
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
+            console.log('✅ Synthesis universe created with', nodes.length, 'nodes');
+
+            // Save to library
+            await new Promise(resolve => setTimeout(resolve, 100));
+            useCanvasStore.getState().saveCurrentUniverse();
+
+            setIsLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error('❌ Synthesis mode failed:', err);
+          setError('Failed to create synthesis universe');
+          setIsLoading(false);
+          return;
+        }
+      }
+
       try {
         // Phase 1: Analyze query with graph context
         console.log('🧠 GAP Mode: Phase 1 - Analyzing query...');
@@ -366,7 +456,8 @@ export default function ChatInterface() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             mode: 'gap-analyze',
-            graphStructure: graphStructure,
+            currentGraph: graphStructure.currentGraph,
+            activatedGraphs: graphStructure.activatedGraphs,
             question: userMessage
           }),
         });
@@ -395,7 +486,8 @@ export default function ChatInterface() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               mode: 'gap-single',
-              graphStructure: graphStructure,
+              currentGraph: graphStructure.currentGraph,
+              activatedGraphs: graphStructure.activatedGraphs,
               question: userMessage
             }),
           });
@@ -689,6 +781,42 @@ export default function ChatInterface() {
             🧠 GAP
           </button>
         </div>
+
+        {/* 🧠 Active Sources Indicator */}
+        {gapModeEnabled && activatedUniverseIds.length > 0 && (
+          <div style={{
+            padding: '8px 12px',
+            backgroundColor: 'rgba(139, 92, 246, 0.15)',
+            border: '1px solid #8B5CF6',
+            borderRadius: '6px',
+            marginBottom: '8px',
+            fontSize: '12px',
+            color: '#8B5CF6',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <span>🌌 Active: {activatedUniverseIds.length} {activatedUniverseIds.length === 1 ? 'universe' : 'universes'}</span>
+            <button
+              onClick={() => {
+                // Navigate to Memories page
+                window.location.href = '/memories';
+              }}
+              style={{
+                padding: '4px 8px',
+                backgroundColor: 'rgba(139, 92, 246, 0.3)',
+                color: '#8B5CF6',
+                border: '1px solid #8B5CF6',
+                borderRadius: '4px',
+                fontSize: '11px',
+                cursor: 'pointer',
+                marginLeft: 'auto'
+              }}
+            >
+              View Sources
+            </button>
+          </div>
+        )}
 
         <textarea
           value={message}

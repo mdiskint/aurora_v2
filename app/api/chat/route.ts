@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
+    // Force rebuild
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error('❌ ANTHROPIC_API_KEY is not defined');
       return NextResponse.json(
@@ -28,25 +29,36 @@ export async function POST(request: NextRequest) {
     console.log('📋 Previous questions:', previousQuestions?.length || 0);
     console.log('📚 Conversation history:', conversationHistory?.length || 0);
 
+    // 🧠 GAP modes use different request structure (question + graphStructure)
+    // Skip messages validation for GAP modes
+    const isGapMode = mode === 'gap-analyze' || mode === 'gap-parallel' || mode === 'gap-single' || mode === 'gap-synthesize';
+
     let userMessage: string;
 
-    if (messages && Array.isArray(messages) && messages.length > 0) {
-      userMessage = messages[messages.length - 1].content;
-      console.log('📨 Extracted from messages array:', userMessage);
+    if (isGapMode) {
+      // GAP modes don't use messages array, skip validation
+      console.log('🧠 GAP mode detected, skipping messages validation');
+      userMessage = ''; // Will be populated by GAP mode handlers
     } else {
-      console.error('❌ No valid message found in request');
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      );
-    }
+      // Standard modes require messages array
+      if (messages && Array.isArray(messages) && messages.length > 0) {
+        userMessage = messages[messages.length - 1].content;
+        console.log('📨 Extracted from messages array:', userMessage);
+      } else {
+        console.error('❌ No valid message found in request');
+        return NextResponse.json(
+          { error: 'Message is required' },
+          { status: 400 }
+        );
+      }
 
-    if (!userMessage || userMessage.trim() === '') {
-      console.error('❌ Message is empty');
-      return NextResponse.json(
-        { error: 'Message cannot be empty' },
-        { status: 400 }
-      );
+      if (!userMessage || userMessage.trim() === '') {
+        console.error('❌ Message is empty');
+        return NextResponse.json(
+          { error: 'Message cannot be empty' },
+          { status: 400 }
+        );
+      }
     }
 
     // 🌌 SPATIAL MODE: Detect "Explore:" prefix or explicit spatial mode
@@ -160,6 +172,7 @@ IMPORTANT:
 
       try {
         // Sanitize JSON: Try parsing as-is first, then with cleanup if needed
+        // Updated: Fixed regex pattern for newline handling
         let spatialData;
         try {
           spatialData = JSON.parse(rawResponse);
@@ -179,9 +192,9 @@ IMPORTANT:
           console.log('🧹 Sanitizing literal newlines in JSON...');
 
           // Strategy: Replace newlines inside quoted strings only
-          // This regex matches string values (including their quotes) and processes them
+          // Use a more robust regex that handles newlines within strings
           cleanedResponse = cleanedResponse.replace(
-            /"([^"]|\\")*"/g,  // Match string values (handles escaped quotes)
+            /"((?:[^"\\]|\\.)*)"/g,  // Match string values with proper escaping
             (match) => {
               return match
                 .replace(/\r\n/g, '\\n')  // Windows line endings
@@ -273,7 +286,7 @@ IMPORTANT:
           }
 
           cleanedResponse = cleanedResponse.replace(
-            /"([^"]|\\")*"/g,
+            /"((?:[^"\\]|\\.)*)"/g,
             (match) => {
               return match
                 .replace(/\r\n/g, '\\n')
@@ -607,35 +620,52 @@ Would you like another question?`;
       });
     }
 
-    // 🧠 GAP MODE: gap-analyze - Analyze query with graph structure
+    // 🧠 GAP MODE: gap-analyze - Analyze query with graph structure (MULTI-UNIVERSE)
     if (mode === 'gap-analyze') {
-      console.log('🧠 GAP MODE: gap-analyze - Analyzing query with graph structure');
+      console.log('🧠 GAP MODE: gap-analyze - Analyzing query with multi-universe context');
 
-      const { graphStructure, question } = body;
+      const { currentGraph, activatedGraphs, question } = body;
 
-      if (!graphStructure) {
-        return NextResponse.json(
-          { error: 'Graph structure required for GAP mode' },
-          { status: 400 }
-        );
-      }
-
-      console.log('🧠 Graph context:', {
-        nexus: graphStructure.nexus.title,
-        nodeCount: graphStructure.nodes.length,
-        connections: graphStructure.connections.length
+      console.log('🧠 Multi-universe context:', {
+        hasCurrentGraph: !!currentGraph,
+        activatedCount: activatedGraphs?.length || 0,
+        question: question?.substring(0, 50)
       });
 
-      const analyzePrompt = `You are analyzing a user's question in the context of their knowledge graph.
+      // Build context from multiple universes
+      let contextSections: string[] = [];
 
-GRAPH STRUCTURE:
-Nexus: ${graphStructure.nexus.title}
-${graphStructure.nexus.content}
+      if (currentGraph) {
+        contextSections.push(`CURRENT UNIVERSE (on canvas):
+Nexus: ${currentGraph.nexus.title}
+${currentGraph.nexus.content}
 
-Existing Nodes (${graphStructure.nodes.length}):
-${graphStructure.nodes.map((n: any, i: number) =>
-  `${i+1}. [L${n.level}] ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
+Nodes (${currentGraph.nodes.length}):
+${currentGraph.nodes.slice(0, 10).map((n: any, i: number) =>
+  `${i+1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
 ).join('\n')}
+${currentGraph.nodes.length > 10 ? `... and ${currentGraph.nodes.length - 10} more nodes` : ''}`);
+      }
+
+      if (activatedGraphs && activatedGraphs.length > 0) {
+        contextSections.push(`\nACTIVATED SOURCE UNIVERSES (${activatedGraphs.length}):`);
+        activatedGraphs.forEach((graph: any, idx: number) => {
+          contextSections.push(`
+Universe ${idx + 1}: ${graph.nexus.title}
+${graph.nexus.content}
+Nodes (${graph.nodes.length}):
+${graph.nodes.slice(0, 5).map((n: any, i: number) =>
+  `  - ${n.type}: ${n.content.substring(0, 80)}...`
+).join('\n')}
+${graph.nodes.length > 5 ? `  ... and ${graph.nodes.length - 5} more nodes` : ''}`);
+        });
+      }
+
+      const graphContext = contextSections.join('\n');
+
+      const analyzePrompt = `You are analyzing a user's question across multiple knowledge universes.
+
+${graphContext}
 
 USER QUESTION: "${question}"
 
@@ -648,12 +678,14 @@ Criteria for PARALLEL:
 - Question can naturally split into independent subtopics
 - Each subtopic can be explored independently without depending on others
 - User says "explore", "break down", "analyze different aspects"
+${activatedGraphs && activatedGraphs.length > 0 ? '- With multiple universes activated, consider tasks that find connections between them' : ''}
 
 Criteria for SINGLE:
 - Question asks for one coherent answer
 - Question requires synthesis across topics
 - Question is about relationships between things (needs integrated answer)
 - Question is a follow-up that builds on existing conversation
+${activatedGraphs && activatedGraphs.length > 0 ? '- Question asks for cross-universe synthesis or comparison' : ''}
 
 Respond in VALID JSON format:
 {
@@ -689,43 +721,65 @@ IMPORTANT: Return ONLY the JSON, no other text.`;
       }
     }
 
-    // 🧠 GAP MODE: gap-parallel - Execute one parallel task with graph awareness
+    // 🧠 GAP MODE: gap-parallel - Execute one parallel task with multi-universe awareness
     if (mode === 'gap-parallel') {
-      console.log('🧠 GAP MODE: gap-parallel - Executing parallel task with graph awareness');
+      console.log('🧠 GAP MODE: gap-parallel - Executing parallel task with multi-universe context');
 
-      const { graphStructure, task, parentContext } = body;
+      const { currentGraph, activatedGraphs, task } = body;
 
-      if (!graphStructure || !task) {
+      if (!task) {
         return NextResponse.json(
-          { error: 'Graph structure and task required for gap-parallel mode' },
+          { error: 'Task required for gap-parallel mode' },
           { status: 400 }
         );
       }
 
       console.log('🧠 Executing task:', task.substring(0, 50) + '...');
-      console.log('🧠 Graph context: Nexus "' + graphStructure.nexus.title + '" with', graphStructure.nodes.length, 'nodes');
+      console.log('🧠 Multi-universe context:', {
+        hasCurrentGraph: !!currentGraph,
+        activatedCount: activatedGraphs?.length || 0
+      });
 
-      const parallelPrompt = `You are exploring a specific aspect within a knowledge graph.
+      // Build context from multiple universes
+      let contextSections: string[] = [];
 
-GRAPH CONTEXT:
-Nexus: ${graphStructure.nexus.title}
-${graphStructure.nexus.content}
+      if (currentGraph) {
+        contextSections.push(`CURRENT UNIVERSE:
+Nexus: ${currentGraph.nexus.title}
+${currentGraph.nexus.content}
 
-Existing explorations (${graphStructure.nodes.length} nodes):
-${graphStructure.nodes.slice(0, 10).map((n: any, i: number) =>
-  `- [L${n.level}] ${n.content.substring(0, 60)}...`
+Existing nodes (${currentGraph.nodes.length}):
+${currentGraph.nodes.slice(0, 8).map((n: any, i: number) =>
+  `- ${n.content.substring(0, 80)}...`
 ).join('\n')}
-${graphStructure.nodes.length > 10 ? `... and ${graphStructure.nodes.length - 10} more nodes` : ''}
+${currentGraph.nodes.length > 8 ? `... and ${currentGraph.nodes.length - 8} more` : ''}`);
+      }
 
-${parentContext ? `Parent context: ${parentContext}` : ''}
+      if (activatedGraphs && activatedGraphs.length > 0) {
+        contextSections.push(`\nACTIVATED UNIVERSES (${activatedGraphs.length} source${activatedGraphs.length > 1 ? 's' : ''}):`);
+        activatedGraphs.forEach((graph: any, idx: number) => {
+          contextSections.push(`
+${idx + 1}. ${graph.nexus.title}
+   ${graph.nexus.content.substring(0, 150)}...
+   Key nodes: ${graph.nodes.slice(0, 3).map((n: any) => n.content.substring(0, 60)).join(' | ')}...`);
+        });
+      }
+
+      const graphContext = contextSections.join('\n');
+
+      const parallelPrompt = `You are exploring a specific aspect across multiple knowledge universes.
+
+${graphContext}
 
 YOUR TASK: ${task}
 
 Provide a comprehensive response (3-5 paragraphs) that:
 1. Explores this specific aspect in depth
-2. Connects to the broader graph context when relevant
-3. Fills gaps in the existing knowledge structure
+2. ${activatedGraphs && activatedGraphs.length > 0 ? 'Draws connections and insights across the activated universes' : 'Connects to the broader graph context when relevant'}
+3. ${activatedGraphs && activatedGraphs.length > 0 ? 'Identifies patterns, contrasts, or synthesis opportunities between universes' : 'Fills gaps in the existing knowledge structure'}
 4. Provides actionable insights or concrete examples
+
+${activatedGraphs && activatedGraphs.length > 0 ? 'IMPORTANT: You have access to multiple universes - find non-obvious connections and synthesize insights across them.' : ''}
 
 Write naturally and substantively. This will become a node in the graph.`;
 
@@ -744,41 +798,186 @@ Write naturally and substantively. This will become a node in the graph.`;
       return NextResponse.json({ content });
     }
 
-    // 🧠 GAP MODE: gap-single - Execute single task with graph awareness
-    if (mode === 'gap-single') {
-      console.log('🧠 GAP MODE: gap-single - Executing single task with graph awareness');
+    // 🌌 GAP MODE: gap-synthesize - Create synthesis universe from activated universes (empty canvas)
+    if (mode === 'gap-synthesize') {
+      console.log('🌌 GAP MODE: gap-synthesize - Creating synthesis universe from activated universes');
 
-      const { graphStructure, question } = body;
+      const { activatedGraphs, question } = body;
 
-      if (!graphStructure || !question) {
+      if (!activatedGraphs || activatedGraphs.length === 0) {
         return NextResponse.json(
-          { error: 'Graph structure and question required for gap-single mode' },
+          { error: 'Activated universes required for synthesis mode' },
+          { status: 400 }
+        );
+      }
+
+      console.log('🌌 Synthesizing from', activatedGraphs.length, 'universes');
+      console.log('🌌 User question:', question?.substring(0, 50));
+
+      // Build context from activated universes
+      const universeContexts = activatedGraphs.map((graph: any, idx: number) => `
+UNIVERSE ${idx + 1}: ${graph.nexus.title}
+Overview: ${graph.nexus.content}
+
+Key Insights (${graph.nodes.length} nodes):
+${graph.nodes.slice(0, 8).map((n: any) => `- ${n.content.substring(0, 120)}...`).join('\n')}
+${graph.nodes.length > 8 ? `... and ${graph.nodes.length - 8} more insights` : ''}
+`).join('\n---\n');
+
+      const synthesisPrompt = `You are creating a NEW synthesis universe that combines insights from multiple activated universes.
+
+USER QUESTION/GOAL: "${question}"
+
+SOURCE UNIVERSES:
+${universeContexts}
+
+Your task: Create a synthesis universe that:
+1. Weaves together the most important insights from ALL source universes
+2. Finds non-obvious connections and patterns across universes
+3. Creates something greater than the sum of its parts
+4. Organizes insights into 5-12 coherent nodes
+5. Addresses the user's question/goal through this synthesis
+
+Format as VALID JSON (ONLY JSON, no other text):
+{
+  "nexusTitle": "Synthesis: [brief title capturing the cross-universe insight]",
+  "nexusContent": "Overview paragraph explaining how this synthesis combines insights from the ${activatedGraphs.length} source universes",
+  "nodes": [
+    {"content": "Synthesis Point 1: Title\\n\\nExplanation that draws from multiple source universes (2-3 sentences)"},
+    {"content": "Synthesis Point 2: Title\\n\\nExplanation that draws from multiple source universes (2-3 sentences)"},
+    ...
+  ]
+}
+
+IMPORTANT:
+- Return ONLY valid JSON, no markdown blocks
+- Use \\n for line breaks (NOT literal newlines)
+- Each node should synthesize across multiple source universes
+- Create 5-12 nodes that comprehensively address the synthesis
+- Node titles should reflect the cross-universe nature of the insights`;
+
+      console.log('📤 Sending synthesis universe generation prompt...');
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: 'You are Aurora AI, a universe synthesis architect. You create new knowledge structures that synthesize insights from multiple source universes. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        messages: [{ role: 'user', content: synthesisPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+
+      console.log('📝 Raw synthesis response:', rawResponse.substring(0, 200));
+
+      try {
+        let spatialData;
+        try {
+          spatialData = JSON.parse(rawResponse);
+        } catch (firstError) {
+          console.log('⚠️ Initial parse failed, attempting cleanup...');
+
+          let cleanedResponse = rawResponse.trim();
+          if (cleanedResponse.startsWith('```json')) {
+            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
+          } else if (cleanedResponse.startsWith('```')) {
+            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
+          }
+
+          cleanedResponse = cleanedResponse.replace(
+            /"((?:[^"\\]|\\.)*)"/g,
+            (match) => {
+              return match
+                .replace(/\r\n/g, '\\n')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\n')
+                .replace(/\t/g, '\\t');
+            }
+          );
+
+          spatialData = JSON.parse(cleanedResponse);
+        }
+
+        console.log('✅ Successfully parsed synthesis universe:', {
+          title: spatialData.nexusTitle,
+          nodeCount: spatialData.nodes?.length || 0
+        });
+
+        return NextResponse.json({
+          response: `Created synthesis universe from ${activatedGraphs.length} source universes`,
+          spatialData
+        });
+      } catch (parseError) {
+        console.error('❌ Failed to parse synthesis JSON:', parseError);
+        console.error('Raw response was:', rawResponse);
+        return NextResponse.json(
+          { error: 'Failed to parse synthesis universe structure' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 🧠 GAP MODE: gap-single - Execute single task with multi-universe awareness
+    if (mode === 'gap-single') {
+      console.log('🧠 GAP MODE: gap-single - Executing single task with multi-universe context');
+
+      const { currentGraph, activatedGraphs, question } = body;
+
+      if (!question) {
+        return NextResponse.json(
+          { error: 'Question required for gap-single mode' },
           { status: 400 }
         );
       }
 
       console.log('🧠 Question:', question.substring(0, 50) + '...');
-      console.log('🧠 Graph context: Nexus "' + graphStructure.nexus.title + '" with', graphStructure.nodes.length, 'nodes');
+      console.log('🧠 Multi-universe context:', {
+        hasCurrentGraph: !!currentGraph,
+        activatedCount: activatedGraphs?.length || 0
+      });
 
-      const singlePrompt = `You are responding to a question within the context of a knowledge graph.
+      // Build context from multiple universes
+      let contextSections: string[] = [];
 
-GRAPH STRUCTURE:
-Nexus: ${graphStructure.nexus.title}
-${graphStructure.nexus.content}
+      if (currentGraph) {
+        contextSections.push(`CURRENT UNIVERSE:
+Nexus: ${currentGraph.nexus.title}
+${currentGraph.nexus.content}
 
-Existing explorations (${graphStructure.nodes.length} nodes):
-${graphStructure.nodes.map((n: any, i: number) =>
-  `${i+1}. [L${n.level}] ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
-).join('\n')}
+Existing nodes (${currentGraph.nodes.length}):
+${currentGraph.nodes.map((n: any, i: number) =>
+  `${i+1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
+).join('\n')}`);
+      }
+
+      if (activatedGraphs && activatedGraphs.length > 0) {
+        contextSections.push(`\nACTIVATED SOURCE UNIVERSES (${activatedGraphs.length}):`);
+        activatedGraphs.forEach((graph: any, idx: number) => {
+          contextSections.push(`
+Universe ${idx + 1}: ${graph.nexus.title}
+${graph.nexus.content}
+Key nodes: ${graph.nodes.slice(0, 5).map((n: any, i: number) =>
+  `${n.type}: ${n.content.substring(0, 100)}...`
+).join(' | ')}`);
+        });
+      }
+
+      const graphContext = contextSections.join('\n');
+
+      const singlePrompt = `You are responding to a question across multiple knowledge universes.
+
+${graphContext}
 
 USER QUESTION: "${question}"
 
 Provide a comprehensive response that:
 1. Directly answers the question
-2. Builds on existing knowledge in the graph
-3. Identifies gaps and suggests new directions
-4. Synthesizes connections across the graph when relevant
+2. ${activatedGraphs && activatedGraphs.length > 0 ? 'Synthesizes insights from all activated universes' : 'Builds on existing knowledge in the graph'}
+3. ${activatedGraphs && activatedGraphs.length > 0 ? 'Identifies patterns, contrasts, and connections across universes' : 'Identifies gaps and suggests new directions'}
+4. ${activatedGraphs && activatedGraphs.length > 0 ? 'Creates a unified synthesis that transcends individual universes' : 'Synthesizes connections across the graph when relevant'}
 5. Provides concrete examples or actionable insights
+
+${activatedGraphs && activatedGraphs.length > 0 ? 'IMPORTANT: You have access to multiple universes - your response should weave together insights from all sources to create something greater than the sum of its parts.' : ''}
 
 Write naturally (3-6 paragraphs). This will become a node in the graph.`;
 
