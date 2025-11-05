@@ -2,6 +2,8 @@
 import React from 'react';
 import SectionNavigator from './SectionNavigator';
 import UnifiedNodeModal from './UnifiedNodeModal';
+import MemoryPalaceScene from './MemoryPalaceScene';
+import { TransitionAnimation, TransitionOverlay } from './MemoryPalaceTransition';
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Line, Text3D, Html, Points, PointMaterial } from '@react-three/drei';
@@ -1984,6 +1986,11 @@ export default function CanvasScene() {
   const universeLibrary = useCanvasStore((state) => state.universeLibrary);
   const renameUniverse = useCanvasStore((state) => state.renameUniverse);
 
+  // 🏛️ Memory Palace Mode
+  const isMemoryPalaceMode = useCanvasStore((state) => state.isMemoryPalaceMode);
+  const isTransitioning = useCanvasStore((state) => state.isTransitioning);
+  const toggleMemoryPalaceMode = useCanvasStore((state) => state.toggleMemoryPalaceMode);
+
   const [isHoldingShift, setIsHoldingShift] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -2127,8 +2134,46 @@ export default function CanvasScene() {
     };
   }, []);
 
+  // 🏛️ If Memory Palace Mode is active, render that instead
+  if (isMemoryPalaceMode) {
+    return <MemoryPalaceScene />;
+  }
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
+      {/* 🏛️ Memory Palace Mode Toggle Button */}
+      {hasUniverse && (
+        <button
+          onClick={toggleMemoryPalaceMode}
+          style={{
+            position: 'absolute',
+            top: '80px',
+            right: '20px',
+            padding: '12px 24px',
+            backgroundColor: '#8B5CF6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            zIndex: 1000,
+            boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#7C3AED';
+            e.currentTarget.style.transform = 'scale(1.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#8B5CF6';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          🏛️ Memory Palace Mode
+        </button>
+      )}
+
       <Controls />
 
       {/* Universe Title - editable on right-click (only for single universe) */}
@@ -2225,9 +2270,21 @@ export default function CanvasScene() {
       <UnifiedNodeModal />
       <ConnectionModeHint isHoldingShift={isHoldingShift} selectedCount={selectedNodesForConnection.length} />
       {hasUniverse && <SectionNavigator />}
+
+      {/* 🏛️ Transition overlay */}
+      {isTransitioning && <TransitionOverlay />}
+
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-        <Scene isHoldingShift={isHoldingShift} />
-        <CameraPositionManager />
+        {isTransitioning ? (
+          // Show transition animation when entering Memory Palace
+          <TransitionAnimation />
+        ) : (
+          // Normal scene
+          <>
+            <Scene isHoldingShift={isHoldingShift} />
+            <CameraPositionManager />
+          </>
+        )}
       </Canvas>
     </div>
   );

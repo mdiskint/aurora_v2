@@ -237,6 +237,44 @@ export default function MemoriesPage() {
     universesByFolder[folderId][universeId] = universeData;
   });
 
+  // 🔍 DIAGNOSTIC: Log folder grouping
+  console.log('📁 ==========================================');
+  console.log('📁 MEMORIES PAGE - Universe Grouping');
+  console.log('📁 Total universes in library:', Object.keys(universeLibrary).length);
+  console.log('📁 Total folders:', Object.keys(folders).length);
+  Object.entries(folders).forEach(([id, folder]) => {
+    const count = Object.keys(universesByFolder[id] || {}).length;
+    console.log(`📁   - ${folder.name} [${id}]: ${count} universes`);
+    if (count > 0) {
+      Object.entries(universesByFolder[id] || {}).forEach(([uId, uData]) => {
+        console.log(`📁     • ${uData.title.substring(0, 50)}`);
+      });
+    }
+  });
+
+  // Check for orphaned universes (folderId doesn't match any folder)
+  const orphanedUniverses = Object.entries(universeLibrary).filter(([id, data]) => {
+    const folderId = data.folderId || 'default';
+    return !folders[folderId];
+  });
+  if (orphanedUniverses.length > 0) {
+    console.warn('📁 ⚠️ ORPHANED UNIVERSES (folderId not in folders):', orphanedUniverses.length);
+    orphanedUniverses.forEach(([id, data]) => {
+      console.warn(`📁   • ${data.title} - folderId: "${data.folderId}"`);
+    });
+  }
+
+  // Check if there are folders in universesByFolder that don't exist in folders
+  const extraFolderIds = Object.keys(universesByFolder).filter(id => !folders[id]);
+  if (extraFolderIds.length > 0) {
+    console.warn('📁 ⚠️ UNIVERSES GROUPED UNDER NON-EXISTENT FOLDERS:', extraFolderIds);
+    extraFolderIds.forEach(folderId => {
+      console.warn(`📁   • Folder ID "${folderId}": ${Object.keys(universesByFolder[folderId]).length} universes`);
+    });
+  }
+
+  console.log('📁 ==========================================');
+
   const folderColors = ['#8B5CF6', '#00FFD4', '#FFD700', '#10B981', '#EF4444', '#F59E0B'];
 
   return (

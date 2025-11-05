@@ -27,6 +27,36 @@ if (typeof window !== 'undefined') {
       console.log('📚 ==========================================');
       return library;
     },
+    showFolders: () => {
+      console.log('📁 ==========================================');
+      console.log('📁 FOLDER DIAGNOSTICS');
+
+      // Check localStorage
+      const data = localStorage.getItem('aurora-portal-data');
+      if (!data) {
+        console.log('📁 ❌ No aurora-portal-data found in localStorage');
+        return;
+      }
+      const parsed = JSON.parse(data);
+      const foldersInStorage = parsed.folders || {};
+      console.log('📁 Folders in localStorage:', Object.keys(foldersInStorage).length);
+      Object.entries(foldersInStorage).forEach(([id, folder]: any) => {
+        console.log(`📁   - ${folder.name} (${folder.color}) [${id}]`);
+      });
+
+      // Check current Zustand state
+      const store = (window as any).auroraStore;
+      if (store) {
+        const currentFolders = store.getState().folders;
+        console.log('📁 Folders in current state:', Object.keys(currentFolders).length);
+        Object.entries(currentFolders).forEach(([id, folder]: any) => {
+          console.log(`📁   - ${folder.name} (${folder.color}) [${id}]`);
+        });
+      }
+
+      console.log('📁 ==========================================');
+      return { storage: foldersInStorage, state: store?.getState().folders };
+    },
     clearLibrary: () => {
       localStorage.removeItem('aurora-portal-data');
       console.log('🗑️ Library cleared from localStorage');
@@ -39,6 +69,30 @@ if (typeof window !== 'undefined') {
       } else {
         console.error('❌ Store not available yet');
         return false;
+      }
+    },
+    cleanupOrphaned: () => {
+      console.log('🧹 Cleaning up orphaned universes...');
+      const store = (window as any).auroraStore;
+      if (store) {
+        const result = store.getState().cleanupOrphanedUniverses();
+        console.log(`✅ Deleted ${result.deleted} orphaned universes`);
+        return result;
+      } else {
+        console.error('❌ Store not available yet');
+        return { deleted: 0, migrated: 0 };
+      }
+    },
+    fixOrphaned: () => {
+      console.log('🔧 Fixing orphaned universes...');
+      const store = (window as any).auroraStore;
+      if (store) {
+        const count = store.getState().fixOrphanedUniverses();
+        console.log(`✅ Fixed ${count} orphaned universes`);
+        return count;
+      } else {
+        console.error('❌ Store not available yet');
+        return 0;
       }
     },
     showActive: () => {
@@ -367,7 +421,7 @@ interface CanvasStore {
 
   // 📸 SNAPSHOT SYSTEM
   createSnapshot: (universeId: string) => void;
-  revertToOriginal: (nexusId: string) => void;
+  revertToOriginal: (universeId: string) => void;
 
   saveToLocalStorage: () => void;
   loadFromLocalStorage: () => void;
@@ -397,6 +451,8 @@ interface CanvasStore {
   renameFolder: (folderId: string, newName: string) => void;
   deleteFolder: (folderId: string) => void;
   moveUniverseToFolder: (universeId: string, folderId: string) => void;
+  cleanupOrphanedUniverses: () => { deleted: number; migrated: number };
+  fixOrphanedUniverses: () => number;
 
   // 🔬 ATOMIZE UNIVERSE
   atomizeUniverse: (
@@ -412,6 +468,16 @@ interface CanvasStore {
   clearActivatedUniverses: () => void;
   isUniverseActivated: (universeId: string) => boolean;
   getL1Nodes: (universeId: string) => Node[];
+
+  // 🏛️ MEMORY PALACE MODE
+  isMemoryPalaceMode: boolean;
+  memoryPalaceCurrentIndex: number;
+  isTransitioning: boolean;
+  toggleMemoryPalaceMode: () => void;
+  navigateToNextNode: () => void;
+  navigateToPreviousNode: () => void;
+  setMemoryPalaceIndex: (index: number) => void;
+  setIsTransitioning: (isTransitioning: boolean) => void;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -426,6 +492,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🧠 UNIVERSE ACTIVATION - For GAP Mode cross-universe analysis
   activatedUniverseIds: [],
   maxActivatedUniverses: 5,
+
+  // 🏛️ MEMORY PALACE MODE
+  isMemoryPalaceMode: false,
+  memoryPalaceCurrentIndex: 0,
+  isTransitioning: false,
 
   // 📁 FOLDER SYSTEM - Start with default folder
   folders: {
@@ -681,6 +752,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         activatedConversations = data.activatedConversations || [];
         originalSnapshots = data.originalSnapshots || {};
 
+        console.log('📂 🔍 MIGRATION: Folders from localStorage:', Object.keys(folders).length);
+        if (Object.keys(folders).length > 0) {
+          Object.entries(folders).forEach(([id, folder]: [string, any]) => {
+            console.log(`📂 🔍 MIGRATION:   - ${folder.name} [${id}]`);
+          });
+        }
+
         const universeCount = Object.keys(universeLibrary).length;
         if (universeCount > 0) {
           console.log('⚙️ MIGRATING', universeCount, 'universes from localStorage to IndexedDB...');
@@ -693,24 +771,48 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         }
       } else {
         // Load folders, snapshots and activated conversations from localStorage (could move to IndexedDB later)
+        console.log('📂 IndexedDB has universes, loading folders from localStorage...');
         const localData = localStorage.getItem('aurora-portal-data');
         if (localData) {
           const data = JSON.parse(localData);
+          console.log('📂 🔍 Raw localStorage data.folders:', data.folders);
+          console.log('📂 🔍 Folders in localStorage:', Object.keys(data.folders || {}).length);
+          if (data.folders) {
+            Object.entries(data.folders).forEach(([id, folder]: [string, any]) => {
+              console.log(`📂 🔍   - Found: ${folder.name} [${id}]`);
+            });
+          }
           folders = data.folders || {};
           activatedConversations = data.activatedConversations || [];
           originalSnapshots = data.originalSnapshots || {};
+        } else {
+          console.warn('📂 ⚠️ No localStorage data found despite IndexedDB having universes!');
         }
       }
 
       const universeCount = Object.keys(universeLibrary).length;
 
+      console.log('📂 ==========================================');
+      console.log('📂 LOADED DATA SUMMARY:');
       console.log('📂 Universes in library:', universeCount);
 
       if (universeCount > 0) {
         Object.entries(universeLibrary).forEach(([id, uData]: [string, any]) => {
-          console.log(`📂   - ${uData.title} (${uData.nexuses.length} nexuses, ${Object.keys(uData.nodes).length} nodes)`);
+          console.log(`📂   - ${uData.title} (${uData.nexuses.length} nexuses, ${Object.keys(uData.nodes).length} nodes, folder: ${uData.folderId || 'NONE'})`);
         });
       }
+
+      // 🔍 DIAGNOSTIC: Show what folders were loaded
+      const loadedFoldersCount = Object.keys(folders).length;
+      console.log('📂 Folders loaded:', loadedFoldersCount);
+      if (loadedFoldersCount > 0) {
+        Object.entries(folders).forEach(([id, folder]: [string, any]) => {
+          console.log(`📂   - ${folder.name} (${folder.color}) [${id}]`);
+        });
+      } else {
+        console.warn('📂 ⚠️ NO FOLDERS LOADED! This will cause folders to reset to default only.');
+      }
+      console.log('📂 ==========================================');
 
       // Ensure default folder exists
       if (!folders['default']) {
@@ -737,6 +839,29 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       if (migrationCount > 0) {
         console.log(`✅ Migrated ${migrationCount} universes to Uncategorized folder`);
       }
+
+      // 🔧 FIX ORPHANED: Move universes with invalid folderId to default
+      const folderIds = Object.keys(folders);
+      let orphanedFixed = 0;
+      Object.keys(universeLibrary).forEach(id => {
+        const folderId = universeLibrary[id].folderId || 'default';
+        if (!folderIds.includes(folderId)) {
+          console.log(`🔧 Fixing orphaned universe: "${universeLibrary[id].title}" (${folderId} → default)`);
+          universeLibrary[id].folderId = 'default';
+          orphanedFixed++;
+        }
+      });
+      if (orphanedFixed > 0) {
+        console.log(`✅ Auto-fixed ${orphanedFixed} orphaned universes during load`);
+      }
+
+      // 🔍 DIAGNOSTIC: Log what's about to be set in state
+      console.log('📂 🔍 SETTING STATE WITH:');
+      console.log('📂 🔍   - Universes:', Object.keys(universeLibrary).length);
+      console.log('📂 🔍   - Folders:', Object.keys(folders).length);
+      Object.entries(folders).forEach(([id, folder]: [string, any]) => {
+        console.log(`📂 🔍     • ${folder.name} [${id}]`);
+      });
 
       set({
         universeLibrary,
@@ -2811,32 +2936,52 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   },
 
   // 🔄 REVERT TO ORIGINAL - Keep only nexus + L1 nodes
-  revertToOriginal: (nexusId: string) => {
+  revertToOriginal: (universeId: string) => {
     console.log('🔄 ==========================================');
     console.log('🔄 REVERT TO ORIGINAL:', new Date().toLocaleTimeString());
-    console.log('🔄   Universe ID:', nexusId);
+    console.log('🔄   Universe ID:', universeId);
 
     try {
       const state = get();
 
-      // Check if universe exists in library
-      if (!state.universeLibrary[nexusId]) {
-        console.error('🔄   ❌ Universe not found in library');
-        console.error('🔄   Looking for ID:', nexusId);
-        console.error('🔄   Available IDs:', Object.keys(state.universeLibrary));
+      // 🛡️ VALIDATION: Check ID format
+      if (!universeId?.startsWith('universe-')) {
+        console.error('🔄   ❌ INVALID ID FORMAT');
+        console.error('🔄   Received:', universeId);
+        console.error('🔄   Expected format: universe-XXXXXXXXXX');
+        console.error('🔄   This may be a nexus ID instead of universe ID!');
 
         if (typeof window !== 'undefined') {
-          alert(`⚠️ Cannot revert: Universe not found in library!\n\nLooking for: ${nexusId}\n\nThis may happen if the universe wasn't saved before export.`);
+          alert(`⚠️ Cannot revert: Invalid universe ID!\n\nReceived: ${universeId}\n\nExpected format: universe-XXXXXXXXXX\n\nThis is likely a bug - please report it.`);
         }
         return;
       }
 
-      const universe = state.universeLibrary[nexusId];
+      // Check if universe exists in library
+      if (!state.universeLibrary[universeId]) {
+        console.error('🔄   ❌ Universe not found in library');
+        console.error('🔄   Looking for ID:', universeId);
+        console.error('🔄   Available IDs:', Object.keys(state.universeLibrary));
+
+        if (typeof window !== 'undefined') {
+          alert(`⚠️ Cannot revert: Universe not found in library!\n\nLooking for: ${universeId}\n\nThis may happen if the universe wasn't saved before export.`);
+        }
+        return;
+      }
+
+      const universe = state.universeLibrary[universeId];
       console.log('🔄   Universe title:', universe.title);
       console.log('🔄   Total nodes before:', Object.keys(universe.nodes).length);
 
+      // Get nexus ID from the universe
+      const universeNexusId = universe.nexuses[0]?.id;
+      if (!universeNexusId) {
+        console.error('🔄   ❌ No nexus found in universe');
+        return;
+      }
+
       // Check if snapshot exists
-      const snapshot = state.originalSnapshots[nexusId];
+      const snapshot = state.originalSnapshots[universeId];
 
       let restoredNodes: { [id: string]: Node };
       let restoredNexuses: Nexus[];
@@ -2864,7 +3009,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
         restoredNodes = {};
         Object.entries(universe.nodes).forEach(([nodeId, node]) => {
-          if (node.parentId === nexusId) {
+          if (node.parentId === universeNexusId) {
             restoredNodes[nodeId] = node;
           }
         });
@@ -2881,7 +3026,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       set((state) => {
         const updatedLibrary = {
           ...state.universeLibrary,
-          [nexusId]: {
+          [universeId]: {
             ...universe,
             nexuses: restoredNexuses,
             nodes: restoredNodes,
@@ -2890,7 +3035,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         };
 
         // If this is the active universe, update canvas state
-        if (state.activeUniverseId === nexusId) {
+        if (state.activeUniverseId === universeId) {
           console.log('🔄   Updating active canvas state');
           return {
             universeLibrary: updatedLibrary,
@@ -2917,7 +3062,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       console.error('❌ ==========================================');
       console.error('❌ CRITICAL ERROR in revertToOriginal:', error);
       console.error('❌   Error message:', (error as Error).message);
-      console.error('❌   Universe ID:', nexusId);
+      console.error('❌   Universe ID:', universeId);
       console.error('❌ ==========================================');
 
       if (typeof window !== 'undefined') {
@@ -3511,6 +3656,61 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     get().saveToLocalStorage();
   },
 
+  // 🧹 CLEANUP: Delete orphaned universes (universes whose folder no longer exists)
+  cleanupOrphanedUniverses: () => {
+    const state = get();
+    const folderIds = Object.keys(state.folders);
+    let deleted = 0;
+    let migrated = 0;
+
+    const updatedLibrary = { ...state.universeLibrary };
+
+    Object.entries(state.universeLibrary).forEach(([universeId, universeData]) => {
+      const folderId = universeData.folderId || 'default';
+
+      // If the folder doesn't exist, delete the universe
+      if (!folderIds.includes(folderId)) {
+        console.log(`🧹 Deleting orphaned universe: "${universeData.title}" (folder: ${folderId})`);
+        delete updatedLibrary[universeId];
+        deleted++;
+      }
+    });
+
+    set({ universeLibrary: updatedLibrary });
+    get().saveToLocalStorage();
+
+    console.log(`🧹 Cleanup complete: Deleted ${deleted} orphaned universes`);
+    return { deleted, migrated };
+  },
+
+  // 🔧 FIX: Migrate orphaned universes to default folder instead of deleting
+  fixOrphanedUniverses: () => {
+    const state = get();
+    const folderIds = Object.keys(state.folders);
+    let fixed = 0;
+
+    const updatedLibrary = { ...state.universeLibrary };
+
+    Object.entries(state.universeLibrary).forEach(([universeId, universeData]) => {
+      const folderId = universeData.folderId || 'default';
+
+      // If the folder doesn't exist, move to default
+      if (!folderIds.includes(folderId)) {
+        console.log(`🔧 Fixing orphaned universe: "${universeData.title}" (${folderId} → default)`);
+        updatedLibrary[universeId].folderId = 'default';
+        fixed++;
+      }
+    });
+
+    if (fixed > 0) {
+      set({ universeLibrary: updatedLibrary });
+      get().saveToLocalStorage();
+      console.log(`🔧 Fixed ${fixed} orphaned universes by moving to Uncategorized`);
+    }
+
+    return fixed;
+  },
+
   // 🔬 ATOMIZE UNIVERSE
   getL1Nodes: (universeId: string): Node[] => {
     const state = get();
@@ -3593,6 +3793,68 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
   isUniverseActivated: (universeId: string): boolean => {
     return get().activatedUniverseIds.includes(universeId);
+  },
+
+  // 🏛️ MEMORY PALACE MODE FUNCTIONS
+  toggleMemoryPalaceMode: () => {
+    const state = get();
+    const newMode = !state.isMemoryPalaceMode;
+    console.log(`🏛️ Memory Palace Mode: ${newMode ? 'ENABLED' : 'DISABLED'}`);
+
+    if (newMode) {
+      // Entering Memory Palace: Start transition animation
+      set({ isTransitioning: true });
+
+      // After 2 seconds, complete transition
+      setTimeout(() => {
+        set({
+          isMemoryPalaceMode: true,
+          memoryPalaceCurrentIndex: 0,
+          isTransitioning: false
+        });
+      }, 2000);
+    } else {
+      // Exiting Memory Palace: Instant switch (or could add exit animation)
+      set({
+        isMemoryPalaceMode: false,
+        memoryPalaceCurrentIndex: 0
+      });
+    }
+  },
+
+  setIsTransitioning: (isTransitioning: boolean) => {
+    set({ isTransitioning });
+  },
+
+  navigateToNextNode: () => {
+    const state = get();
+    const totalNodes = Object.keys(state.nodes).length;
+
+    if (totalNodes === 0) return;
+
+    const nextIndex = (state.memoryPalaceCurrentIndex + 1) % totalNodes;
+    console.log(`🏛️ Navigating to next node: ${nextIndex} / ${totalNodes}`);
+
+    set({ memoryPalaceCurrentIndex: nextIndex });
+  },
+
+  navigateToPreviousNode: () => {
+    const state = get();
+    const totalNodes = Object.keys(state.nodes).length;
+
+    if (totalNodes === 0) return;
+
+    const prevIndex = state.memoryPalaceCurrentIndex === 0
+      ? totalNodes - 1
+      : state.memoryPalaceCurrentIndex - 1;
+
+    console.log(`🏛️ Navigating to previous node: ${prevIndex} / ${totalNodes}`);
+
+    set({ memoryPalaceCurrentIndex: prevIndex });
+  },
+
+  setMemoryPalaceIndex: (index: number) => {
+    set({ memoryPalaceCurrentIndex: index });
   },
 
   atomizeUniverse: async (

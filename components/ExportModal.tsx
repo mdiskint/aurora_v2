@@ -15,6 +15,7 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const nodes = useCanvasStore((state) => state.nodes);
   const selectedId = useCanvasStore((state) => state.selectedId);
   const revertToOriginal = useCanvasStore((state) => state.revertToOriginal);
+  const activeUniverseId = useCanvasStore((state) => state.activeUniverseId);
 
   const [exportType, setExportType] = useState<'full' | 'analysis'>('full');
   const [exportFormat, setExportFormat] = useState<'word' | 'pdf'>('word');
@@ -133,7 +134,11 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
       // 📸 CRITICAL: Create snapshot before first export if none exists
       console.log('📸 Checking for snapshot...');
-      useCanvasStore.getState().createSnapshot(currentNexus.id);
+      console.log('📸 Using activeUniverseId:', activeUniverseId);
+      if (!activeUniverseId) {
+        throw new Error('No active universe ID found');
+      }
+      useCanvasStore.getState().createSnapshot(activeUniverseId);
       console.log('✅ Snapshot check complete');
 
       const response = await fetch('/api/export-universe', {
@@ -186,12 +191,12 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
       }
 
       console.log('✅ Document exported successfully:', baseFilename);
-      console.log('📄 EXPORT: Setting exportedNexusId to:', currentNexus.id);
+      console.log('📄 EXPORT: Setting exportedNexusId to:', activeUniverseId);
       console.log('📄 EXPORT: Current nexus title:', currentNexus.title);
-      console.log('📄 EXPORT: Universe exists in library?', !!useCanvasStore.getState().universeLibrary[currentNexus.id]);
+      console.log('📄 EXPORT: Universe exists in library?', !!useCanvasStore.getState().universeLibrary[activeUniverseId || '']);
 
       setExportSuccess(true);
-      setExportedNexusId(currentNexus.id);
+      setExportedNexusId(activeUniverseId || null);
 
       // Show revert modal after a short delay for better UX
       setTimeout(() => {
