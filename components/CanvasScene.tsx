@@ -2,11 +2,10 @@
 import React from 'react';
 import SectionNavigator from './SectionNavigator';
 import UnifiedNodeModal from './UnifiedNodeModal';
-import MemoryPalaceScene from './MemoryPalaceScene';
-import { TransitionAnimation, TransitionOverlay } from './MemoryPalaceTransition';
+import ApplicationLabScene from './ApplicationLabScene';
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid, Line, Text3D, Html, Points, PointMaterial } from '@react-three/drei';
+import { OrbitControls, Grid, Line, Text3D, Html, Points, PointMaterial, Text } from '@react-three/drei';
 import { useCanvasStore } from '@/lib/store';
 import CreateNexusModal from './CreateNexusModal';
 import * as THREE from 'three';
@@ -1605,6 +1604,11 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
           nodeOpacity = 1 - fadingUniverse.progress; // Fade from 1 to 0
         }
 
+        // 🔒 LOCKED STATE: Grey transparent appearance for locked nodes
+        if (node.isLocked) {
+          nodeOpacity = 0.3; // 30% opacity for locked nodes
+        }
+
         // 🚀 DRAG-TO-BREAK: Override position if this node is being dragged
         const isBeingDragged = draggedNode === node.id;
         const displayNode = isBeingDragged && dragCurrentPosition
@@ -1642,18 +1646,23 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
 let Geometry;
 let nodeColor = baseColor;
 
+// 🔒 Override color for locked nodes (grey)
+if (node.isLocked) {
+  nodeColor = "#808080"; // Grey color for locked nodes
+}
+
 if (node.nodeType === 'synthesis') {
   // Synthesis nodes: Gem-like icosahedron (cyan)
   Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
-  nodeColor = "#00FFFF";
+  nodeColor = node.isLocked ? "#808080" : "#00FFFF";
 } else if (node.nodeType === 'ai-response') {
   // AI responses: Deep burnt orange sphere (wireframe)
   Geometry = <sphereGeometry args={[size, 32, 32]} />;
-  nodeColor = "#D2691E"; // Deep burnt orange
+  nodeColor = node.isLocked ? "#808080" : "#D2691E"; // Deep burnt orange
 } else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
   // Inspiration/Socratic questions: Dodecahedron star (gold)
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
-  nodeColor = "#FFD700";
+  nodeColor = node.isLocked ? "#808080" : "#FFD700";
 }
 // Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
 
@@ -1673,6 +1682,12 @@ if (node.nodeType === 'synthesis') {
         onPointerDown={(e: any) => handleNodePointerDown(e, node)}
         onClick={(e: any) => {
           e.stopPropagation();
+
+          // 🔒 Block locked nodes
+          if (node.isLocked) {
+            console.log('🔒 Node is locked:', node.id);
+            return;
+          }
 
           // NEW: Multi-node connection mode (hold Shift)
           if (isHoldingShift) {
@@ -1730,6 +1745,12 @@ if (node.nodeType === 'synthesis') {
         onClick={(e: any) => {
           e.stopPropagation();
 
+          // 🔒 Block locked nodes
+          if (node.isLocked) {
+            console.log('🔒 Node is locked:', node.id);
+            return;
+          }
+
           // NEW: Multi-node connection mode (hold Shift)
           if (isHoldingShift) {
             console.log('🔗 Adding node to selection (Shift held):', node.id);
@@ -1783,6 +1804,12 @@ if (node.nodeType === 'synthesis') {
         onPointerDown={(e: any) => handleNodePointerDown(e, node)}
         onClick={(e: any) => {
           e.stopPropagation();
+
+          // 🔒 Block locked nodes
+          if (node.isLocked) {
+            console.log('🔒 Node is locked:', node.id);
+            return;
+          }
 
           // NEW: Multi-node connection mode (hold Shift)
           if (isHoldingShift) {
@@ -1878,6 +1905,25 @@ if (node.nodeType === 'synthesis') {
             {/* Anchor Indicator - Sparkles orbiting around anchored nodes */}
             {node.isAnchored && (
               <NodeSparkles position={displayNode.position} opacity={nodeOpacity} />
+            )}
+
+            {/* 🔒 Lock Icon for locked nodes */}
+            {node.isLocked && (
+              <Text
+                position={[
+                  displayNode.position[0],
+                  displayNode.position[1] + size * 1.8,
+                  displayNode.position[2]
+                ]}
+                fontSize={0.4}
+                color="#FFFFFF"
+                anchorX="center"
+                anchorY="middle"
+                outlineWidth={0.02}
+                outlineColor="#000000"
+              >
+                🔒
+              </Text>
             )}
           </group>
         );
@@ -1986,10 +2032,14 @@ export default function CanvasScene() {
   const universeLibrary = useCanvasStore((state) => state.universeLibrary);
   const renameUniverse = useCanvasStore((state) => state.renameUniverse);
 
-  // 🏛️ Memory Palace Mode
-  const isMemoryPalaceMode = useCanvasStore((state) => state.isMemoryPalaceMode);
-  const isTransitioning = useCanvasStore((state) => state.isTransitioning);
-  const toggleMemoryPalaceMode = useCanvasStore((state) => state.toggleMemoryPalaceMode);
+  // 🔬 Application Lab Mode
+  const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
+  const enableApplicationLabMode = useCanvasStore((state) => state.enableApplicationLabMode);
+
+  // 🔬 Monitor Application Lab Mode state changes
+  useEffect(() => {
+    console.log('🔬🔬🔬 APPLICATION LAB MODE STATE CHANGED:', isApplicationLabMode);
+  }, [isApplicationLabMode]);
 
   const [isHoldingShift, setIsHoldingShift] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -2134,43 +2184,51 @@ export default function CanvasScene() {
     };
   }, []);
 
-  // 🏛️ If Memory Palace Mode is active, render that instead
-  if (isMemoryPalaceMode) {
-    return <MemoryPalaceScene />;
-  }
+  // Debug logging
+  console.log('🔬 CanvasScene render - isApplicationLabMode:', isApplicationLabMode);
 
-  return (
+  // 🔬 Main content (will be wrapped by ApplicationLabScene if in Application Lab mode)
+  const mainContent = (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
-      {/* 🏛️ Memory Palace Mode Toggle Button */}
-      {hasUniverse && (
+      {/* 🔬 Application Lab Toggle Button - hidden when in Application Lab mode */}
+      {hasUniverse && !isApplicationLabMode && (
         <button
-          onClick={toggleMemoryPalaceMode}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            console.log('🔬 ========== APPLICATION LAB BUTTON CLICKED ==========');
+            console.log('🔬 BEFORE enable - Current mode:', isApplicationLabMode);
+            enableApplicationLabMode();
+            console.log('🔬 AFTER enable - Mode should now be TRUE');
+          }}
           style={{
             position: 'absolute',
             top: '80px',
             right: '20px',
             padding: '12px 24px',
-            backgroundColor: '#8B5CF6',
+            backgroundColor: '#10B981',
             color: 'white',
             border: 'none',
             borderRadius: '8px',
             fontSize: '16px',
             fontWeight: 'bold',
             cursor: 'pointer',
-            zIndex: 1000,
+            zIndex: 10001,
             boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-            transition: 'all 0.2s ease'
+            transition: 'all 0.2s ease',
+            pointerEvents: 'auto'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#7C3AED';
+            console.log('🔬 Mouse entered Application Lab button');
+            e.currentTarget.style.backgroundColor = '#059669';
             e.currentTarget.style.transform = 'scale(1.05)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#8B5CF6';
+            e.currentTarget.style.backgroundColor = '#10B981';
             e.currentTarget.style.transform = 'scale(1)';
           }}
         >
-          🏛️ Memory Palace Mode
+          🔬 Application Lab
         </button>
       )}
 
@@ -2271,21 +2329,19 @@ export default function CanvasScene() {
       <ConnectionModeHint isHoldingShift={isHoldingShift} selectedCount={selectedNodesForConnection.length} />
       {hasUniverse && <SectionNavigator />}
 
-      {/* 🏛️ Transition overlay */}
-      {isTransitioning && <TransitionOverlay />}
-
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-        {isTransitioning ? (
-          // Show transition animation when entering Memory Palace
-          <TransitionAnimation />
-        ) : (
-          // Normal scene
-          <>
-            <Scene isHoldingShift={isHoldingShift} />
-            <CameraPositionManager />
-          </>
-        )}
+        <Scene isHoldingShift={isHoldingShift} />
+        <CameraPositionManager />
       </Canvas>
     </div>
   );
+
+  // 🔬 Conditionally wrap with ApplicationLabScene if in Application Lab mode
+  if (isApplicationLabMode) {
+    console.log('🔬 Rendering WITH ApplicationLabScene wrapper');
+    return <ApplicationLabScene>{mainContent}</ApplicationLabScene>;
+  } else {
+    console.log('🔬 Rendering WITHOUT ApplicationLabScene wrapper (normal mode)');
+    return mainContent;
+  }
 }

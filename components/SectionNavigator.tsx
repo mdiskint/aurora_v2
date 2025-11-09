@@ -21,11 +21,18 @@ export default function SectionNavigator() {
   const selectNode = useCanvasStore((state) => state.selectNode);
   const getAnchoredNodes = useCanvasStore((state) => state.getAnchoredNodes);
   const reparentNode = useCanvasStore((state) => state.reparentNode);
+  const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
   const [showExportModal, setShowExportModal] = useState(false);
 
   // 🎯 DRAG-AND-DROP STATE
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // Hide navigation tree when Application Lab is active
+  if (isApplicationLabMode) {
+    console.log('🔬 Hiding SectionNavigator - Application Lab is active');
+    return null;
+  }
 
   // Get all anchored nodes
   const anchoredNodes = getAnchoredNodes();

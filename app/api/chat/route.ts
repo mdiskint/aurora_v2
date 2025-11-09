@@ -123,6 +123,8 @@ export async function POST(request: NextRequest) {
 
       const spatialPrompt = `User wants to explore: "${userTopic}"
 
+CRITICAL: Ignore any formatting (numbers, bullet points, dashes) in the user's input. Treat the ENTIRE text as ONE TOPIC to explore and break down into your own logical subtopics.
+
 You have the freedom to create 4-20 total artifacts (1 nexus + 3-19 child nodes).
 
 Assess the topic and decide the optimal number based on:
@@ -152,7 +154,8 @@ IMPORTANT:
 - Return ONLY valid JSON, no markdown code blocks
 - Use \\n for line breaks within strings (NOT literal newlines)
 - Each node should be substantive (2-3 sentences minimum)
-- Create 3-19 nodes based on topic complexity`;
+- Create 3-19 nodes based on topic complexity
+- DO NOT create one node per line from the user input - analyze the WHOLE topic and create your own logical breakdown`;
 
       console.log('📤 Sending spatial universe generation prompt...');
 
@@ -553,6 +556,234 @@ Now ask your question (QUESTION ONLY, NO ANSWER):`;
         isCompletion: hasCompletedCycle,
         questionCount: questionCount
       });
+    }
+
+    // 📝 MULTIPLE CHOICE QUIZ MODE: Generate MC questions with JSON
+    if (mode === 'quiz-mc') {
+      console.log('📝 QUIZ-MC MODE: Generating multiple choice questions');
+
+      const { numberOfQuestions = 5 } = body;
+      const userTopic = userMessage;
+
+      const mcQuizPrompt = `Generate ${numberOfQuestions} UWorld-style multiple choice questions about this content:
+
+"${userTopic}"
+
+Create exam-level questions that:
+
+1. **MODERATE FACT PATTERNS** (2-3 paragraphs):
+   - Start with a scenario setting the context
+   - Include key facts and some relevant details
+   - Add important dates, parties, or amounts when necessary
+   - Make the scenario realistic but focused
+
+2. **APPLICATION QUESTIONS**:
+   - Test ability to apply legal principles to facts
+   - Require thoughtful analysis
+   - Focus on "What is the most likely outcome?" or "Which argument is strongest?"
+   - Balance difficulty with clarity
+
+3. **GOOD ANSWER CHOICES**:
+   - All 4 options should be plausible and clear
+   - Include some partially correct answers as distractors
+   - Options should be similar in length
+   - Avoid obviously wrong answers
+   - Test understanding of key distinctions
+
+4. **CLEAR EXPLANATIONS**:
+   - Explain why the correct answer is right (1-2 sentences)
+   - Briefly explain why the other answers are incorrect
+   - Reference key facts from the hypothetical
+   - Cite relevant legal principles
+
+Return as JSON array:
+[
+  {
+    "question": "Multi-paragraph fact pattern followed by: What is the most likely result?",
+    "options": {
+      "A": "Plausible option",
+      "B": "Plausible option",
+      "C": "Plausible option",
+      "D": "Plausible option"
+    },
+    "correctAnswer": "C",
+    "explanation": "Clear explanation (2-3 sentences) explaining why C is correct and why the others are incorrect, with reference to key facts"
+  }
+]
+
+IMPORTANT:
+- Return ONLY valid JSON, no markdown code blocks
+- ${numberOfQuestions} questions total
+- Each fact pattern should be 2-3 paragraphs (200-350 words)
+- Make questions thoughtful but not overly complex
+- All answer choices should be clear and plausible
+- Explanations should be concise (2-3 sentences)`;
+
+      console.log('📤 Sending MC quiz generation prompt...');
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 6144,
+        system: 'You are an expert exam question writer creating UWorld-style multiple choice questions for law students. These questions should be thoughtful and test understanding through application, with clear fact patterns and concise explanations. Always return ONLY valid JSON.',
+        messages: [{ role: 'user', content: mcQuizPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+
+      console.log('✅ MC quiz response received:', rawResponse.substring(0, 200));
+
+      return NextResponse.json({ response: rawResponse });
+    }
+
+    // 🔬 ANALYZE UNIVERSE MODE: Extract topics, cases, and doctrines
+    if (mode === 'analyze-universe') {
+      console.log('🔬 ANALYZE-UNIVERSE MODE: Analyzing universe content');
+
+      const userContent = userMessage;
+
+      const analyzePrompt = `You are analyzing a law student's knowledge universe. Extract and categorize the following from all content:
+
+1. **Topics**: Broad legal topics or areas of law (e.g., "Constitutional Law", "Dormant Commerce Clause", "Preemption")
+2. **Cases**: Specific legal cases mentioned (e.g., "Youngstown Sheet", "City of Philadelphia v. New Jersey")
+3. **Doctrines**: Legal doctrines, tests, or rules (e.g., "Strict Scrutiny", "Pike Balancing Test", "Field Preemption")
+
+For each item found, provide:
+- A unique ID (lowercase-kebab-case)
+- The name
+- A brief description/summary/explanation
+- Empty nodeIds array (we'll fill this later)
+
+Return ONLY valid JSON in this exact format:
+{
+  "topics": [
+    {"id": "topic-id", "name": "Topic Name", "description": "Brief description", "nodeIds": []}
+  ],
+  "cases": [
+    {"id": "case-id", "name": "Case Name", "summary": "Brief summary", "nodeIds": []}
+  ],
+  "doctrines": [
+    {"id": "doctrine-id", "name": "Doctrine Name", "explanation": "Brief explanation", "nodeIds": []}
+  ]
+}
+
+Content to analyze:
+${userContent}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 8096,
+        system: 'You are a legal education expert who analyzes and categorizes legal content. Always return ONLY valid JSON with no additional text.',
+        messages: [{ role: 'user', content: analyzePrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('🔬 Analysis complete');
+
+      return NextResponse.json({ response: rawResponse });
+    }
+
+    // 🎯 APPLICATION LAB: Generate practice scenario
+    if (mode === 'application-scenario') {
+      console.log('🎯 APPLICATION-SCENARIO MODE: Generating practice scenario');
+
+      const userContent = userMessage;
+
+      const scenarioPrompt = `You are a law professor creating a practice scenario for a student. Based on the topics, cases, and doctrines provided, create a NEW hypothetical scenario that requires applying these legal principles.
+
+${userContent}
+
+Create a realistic hypothetical scenario that:
+1. Is different from any cases mentioned above
+2. Requires applying 2-3 of the doctrines/principles listed
+3. Has factual complexity that mirrors real legal analysis
+4. Is 3-5 paragraphs long
+
+Return ONLY valid JSON in this exact format:
+{
+  "focus": "Brief description of what doctrine/principle to apply (e.g., 'Apply the Pike Balancing Test')",
+  "question": "The full hypothetical scenario text (3-5 paragraphs)"
+}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: 'You are a law professor creating practice scenarios. Always return ONLY valid JSON with no additional text.',
+        messages: [{ role: 'user', content: scenarioPrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('🎯 Scenario generated');
+
+      return NextResponse.json({ response: rawResponse });
+    }
+
+    // 🎯 APPLICATION LAB: Grade student answer
+    if (mode === 'application-grade') {
+      console.log('🎯 APPLICATION-GRADE MODE: Grading student answer');
+
+      const userContent = userMessage;
+
+      const gradingPrompt = `You are a law professor grading a student's application of legal doctrines to a hypothetical scenario.
+
+${userContent}
+
+Provide constructive feedback that:
+1. Identifies which doctrines/principles the student correctly identified
+2. Evaluates how well they applied those principles to the facts
+3. Points out what they missed or got wrong
+4. Explains the correct analysis
+5. Is encouraging but honest
+
+Format your feedback in a clear, structured way (but NOT as JSON - just formatted text with paragraphs and bullet points if needed).`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: 'You are a supportive law professor providing detailed, constructive feedback on legal analysis.',
+        messages: [{ role: 'user', content: gradingPrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('🎯 Grading complete');
+
+      return NextResponse.json({ response: rawResponse });
+    }
+
+    // 📝 APPLICATION LAB: Generate essay question
+    if (mode === 'essay-question') {
+      console.log('📝 ESSAY-QUESTION MODE: Generating essay question based on analysis');
+
+      const userContent = userMessage;
+
+      const essayPrompt = `Based on this analyzed material, create ONE thoughtful essay question that:
+
+${userContent}
+
+Requirements:
+1. **Comprehensive**: Requires the student to synthesize multiple topics, cases, and doctrines
+2. **Application-focused**: Asks student to apply principles to a novel scenario or analyze relationships between concepts
+3. **Clear and specific**: Has a defined scope and clear expectations
+4. **Realistic**: Resembles actual law school exam questions or bar exam essay questions
+5. **Appropriate length**: Should take 30-45 minutes to answer thoroughly
+
+Format your response as:
+- A clear, specific question (2-4 sentences)
+- If helpful, include a brief fact pattern or hypothetical scenario as part of the question
+
+DO NOT include answer guidance or rubrics - just the question itself.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        system: 'You are a law professor creating thoughtful, comprehensive essay questions that test deep understanding and application of legal principles.',
+        messages: [{ role: 'user', content: essayPrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('📝 Essay question generated');
+
+      return NextResponse.json({ response: rawResponse });
     }
 
     // 🎓 QUIZ MODE: Handle quiz grading (PROVIDE ANSWER HERE)
@@ -994,6 +1225,25 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
       console.log('✅ Single task completed:', content.substring(0, 100) + '...');
 
       return NextResponse.json({ content });
+    }
+
+    // ⚖️ DOCTRINE MODE: Generate doctrinal map with JSON structure
+    if (mode === 'doctrine') {
+      console.log('⚖️ DOCTRINE MODE ACTIVATED - Generating doctrinal map');
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: 'You are a legal research assistant. Generate comprehensive doctrinal analysis in valid JSON format with properly escaped newlines (\\n).',
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
+
+      console.log('✅ Doctrine mode response:', aiResponse.substring(0, 100) + '...');
+
+      return NextResponse.json({ response: aiResponse });
     }
 
     // Standard chat mode

@@ -18,6 +18,7 @@ export interface Node {
   semanticTitle?: string;      // AI-generated 5-10 word summary for navigation
   isAnchored?: boolean;        // Flag to mark this node as anchored for quick navigation
   anchoredAt?: number;         // Timestamp when node was anchored
+  isLocked?: boolean;          // Flag to mark this node as locked (course mode)
 
   // Quiz progress tracking
   quizProgress?: {

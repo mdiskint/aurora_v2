@@ -478,6 +478,23 @@ interface CanvasStore {
   navigateToPreviousNode: () => void;
   setMemoryPalaceIndex: (index: number) => void;
   setIsTransitioning: (isTransitioning: boolean) => void;
+
+  // 🔬 APPLICATION LAB MODE
+  isApplicationLabMode: boolean;
+  toggleApplicationLabMode: () => void;
+  enableApplicationLabMode: () => void;
+  disableApplicationLabMode: () => void;
+  applicationLabAnalysis: {
+    topics: Array<{id: string; name: string; description: string; nodeIds: string[]}>;
+    cases: Array<{id: string; name: string; summary: string; nodeIds: string[]}>;
+    doctrines: Array<{id: string; name: string; explanation: string; nodeIds: string[]}>;
+    analyzedAt: number | null;
+  } | null;
+  isAnalyzingUniverse: boolean;
+  analyzeUniverseContent: () => Promise<void>;
+
+  // 🛡️ INITIALIZATION TRACKING
+  isStoreInitialized: boolean;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -497,6 +514,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isMemoryPalaceMode: false,
   memoryPalaceCurrentIndex: 0,
   isTransitioning: false,
+
+  // 🔬 APPLICATION LAB MODE
+  isApplicationLabMode: false,
+  applicationLabAnalysis: null,
+  isAnalyzingUniverse: false,
+
+  // 🛡️ INITIALIZATION TRACKING - Prevent saves before load completes
+  isStoreInitialized: false,
 
   // 📁 FOLDER SYSTEM - Start with default folder
   folders: {
@@ -529,6 +554,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // 🔍 DIAGNOSTIC: Capture call stack to see who triggered this save
     const saveStack = new Error().stack || '';
     const saveCaller = saveStack.split('\n')[2]?.trim() || 'unknown';
+
+    // 🛡️ CRITICAL: Don't save if store hasn't been initialized yet (prevents race conditions)
+    if (!state.isStoreInitialized) {
+      console.warn('⏸️ SKIPPING SAVE: Store not yet initialized (race condition protection)');
+      console.warn('⏸️ Save was called from:', saveCaller);
+      return;
+    }
 
     // 🛡️ CRITICAL: Backup existing library before any save operation
     get().backupLibrary();
@@ -693,6 +725,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             console.error('❌ No backup available - starting with empty library');
             console.log('📂 Starting with blank canvas and empty library');
             console.log('📂 ==========================================');
+            set({ isStoreInitialized: true });
             return;
           }
         }
@@ -717,6 +750,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             nexuses: [],
             nodes: {},
             activeUniverseId: null,
+            isStoreInitialized: true,
           });
           return;
         }
@@ -890,10 +924,17 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       console.log('📂 ==========================================');
 
+      // 🛡️ Mark store as initialized - allows saves to proceed
+      set({ isStoreInitialized: true });
+      console.log('✅ Store initialized - saves are now enabled');
+
     } catch (error) {
       console.error('❌ ==========================================');
       console.error('❌ CRITICAL: Failed to load from storage:', error);
       console.error('❌ ==========================================');
+
+      // Mark as initialized even on error to prevent blocking all future saves
+      set({ isStoreInitialized: true });
 
       // Alert user of load failure
       if (typeof window !== 'undefined') {
@@ -3134,6 +3175,12 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     try {
       const state = get();
 
+      // 🛡️ Mark store as initialized when saving (we have valid data)
+      if (!state.isStoreInitialized) {
+        console.log('🔓 Marking store as initialized (saveCurrentUniverse called)');
+        set({ isStoreInitialized: true });
+      }
+
       console.log('Active Universe ID:', state.activeUniverseId);
       console.log('Nexuses:', state.nexuses);
       console.log('Nexuses count:', state.nexuses.length);
@@ -3331,15 +3378,47 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     // Normalize coordinates before loading
     const normalized = get().normalizeUniverseCoordinates(universeData);
 
-    // Load the normalized universe data to the canvas
-    set({
-      activeUniverseId: universeId,
-      nexuses: normalized.nexuses,
-      nodes: normalized.nodes,
-      selectedId: null,
-      showContentOverlay: false,
-      showReplyModal: false,
-    });
+    // 🔒 LOCK SYSTEM: Lock all L1 nodes except the first
+    const nexusId = normalized.nexuses[0]?.id;
+    if (nexusId) {
+      // Find all L1 nodes (direct children of nexus)
+      const l1Nodes = Object.values(normalized.nodes)
+        .filter(node => node.parentId === nexusId)
+        .sort((a, b) => a.id.localeCompare(b.id)); // Sort by creation time (ID is timestamp-based)
+
+      console.log('🔒 Applying lock system:');
+      console.log('   - Total L1 nodes:', l1Nodes.length);
+
+      // Apply locks: first node unlocked, rest locked
+      const updatedNodes = { ...normalized.nodes };
+      l1Nodes.forEach((node, index) => {
+        updatedNodes[node.id] = {
+          ...node,
+          isLocked: index !== 0 // First node unlocked (false), rest locked (true)
+        };
+        console.log(`   - ${node.id.substring(0, 20)}... ${index === 0 ? '🔓 UNLOCKED' : '🔒 LOCKED'}`);
+      });
+
+      // Load the universe with locked nodes
+      set({
+        activeUniverseId: universeId,
+        nexuses: normalized.nexuses,
+        nodes: updatedNodes,
+        selectedId: null,
+        showContentOverlay: false,
+        showReplyModal: false,
+      });
+    } else {
+      // No nexus found, load without locking
+      set({
+        activeUniverseId: universeId,
+        nexuses: normalized.nexuses,
+        nodes: normalized.nodes,
+        selectedId: null,
+        showContentOverlay: false,
+        showReplyModal: false,
+      });
+    }
 
     console.log('✅ Universe loaded successfully');
 
@@ -3855,6 +3934,110 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
   setMemoryPalaceIndex: (index: number) => {
     set({ memoryPalaceCurrentIndex: index });
+  },
+
+  // 🔬 APPLICATION LAB MODE FUNCTIONS
+  toggleApplicationLabMode: () => {
+    const state = get();
+    const newMode = !state.isApplicationLabMode;
+    console.log(`🔬 Application Lab Mode TOGGLE: ${state.isApplicationLabMode} → ${newMode}`);
+
+    set({
+      isApplicationLabMode: newMode
+    });
+  },
+
+  enableApplicationLabMode: () => {
+    console.log('🔬 ENABLING Application Lab Mode (forcing TRUE)');
+    set({
+      isApplicationLabMode: true
+    });
+  },
+
+  disableApplicationLabMode: () => {
+    console.log('🔬 DISABLING Application Lab Mode (forcing FALSE) and clearing analysis');
+    set({
+      isApplicationLabMode: false,
+      applicationLabAnalysis: null,
+      isAnalyzingUniverse: false
+    });
+  },
+
+  analyzeUniverseContent: async () => {
+    const state = get();
+    console.log('🔬 Starting universe content analysis...');
+
+    set({ isAnalyzingUniverse: true });
+
+    try {
+      // Gather all content from nexuses and nodes
+      const allContent: string[] = [];
+
+      // Add nexus content
+      state.nexuses.forEach(nexus => {
+        allContent.push(`NEXUS: ${nexus.title}\n${nexus.content}`);
+      });
+
+      // Add node content
+      Object.values(state.nodes).forEach((node: any) => {
+        allContent.push(`NODE: ${node.title}\n${node.content}`);
+      });
+
+      const combinedContent = allContent.join('\n\n---\n\n');
+
+      console.log(`🔬 Analyzing ${allContent.length} items...`);
+
+      // Call API to analyze content
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: combinedContent
+          }],
+          mode: 'analyze-universe'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze universe content');
+      }
+
+      const data = await response.json();
+      const analysisText = data.response;
+
+      // Parse JSON from response
+      let analysisData;
+      try {
+        // Try to extract JSON from markdown code blocks
+        const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/) ||
+                         analysisText.match(/```\n([\s\S]*?)\n```/) ||
+                         [null, analysisText];
+        const jsonStr = jsonMatch[1] || analysisText;
+        analysisData = JSON.parse(jsonStr);
+      } catch (e) {
+        console.error('Failed to parse analysis JSON:', e);
+        throw new Error('Failed to parse analysis results');
+      }
+
+      console.log('🔬 Analysis complete:', analysisData);
+
+      set({
+        applicationLabAnalysis: {
+          topics: analysisData.topics || [],
+          cases: analysisData.cases || [],
+          doctrines: analysisData.doctrines || [],
+          analyzedAt: Date.now()
+        },
+        isAnalyzingUniverse: false
+      });
+
+    } catch (error) {
+      console.error('🔬 Analysis error:', error);
+      set({ isAnalyzingUniverse: false });
+      throw error;
+    }
   },
 
   atomizeUniverse: async (

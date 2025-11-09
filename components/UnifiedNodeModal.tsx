@@ -14,6 +14,7 @@ export default function UnifiedNodeModal() {
   const nodes = useCanvasStore((state) => state.nodes);
   const nexuses = useCanvasStore((state) => state.nexuses);
   const showContentOverlay = useCanvasStore((state) => state.showContentOverlay);
+  const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
   const updateNodeContent = useCanvasStore((state) => state.updateNodeContent);
   const updateNexusContent = useCanvasStore((state) => state.updateNexusContent);
@@ -47,7 +48,7 @@ export default function UnifiedNodeModal() {
   const [showAnchorFeedback, setShowAnchorFeedback] = useState(false);
 
   // Quiz Me / Deep Thinking mode state
-  const [explorationMode, setExplorationMode] = useState<'deep-thinking' | 'quiz' | null>(null);
+  const [explorationMode, setExplorationMode] = useState<'deep-thinking' | 'quiz' | 'quiz-mc' | null>(null);
   const [quizFeedback, setQuizFeedback] = useState('');
   const [deepThinkingEngagement, setDeepThinkingEngagement] = useState(''); // AI's response to user's thinking
   const [quizHistory, setQuizHistory] = useState<string[]>([]); // Track previous questions for diverse question generation
@@ -56,6 +57,26 @@ export default function UnifiedNodeModal() {
     userAnswer: string;
     aiEngagement: string;
   }>>([]); // Track deep thinking conversation for progressive depth
+
+  // Quiz format selection modal
+  const [showQuizFormatModal, setShowQuizFormatModal] = useState(false);
+
+  // Multiple choice quiz state
+  const [mcQuestions, setMcQuestions] = useState<Array<{
+    question: string;
+    options: { A: string; B: string; C: string; D: string };
+    correctAnswer: string;
+    explanation: string;
+  }>>([]);
+  const [currentMcQuestion, setCurrentMcQuestion] = useState(0);
+  const [selectedMcAnswer, setSelectedMcAnswer] = useState<string | null>(null);
+  const [mcAnswered, setMcAnswered] = useState(false);
+  const [mcResults, setMcResults] = useState<Array<{
+    question: string;
+    selectedAnswer: string;
+    correctAnswer: string;
+    isCorrect: boolean;
+  }>>([]);
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -213,11 +234,17 @@ export default function UnifiedNodeModal() {
 
     // Not in Socratic mode - normal clearing logic
     if (!showContentOverlay) {
+      // 🔬 Don't clear if Application Lab is active
+      if (isApplicationLabMode) {
+        console.log('⚠️ Skipping modal cleanup - Application Lab is active');
+        return;
+      }
+
       console.log('❌ Modal closing (no Socratic mode) - clearing action mode');
       setActionMode(null);
       setInputContent('');
     }
-  }, [selectedId, showContentOverlay, socraticRootId, socraticQuestion]);
+  }, [selectedId, showContentOverlay, socraticRootId, socraticQuestion, isApplicationLabMode]);
 
   // Debug render tracking
   useEffect(() => {
@@ -862,6 +889,122 @@ export default function UnifiedNodeModal() {
     selectNode(selectedId, false);
   };
 
+  // 📝 MULTIPLE CHOICE QUIZ
+  const handleStartMultipleChoice = async () => {
+    if (!selectedId) return;
+
+    setShowQuizFormatModal(false);
+    setExplorationMode('quiz-mc');
+    setIsLoadingAI(true);
+
+    try {
+      const contextContent = displayContent;
+
+      // 🚀 OPTIMIZATION: Generate first question immediately, then queue the rest
+      const generateQuestion = async (questionNumber: number) => {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{
+              role: 'user',
+              content: contextContent
+            }],
+            mode: 'quiz-mc',
+            numberOfQuestions: 1, // Generate one at a time
+            questionNumber // Pass which question this is (for variety)
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to generate MC quiz');
+
+        const data = await response.json();
+
+        // Parse JSON response
+        const jsonStr = data.response.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+        const questions = JSON.parse(jsonStr);
+        return questions[0]; // Return the single question
+      };
+
+      // Generate first question immediately
+      console.log('📝 Generating question 1/5...');
+      const firstQuestion = await generateQuestion(1);
+
+      setMcQuestions([firstQuestion]);
+      setCurrentMcQuestion(0);
+      setSelectedMcAnswer(null);
+      setMcAnswered(false);
+      setMcResults([]);
+      setSocraticRootId(selectedId);
+      isSocraticModeActive.current = true;
+      setIsLoadingAI(false);
+
+      console.log('✅ First question ready! Generating remaining questions in background...');
+
+      // 🔄 Generate remaining 4 questions in background
+      (async () => {
+        for (let i = 2; i <= 5; i++) {
+          try {
+            console.log(`📝 Background: Generating question ${i}/5...`);
+            const question = await generateQuestion(i);
+            setMcQuestions(prev => [...prev, question]);
+            console.log(`✅ Background: Question ${i}/5 ready`);
+          } catch (err) {
+            console.error(`❌ Failed to generate background question ${i}:`, err);
+          }
+        }
+        console.log('✅ All questions generated!');
+      })();
+
+    } catch (error) {
+      console.error('❌ Failed to generate MC quiz:', error);
+      setExplorationMode(null);
+      setIsLoadingAI(false);
+    }
+  };
+
+  // Submit MC answer
+  const handleSubmitMcAnswer = () => {
+    if (!selectedMcAnswer || mcAnswered) return;
+
+    const currentQ = mcQuestions[currentMcQuestion];
+    const isCorrect = selectedMcAnswer === currentQ.correctAnswer;
+
+    setMcResults([
+      ...mcResults,
+      {
+        question: currentQ.question,
+        selectedAnswer: selectedMcAnswer,
+        correctAnswer: currentQ.correctAnswer,
+        isCorrect
+      }
+    ]);
+
+    setMcAnswered(true);
+  };
+
+  // Next MC question
+  const handleNextMcQuestion = () => {
+    if (currentMcQuestion < mcQuestions.length - 1) {
+      setCurrentMcQuestion(currentMcQuestion + 1);
+      setSelectedMcAnswer(null);
+      setMcAnswered(false);
+    }
+  };
+
+  // End MC quiz
+  const handleEndMcQuiz = () => {
+    isSocraticModeActive.current = false;
+    setSocraticRootId(null);
+    setExplorationMode(null);
+    setMcQuestions([]);
+    setCurrentMcQuestion(0);
+    setSelectedMcAnswer(null);
+    setMcAnswered(false);
+    setMcResults([]);
+    selectNode(selectedId, false);
+  };
+
   // End exploration and create synthesis
   const handleEndExploration = async () => {
     if (!socraticRootId) return;
@@ -1413,7 +1556,7 @@ export default function UnifiedNodeModal() {
                     🧠 Explore This Idea (Deep Thinking)
                   </button>
                   <button
-                    onClick={() => handleExploreTogether('quiz')}
+                    onClick={() => setShowQuizFormatModal(true)}
                     disabled={isLoadingAI}
                     className="flex-1 px-4 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                   >
@@ -1513,6 +1656,279 @@ export default function UnifiedNodeModal() {
           </div>
         </div>
       </div>
+
+      {/* Quiz Format Selection Modal */}
+      {showQuizFormatModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+            onClick={() => setShowQuizFormatModal(false)}
+          />
+          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] max-w-90vw">
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-8">
+              <h2 className="text-2xl font-bold text-purple-300 mb-6">Choose Quiz Format</h2>
+
+              <div className="space-y-4 mb-6">
+                {/* Short Answer Option */}
+                <button
+                  onClick={() => {
+                    setShowQuizFormatModal(false);
+                    handleExploreTogether('quiz');
+                  }}
+                  className="w-full p-6 bg-purple-900/20 hover:bg-purple-900/40 border-2 border-purple-500/50 hover:border-purple-400 rounded-xl transition-all text-left group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="text-4xl">📝</div>
+                    <div className="flex-1">
+                      <div className="text-xl font-bold text-purple-200 mb-1">Short Answer</div>
+                      <div className="text-sm text-gray-400">Write detailed responses</div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Multiple Choice Option */}
+                <button
+                  onClick={handleStartMultipleChoice}
+                  className="w-full p-6 bg-cyan-900/20 hover:bg-cyan-900/40 border-2 border-cyan-500/50 hover:border-cyan-400 rounded-xl transition-all text-left group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="text-4xl">✓</div>
+                    <div className="flex-1">
+                      <div className="text-xl font-bold text-cyan-200 mb-1">Multiple Choice</div>
+                      <div className="text-sm text-gray-400">Select from 4 options</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowQuizFormatModal(false)}
+                className="w-full px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Multiple Choice Quiz Display */}
+      {explorationMode === 'quiz-mc' && mcQuestions.length > 0 && currentMcQuestion < mcQuestions.length && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] max-w-90vw max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl p-8">
+              {/* Header */}
+              <div className="flex justify-between items-center mb-4">
+                <div className="text-sm font-semibold text-cyan-300">
+                  Question {currentMcQuestion + 1} of {mcQuestions.length}
+                </div>
+                <div className="w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 transition-all duration-500"
+                    style={{ width: `${((currentMcQuestion + 1) / mcQuestions.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Question */}
+              <div className="mb-6">
+                <h3 className="text-xl text-gray-200 leading-relaxed">{mcQuestions[currentMcQuestion].question}</h3>
+              </div>
+
+              {/* Options */}
+              <div className="space-y-3 mb-6">
+                {(['A', 'B', 'C', 'D'] as const).map((letter) => {
+                  const isSelected = selectedMcAnswer === letter;
+                  const isCorrect = letter === mcQuestions[currentMcQuestion].correctAnswer;
+                  const showResult = mcAnswered;
+
+                  let bgClass = 'bg-slate-800/50 hover:bg-slate-700/50 border-slate-600';
+                  let textClass = 'text-gray-200';
+
+                  if (showResult) {
+                    if (isCorrect) {
+                      bgClass = 'bg-green-900/40 border-green-500';
+                      textClass = 'text-green-200';
+                    } else if (isSelected && !isCorrect) {
+                      bgClass = 'bg-red-900/40 border-red-500';
+                      textClass = 'text-red-200';
+                    }
+                  } else if (isSelected) {
+                    bgClass = 'bg-cyan-900/40 border-cyan-500';
+                    textClass = 'text-cyan-200';
+                  }
+
+                  return (
+                    <button
+                      key={letter}
+                      onClick={() => !mcAnswered && setSelectedMcAnswer(letter)}
+                      disabled={mcAnswered}
+                      className={`w-full p-4 border-2 rounded-lg transition-all text-left ${bgClass} ${textClass} ${!mcAnswered && 'cursor-pointer'} ${mcAnswered && 'cursor-default'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="font-bold text-lg mt-0.5">{letter})</div>
+                        <div className="flex-1">{mcQuestions[currentMcQuestion].options[letter]}</div>
+                        {showResult && isCorrect && <div className="text-xl">✓</div>}
+                        {showResult && isSelected && !isCorrect && <div className="text-xl">✗</div>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Feedback/Explanation */}
+              {mcAnswered && (
+                <div className={`mb-6 p-4 rounded-lg border-2 ${
+                  mcResults[mcResults.length - 1]?.isCorrect
+                    ? 'bg-green-900/20 border-green-500/50'
+                    : 'bg-red-900/20 border-red-500/50'
+                }`}>
+                  <div className={`font-bold mb-2 ${
+                    mcResults[mcResults.length - 1]?.isCorrect ? 'text-green-300' : 'text-red-300'
+                  }`}>
+                    {mcResults[mcResults.length - 1]?.isCorrect ? '✓ Correct!' : '✗ Incorrect'}
+                  </div>
+                  {!mcResults[mcResults.length - 1]?.isCorrect && (
+                    <div className="text-sm text-gray-300 mb-2">
+                      You selected: {selectedMcAnswer}) {mcQuestions[currentMcQuestion].options[selectedMcAnswer as keyof typeof mcQuestions[0]['options']]}
+                      <br />
+                      Correct answer: {mcQuestions[currentMcQuestion].correctAnswer}) {mcQuestions[currentMcQuestion].options[mcQuestions[currentMcQuestion].correctAnswer as keyof typeof mcQuestions[0]['options']]}
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-300 mt-2 border-t border-gray-600 pt-2">
+                    <strong>Explanation:</strong> {mcQuestions[currentMcQuestion].explanation}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                {!mcAnswered ? (
+                  <>
+                    <button
+                      onClick={handleSubmitMcAnswer}
+                      disabled={!selectedMcAnswer}
+                      className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    >
+                      Submit Answer
+                    </button>
+                    <button
+                      onClick={handleEndMcQuiz}
+                      className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                    >
+                      End Quiz
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {currentMcQuestion < mcQuestions.length - 1 ? (
+                      <button
+                        onClick={handleNextMcQuestion}
+                        className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
+                      >
+                        Next Question →
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setCurrentMcQuestion(mcQuestions.length)}
+                        className="flex-1 px-6 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all font-medium"
+                      >
+                        View Results →
+                      </button>
+                    )}
+                    <button
+                      onClick={handleEndMcQuiz}
+                      className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                    >
+                      End Quiz
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Final Score Display */}
+      {explorationMode === 'quiz-mc' && currentMcQuestion >= mcQuestions.length && mcResults.length > 0 && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] max-w-90vw">
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-8">
+              <h2 className="text-3xl font-bold text-purple-300 mb-2 text-center">Quiz Complete!</h2>
+
+              {/* Score */}
+              <div className="text-center mb-6">
+                <div className="text-6xl font-bold text-cyan-300 mb-2">
+                  {mcResults.filter(r => r.isCorrect).length} / {mcResults.length}
+                </div>
+                <div className="text-xl text-gray-400">
+                  ({Math.round((mcResults.filter(r => r.isCorrect).length / mcResults.length) * 100)}%)
+                </div>
+              </div>
+
+              {/* Results List */}
+              <div className="space-y-2 mb-6 max-h-80 overflow-y-auto">
+                {mcResults.map((result, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-lg border ${
+                      result.isCorrect
+                        ? 'bg-green-900/20 border-green-500/30'
+                        : 'bg-red-900/20 border-red-500/30'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl mt-0.5">
+                        {result.isCorrect ? '✓' : '✗'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-sm text-gray-200 mb-1">
+                          <strong>Q{idx + 1}:</strong> {result.question}
+                        </div>
+                        {!result.isCorrect && (
+                          <div className="text-xs text-gray-400">
+                            Your answer: {result.selectedAnswer} • Correct: {result.correctAnswer}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setCurrentMcQuestion(0);
+                    setSelectedMcAnswer(null);
+                    setMcAnswered(false);
+                    setMcResults([]);
+                  }}
+                  className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
+                >
+                  Take Again
+                </button>
+                <button
+                  onClick={handleEndMcQuiz}
+                  className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

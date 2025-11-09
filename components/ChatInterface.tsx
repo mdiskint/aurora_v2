@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store';
 import SpatialNavigator from './SpatialNavigator';
+import DoctrinalGenerationModal from './DoctrinalGenerationModal';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -26,6 +27,12 @@ export default function ChatInterface() {
   const [planningReasoning, setPlanningReasoning] = useState('');
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [progressStatus, setProgressStatus] = useState<{ [key: number]: 'pending' | 'complete' | 'error' }>({});
+
+  // ⚖️ Doctrinal generation state
+  const [isGeneratingDoctrine, setIsGeneratingDoctrine] = useState(false);
+  const [doctrinalStage, setDoctrinalStage] = useState<'researching' | 'finding-cases' | 'analyzing' | 'building-map' | 'complete' | 'error'>('researching');
+  const [doctrinalError, setDoctrinalError] = useState<string | null>(null);
+  const [detectedRuleName, setDetectedRuleName] = useState('');
 
   const { nexuses, nodes, createChatNexus, addNode, getActivatedConversations, selectedId } = useCanvasStore();
 
@@ -369,6 +376,177 @@ export default function ChatInterface() {
     console.log(isSpatialMode ? '🌌 SPATIAL MODE DETECTED' : '💬 Standard chat mode');
     console.log('🎯 isFirstMessage:', isFirstMessage);
     console.log('🎯 selectedId:', selectedId);
+
+    // ⚖️ DOCTRINAL MODE: Check for doctrine map generation request
+    // IMPORTANT: Only check doctrinal patterns if NOT in spatial/explore mode
+    const doctrinalPatterns = [
+      /create\s+(?:a\s+)?(?:doctrine|doctrinal)\s+(?:map|universe)\s+(?:for|of|about)\s+(.+)/i,
+      /generate\s+(?:a\s+)?(?:doctrine|doctrinal)\s+(?:map|universe)\s+(?:for|of|about)\s+(.+)/i,
+      /build\s+(?:a\s+)?(?:doctrine|doctrinal)\s+(?:map|universe)\s+(?:for|of|about)\s+(.+)/i,
+    ];
+
+    let isDoctrinalMode = false;
+    let ruleName = '';
+
+    // Only check doctrinal patterns if NOT in spatial/explore mode
+    if (!isSpatialMode) {
+      for (const pattern of doctrinalPatterns) {
+        const match = userMessage.match(pattern);
+        if (match) {
+          isDoctrinalMode = true;
+          ruleName = match[1].trim();
+          break;
+        }
+      }
+    }
+
+    if (isDoctrinalMode) {
+      console.log('⚖️ DOCTRINAL MODE DETECTED - Rule:', ruleName);
+
+      setDetectedRuleName(ruleName);
+      setIsGeneratingDoctrine(true);
+      setDoctrinalStage('researching');
+      setDoctrinalError(null);
+
+      try {
+        // Stage 1: Researching
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setDoctrinalStage('finding-cases');
+
+        // Build lightweight GAP context
+        const activatedConvos = getActivatedConversations();
+        console.log('⚖️ Building lightweight GAP context from', activatedConvos.length, 'activated universes');
+
+        let gapContext = '';
+        if (activatedConvos.length > 0) {
+          gapContext = '\n\nACTIVATED UNIVERSES (use as PRIMARY source for case selection):\n';
+          activatedConvos.forEach(conv => {
+            gapContext += `\n**${conv.title}**\n`;
+            const truncatedContent = conv.content.substring(0, 300);
+            gapContext += `${truncatedContent}${conv.content.length > 300 ? '...' : ''}\n`;
+
+            const universeNodes = Object.values(nodes).filter(n => n.parentId === conv.id);
+            if (universeNodes.length > 0) {
+              gapContext += '\nCases/Topics in this universe:\n';
+              universeNodes.forEach(node => {
+                const nodeTitle = node.semanticTitle || node.title || 'Untitled';
+                const nodeContent = node.content.substring(0, 150);
+                gapContext += `- ${nodeTitle}: ${nodeContent}${node.content.length > 150 ? '...' : ''}\n`;
+              });
+            }
+            gapContext += '---\n';
+          });
+          console.log('⚖️ GAP context built, length:', gapContext.length, 'characters');
+        } else {
+          console.log('⚖️ No activated universes - will use Claude training data');
+        }
+
+        const prompt = `You are a legal research assistant. Research the doctrine "${ruleName}" and return ONLY a JSON object with no additional text, explanations, or markdown formatting.
+
+CRITICAL: Your response must be ONLY the JSON object. Do not include any text before or after the JSON. Do not wrap it in markdown code blocks.
+${gapContext}
+${gapContext ? 'Use the activated universes above as your PRIMARY source for case selection. If the activated universes contain relevant cases, prioritize those. You may supplement with additional landmark cases from your training data if needed to reach 5-8 total cases.\n' : ''}
+Identify 5-8 landmark cases that define or apply this doctrine.
+
+Return this exact JSON structure:
+{
+  "ruleStatement": "A clear 1-2 sentence definition of the doctrine",
+  "elements": ["element 1", "element 2", "element 3"],
+  "cases": [
+    {
+      "caseName": "Full case name",
+      "citation": "Volume Reporter Page (Year)",
+      "year": 1944,
+      "facts": "2-3 sentences describing the facts",
+      "doctrinalAnalysis": "3-4 sentences explaining how the court applied this doctrine",
+      "holding": "1-2 sentences stating what the court held",
+      "significance": "1-2 sentences explaining why this case matters for understanding the doctrine",
+      "caseType": "foundational"
+    }
+  ]
+}
+
+caseType must be one of: "foundational", "refinement", "application", or "overruled"
+
+RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
+
+        // Stage 2: API call
+        setDoctrinalStage('analyzing');
+
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: prompt }],
+            mode: 'doctrine'
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const aiContent = data.response;
+
+        // Stage 3: Building map
+        setDoctrinalStage('building-map');
+
+        // Parse JSON response
+        let doctrineData;
+        try {
+          let jsonStr = aiContent.trim();
+          jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+          const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            jsonStr = jsonMatch[0];
+          }
+          doctrineData = JSON.parse(jsonStr);
+        } catch (parseErr) {
+          console.error('⚖️ Failed to parse JSON:', parseErr);
+          throw new Error('Failed to parse doctrine data from AI response');
+        }
+
+        // Create universe
+        const nexusTitle = ruleName;
+        const nexusContent = `Rule: ${doctrineData.ruleStatement}\n\nElements:\n${doctrineData.elements.map((e: string, i: number) => `${i + 1}. ${e}`).join('\n')}`;
+
+        createChatNexus(nexusTitle, userMessage, nexusContent);
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const chatNexus = useCanvasStore.getState().nexuses.find(n => n.id.startsWith('chat-'));
+        if (!chatNexus) {
+          throw new Error('Failed to create doctrine nexus');
+        }
+
+        // Create case nodes
+        for (const caseData of doctrineData.cases) {
+          const caseContent = `${caseData.caseName}\n${caseData.citation}\n\nFacts: ${caseData.facts}\n\nAnalysis: ${caseData.doctrinalAnalysis}\n\nHolding: ${caseData.holding}\n\nSignificance: ${caseData.significance}`;
+          addNode(caseContent, chatNexus.id, caseData.caseName, 'ai-response');
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        // Save universe
+        await new Promise(resolve => setTimeout(resolve, 100));
+        useCanvasStore.getState().saveCurrentUniverse();
+
+        // Complete
+        setDoctrinalStage('complete');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setIsGeneratingDoctrine(false);
+        setIsLoading(false);
+        return;
+
+      } catch (err) {
+        console.error('⚖️ Doctrinal generation failed:', err);
+        setDoctrinalStage('error');
+        setDoctrinalError(err instanceof Error ? err.message : 'Unknown error occurred');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        setIsGeneratingDoctrine(false);
+        setIsLoading(false);
+        return;
+      }
+    }
 
     // 🧠 GAP MODE: Check if graph-aware parallel exploration is enabled
     if (gapModeEnabled && !isSpatialMode) {
@@ -1111,6 +1289,13 @@ export default function ChatInterface() {
       <SpatialNavigator
         sections={spatialSections}
         isVisible={showSpatialNavigator}
+      />
+
+      <DoctrinalGenerationModal
+        isOpen={isGeneratingDoctrine}
+        ruleName={detectedRuleName}
+        stage={doctrinalStage}
+        errorMessage={doctrinalError || undefined}
       />
     </>
   );
