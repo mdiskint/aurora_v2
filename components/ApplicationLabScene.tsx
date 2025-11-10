@@ -20,6 +20,11 @@ export default function ApplicationLabScene({ children }: ApplicationLabScenePro
   const [essayQuestion, setEssayQuestion] = useState<string | null>(null);
   const [isGeneratingEssay, setIsGeneratingEssay] = useState(false);
 
+  // Essay answer and grading state
+  const [essayAnswer, setEssayAnswer] = useState('');
+  const [essayFeedback, setEssayFeedback] = useState<string | null>(null);
+  const [isSubmittingEssay, setIsSubmittingEssay] = useState(false);
+
   useEffect(() => {
     console.log('🔬🔬🔬 ApplicationLabScene MOUNTED TO DOM');
     setMounted(true);
@@ -102,6 +107,41 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
       setEssayQuestion('❌ Failed to generate essay question. Please try again.');
     } finally {
       setIsGeneratingEssay(false);
+    }
+  };
+
+  const handleSubmitEssay = async () => {
+    if (!essayAnswer.trim() || !essayQuestion) {
+      alert('Please write your answer before submitting.');
+      return;
+    }
+
+    setIsSubmittingEssay(true);
+    setEssayFeedback(null);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: `Essay Question:\n${essayQuestion}\n\nStudent's Answer:\n${essayAnswer}`
+          }],
+          mode: 'grade-essay-basic'
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to grade essay');
+
+      const data = await response.json();
+      setEssayFeedback(data.response);
+
+    } catch (err) {
+      console.error('Failed to grade essay:', err);
+      setEssayFeedback('❌ Failed to grade your essay. Please try again.');
+    } finally {
+      setIsSubmittingEssay(false);
     }
   };
 
@@ -693,12 +733,13 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                     </div>
                   ) : (
                     <div>
+                      {/* Essay Question Display */}
                       <div style={{
                         backgroundColor: '#1F2937',
                         padding: '20px',
                         borderRadius: '12px',
                         border: '2px solid rgba(16, 185, 129, 0.3)',
-                        marginBottom: '16px'
+                        marginBottom: '20px'
                       }}>
                         <div style={{
                           color: '#E5E7EB',
@@ -709,28 +750,169 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                           {essayQuestion}
                         </div>
                       </div>
-                      <button
-                        onClick={() => setEssayQuestion(null)}
-                        style={{
-                          padding: '8px 16px',
-                          backgroundColor: 'rgba(107, 114, 128, 0.2)',
-                          color: '#9CA3AF',
-                          border: '1px solid #4B5563',
-                          borderRadius: '6px',
-                          fontSize: '13px',
+
+                      {/* Essay Answer Input */}
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={{
+                          display: 'block',
+                          color: '#10B981',
+                          fontSize: '14px',
                           fontWeight: 'bold',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.3)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.2)';
-                        }}
-                      >
-                        ↻ Generate New Question
-                      </button>
+                          marginBottom: '8px'
+                        }}>
+                          Your Answer
+                        </label>
+                        <textarea
+                          value={essayAnswer}
+                          onChange={(e) => setEssayAnswer(e.target.value)}
+                          placeholder="Write your essay answer here... Apply the doctrines and principles you've learned to analyze this scenario."
+                          disabled={isSubmittingEssay}
+                          style={{
+                            width: '100%',
+                            height: '300px',
+                            backgroundColor: '#1F2937',
+                            color: '#E5E7EB',
+                            border: '2px solid rgba(16, 185, 129, 0.2)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            fontSize: '14px',
+                            lineHeight: '1.6',
+                            resize: 'vertical',
+                            fontFamily: 'inherit'
+                          }}
+                        />
+                        <div style={{
+                          color: '#9CA3AF',
+                          fontSize: '12px',
+                          marginTop: '4px'
+                        }}>
+                          {essayAnswer.length} characters
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                        <button
+                          onClick={handleSubmitEssay}
+                          disabled={isSubmittingEssay || !essayAnswer.trim()}
+                          style={{
+                            flex: 1,
+                            padding: '12px 24px',
+                            backgroundColor: (isSubmittingEssay || !essayAnswer.trim()) ? '#6B7280' : '#10B981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: 'bold',
+                            cursor: (isSubmittingEssay || !essayAnswer.trim()) ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s',
+                            opacity: (isSubmittingEssay || !essayAnswer.trim()) ? 0.5 : 1
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSubmittingEssay && essayAnswer.trim()) {
+                              e.currentTarget.style.backgroundColor = '#059669';
+                              e.currentTarget.style.transform = 'scale(1.02)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSubmittingEssay && essayAnswer.trim()) {
+                              e.currentTarget.style.backgroundColor = '#10B981';
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }
+                          }}
+                        >
+                          {isSubmittingEssay ? '⏳ Grading...' : '✓ Submit for Grading'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEssayQuestion(null);
+                            setEssayAnswer('');
+                            setEssayFeedback(null);
+                          }}
+                          style={{
+                            padding: '12px 24px',
+                            backgroundColor: 'rgba(107, 114, 128, 0.2)',
+                            color: '#9CA3AF',
+                            border: '1px solid #4B5563',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.3)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.2)';
+                          }}
+                        >
+                          ↻ New Question
+                        </button>
+                      </div>
+
+                      {/* Grading Feedback */}
+                      {essayFeedback && (
+                        <div style={{
+                          backgroundColor: '#1F2937',
+                          padding: '20px',
+                          borderRadius: '12px',
+                          border: '2px solid rgba(34, 197, 94, 0.5)',
+                          marginBottom: '16px'
+                        }}>
+                          <h5 style={{
+                            color: '#22C55E',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            marginBottom: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            <span>📊</span>
+                            <span>Grading Feedback</span>
+                          </h5>
+                          <div style={{
+                            color: '#E5E7EB',
+                            fontSize: '14px',
+                            lineHeight: '1.8',
+                            whiteSpace: 'pre-wrap'
+                          }}>
+                            {essayFeedback}
+                          </div>
+                          <div style={{
+                            marginTop: '16px',
+                            paddingTop: '16px',
+                            borderTop: '1px solid rgba(34, 197, 94, 0.2)'
+                          }}>
+                            <button
+                              onClick={() => {
+                                setEssayAnswer('');
+                                setEssayFeedback(null);
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                backgroundColor: 'rgba(107, 114, 128, 0.2)',
+                                color: '#9CA3AF',
+                                border: '1px solid #4B5563',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.3)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.2)';
+                              }}
+                            >
+                              🔄 Try Again
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
