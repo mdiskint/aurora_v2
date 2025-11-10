@@ -12,6 +12,11 @@ export interface ShortAnswer {
   sampleAnswer: string;
 }
 
+export interface ApplicationEssay {
+  question: string;
+  rubric: string;
+}
+
 export interface Node {
   id: string;
   position: [number, number, number];

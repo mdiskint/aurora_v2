@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Node } from './types';
+import { Node, ApplicationEssay } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup } from './db';
 
@@ -331,6 +331,7 @@ interface Nexus {
   videoUrl?: string;
   audioUrl?: string;
   type?: 'academic' | 'social';
+  applicationEssay?: ApplicationEssay;  // For course mode: application essay question and rubric
 }
 
 interface Folder {

@@ -863,6 +863,48 @@ Format your feedback in a clear, structured way (but NOT as JSON - just formatte
       return NextResponse.json({ response: rawResponse });
     }
 
+    // 📝 COURSE BUILDER: Generate application essay question and rubric
+    if (mode === 'application-essay') {
+      console.log('📝 APPLICATION-ESSAY MODE: Generating essay question and grading rubric');
+
+      const userContent = userMessage;
+
+      const essayPrompt = `You are a law professor creating an application essay question for a course. Based on the course content provided, create a comprehensive essay question that requires students to apply the legal doctrines and principles they learned to a new scenario.
+
+${userContent}
+
+Create:
+1. A challenging essay question that:
+   - Presents a realistic hypothetical scenario
+   - Requires applying multiple doctrines/principles from the course
+   - Has sufficient factual complexity for in-depth analysis
+   - Is appropriate for a final assessment
+
+2. A detailed grading rubric that:
+   - Lists the key issues students should identify
+   - Specifies which doctrines/principles should be applied
+   - Outlines the expected analysis steps
+   - Provides clear criteria for what constitutes a strong answer
+
+Return ONLY valid JSON in this exact format:
+{
+  "question": "The full essay question including the hypothetical scenario (4-6 paragraphs)",
+  "rubric": "Detailed grading rubric with key issues, relevant doctrines, and evaluation criteria (structured with clear sections)"
+}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 6000,
+        system: 'You are an experienced law professor creating comprehensive assessments. Always return ONLY valid JSON with no additional text.',
+        messages: [{ role: 'user', content: essayPrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('📝 Application essay generated');
+
+      return NextResponse.json({ content: rawResponse });
+    }
+
     // 📝 APPLICATION LAB: Generate essay question
     if (mode === 'essay-question') {
       console.log('📝 ESSAY-QUESTION MODE: Generating essay question based on analysis');

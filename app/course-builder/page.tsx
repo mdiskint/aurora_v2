@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
-import { MCQ, ShortAnswer } from '@/lib/types';
+import { MCQ, ShortAnswer, ApplicationEssay } from '@/lib/types';
 
 interface SectionQuestions {
   mcqs: MCQ[];
@@ -21,6 +21,7 @@ interface CourseData {
   mcqCount: number;
   shortAnswerCount: number;
   generatedQuestions: SectionQuestions[]; // Questions for each section
+  applicationEssay: ApplicationEssay | null; // Application essay question and rubric
 }
 
 export default function CourseBuilderPage() {
@@ -41,6 +42,7 @@ export default function CourseBuilderPage() {
     mcqCount: 5,
     shortAnswerCount: 2,
     generatedQuestions: [],
+    applicationEssay: null,
   });
 
   // Parse timestamp string into chunks
@@ -288,6 +290,49 @@ export default function CourseBuilderPage() {
     }
   };
 
+  // Generate application essay question and rubric
+  const handleGenerateApplicationEssay = async () => {
+    console.log('📝 Generating application essay question and rubric...');
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: courseData.fullTextContent
+          }],
+          mode: 'application-essay'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📝 API response:', data);
+
+      // Parse the response (expecting JSON with question and rubric)
+      try {
+        const parsed = JSON.parse(data.content);
+        if (parsed.question && parsed.rubric) {
+          setCourseData({ ...courseData, applicationEssay: parsed });
+          console.log('✅ Application essay generated successfully');
+        } else {
+          throw new Error('Invalid response format: missing question or rubric');
+        }
+      } catch (parseError) {
+        console.error('Failed to parse application essay response:', parseError);
+        throw new Error('Failed to parse AI response');
+      }
+    } catch (error) {
+      console.error('❌ Error generating application essay:', error);
+      throw error;
+    }
+  };
+
   // Generate the course
   const handleGenerateCourse = () => {
     setIsGenerating(true);
@@ -389,22 +434,35 @@ export default function CourseBuilderPage() {
         console.log('🎓 Marking universe as course mode:', savedUniverseId);
 
         // Use Zustand's setState to properly update the universe
-        useCanvasStore.setState((state) => ({
-          universeLibrary: {
-            ...state.universeLibrary,
-            [savedUniverseId]: {
-              ...state.universeLibrary[savedUniverseId],
-              courseMode: true,
-              courseSettings: {
-                memoryActivation: courseData.memoryActivation,
-                mcqCount: courseData.mcqCount,
-                shortAnswerCount: courseData.shortAnswerCount,
+        useCanvasStore.setState((state) => {
+          const universe = state.universeLibrary[savedUniverseId];
+          const updatedNexus = universe.nexuses[nexusId];
+
+          return {
+            universeLibrary: {
+              ...state.universeLibrary,
+              [savedUniverseId]: {
+                ...universe,
+                courseMode: true,
+                courseSettings: {
+                  memoryActivation: courseData.memoryActivation,
+                  mcqCount: courseData.mcqCount,
+                  shortAnswerCount: courseData.shortAnswerCount,
+                },
+                nexuses: {
+                  ...universe.nexuses,
+                  [nexusId]: {
+                    ...updatedNexus,
+                    applicationEssay: courseData.applicationEssay || undefined
+                  }
+                }
               }
             }
-          }
-        }));
+          };
+        });
 
         console.log('✅ Course mode enabled for universe:', savedUniverseId);
+        console.log('✅ Application essay saved to nexus');
       }
 
       // Save to localStorage with the updated course metadata
@@ -914,6 +972,78 @@ export default function CourseBuilderPage() {
             </div>
           )}
 
+          {/* Step 6: Review & Edit Application Essay */}
+          {currentStep === 6 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-purple-300 mb-4">Review & Edit Application Essay</h2>
+
+              {!courseData.applicationEssay ? (
+                <div className="bg-slate-900/50 rounded-lg p-8 border border-purple-500/20 text-center">
+                  <div className="text-gray-400 mb-4">No application essay generated yet</div>
+                  <button
+                    onClick={handleGenerateApplicationEssay}
+                    disabled={isGenerating}
+                    className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? 'Generating...' : '✨ Generate Application Essay'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Essay Question */}
+                  <div className="bg-slate-900/50 rounded-lg p-6 border border-purple-500/20">
+                    <h3 className="text-lg font-bold text-purple-300 mb-3">Essay Question</h3>
+                    <textarea
+                      value={courseData.applicationEssay.question}
+                      onChange={(e) => {
+                        if (courseData.applicationEssay) {
+                          setCourseData({
+                            ...courseData,
+                            applicationEssay: {
+                              ...courseData.applicationEssay,
+                              question: e.target.value
+                            }
+                          });
+                        }
+                      }}
+                      rows={12}
+                      className="w-full px-4 py-3 bg-slate-900 border border-purple-500/30 rounded text-white text-sm focus:outline-none focus:border-purple-500 font-mono leading-relaxed"
+                      placeholder="Essay question will appear here..."
+                    />
+                  </div>
+
+                  {/* Grading Rubric */}
+                  <div className="bg-slate-900/50 rounded-lg p-6 border border-purple-500/20">
+                    <h3 className="text-lg font-bold text-purple-300 mb-3">Grading Rubric</h3>
+                    <textarea
+                      value={courseData.applicationEssay.rubric}
+                      onChange={(e) => {
+                        if (courseData.applicationEssay) {
+                          setCourseData({
+                            ...courseData,
+                            applicationEssay: {
+                              ...courseData.applicationEssay,
+                              rubric: e.target.value
+                            }
+                          });
+                        }
+                      }}
+                      rows={15}
+                      className="w-full px-4 py-3 bg-slate-900 border border-purple-500/30 rounded text-white text-sm focus:outline-none focus:border-purple-500 font-mono leading-relaxed"
+                      placeholder="Grading rubric will appear here..."
+                    />
+                  </div>
+
+                  <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
+                    <p className="text-sm text-purple-200">
+                      💡 <strong>Tip:</strong> Review and edit both the essay question and rubric to ensure they align with your course objectives. The rubric will help you evaluate student responses consistently.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Navigation Buttons */}
           <div className="flex justify-between mt-8 pt-6 border-t border-slate-700">
             <button
@@ -940,10 +1070,18 @@ export default function CourseBuilderPage() {
               >
                 {isGeneratingQuestions ? `Generating... (${questionGenerationProgress.current}/${questionGenerationProgress.total})` : '✨ Generate Questions'}
               </button>
+            ) : currentStep === 5 ? (
+              <button
+                onClick={nextStep}
+                disabled={courseData.generatedQuestions.length === 0}
+                className="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
             ) : (
               <button
                 onClick={handleGenerateCourse}
-                disabled={isGenerating || courseData.generatedQuestions.length === 0}
+                disabled={isGenerating || !courseData.applicationEssay}
                 className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-bold disabled:cursor-not-allowed"
               >
                 {isGenerating ? 'Creating Course...' : '🎓 Create Course'}
