@@ -348,6 +348,12 @@ interface UniverseData {
   createdAt: number;
   lastModified: number;
   folderId?: string;
+  courseMode?: boolean; // Flag to identify course universes
+  courseSettings?: {
+    memoryActivation: boolean;
+    mcqCount: number;
+    shortAnswerCount: number;
+  };
 }
 
 interface UniverseSnapshot {
@@ -418,6 +424,10 @@ interface CanvasStore {
   getNodeChildrenCount: (nodeId: string) => number;
   deleteNode: (nodeId: string) => void;
   reparentNode: (nodeId: string, newParentId: string, newPosition: [number, number, number]) => void;
+
+  // 🎯 QUIZ COMPLETION & UNLOCK SYSTEM
+  markNodeCompleted: (nodeId: string) => boolean; // Mark node as completed and unlock next
+  unlockNextNode: (currentNodeId: string) => string | null; // Unlock next L1 sibling, return unlocked node ID or null
 
   // 📸 SNAPSHOT SYSTEM
   createSnapshot: (universeId: string) => void;
@@ -2908,6 +2918,137 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     get().saveToLocalStorage();
   },
 
+  // 🎯 MARK NODE AS COMPLETED AND UNLOCK NEXT
+  markNodeCompleted: (nodeId: string) => {
+    console.log('🎯 ==========================================');
+    console.log('🎯 MARKING NODE AS COMPLETED');
+    console.log('🎯   Node:', nodeId);
+    console.log('🎯 ==========================================');
+
+    const state = get();
+    const node = state.nodes[nodeId];
+
+    if (!node) {
+      console.error('❌ Node not found:', nodeId);
+      return false;
+    }
+
+    // 🎓 CHECK IF THIS IS A COURSE UNIVERSE
+    const universeId = node.parentId;
+    const universe = state.universeLibrary[universeId];
+
+    if (!universe) {
+      console.error('❌ Universe not found:', universeId);
+      return false;
+    }
+
+    if (!universe.courseMode) {
+      console.log('ℹ️ Skipping completion - not a course universe');
+      return false;
+    }
+
+    console.log('✅ Course universe confirmed - proceeding with completion');
+
+    // Check if already completed
+    if (node.isCompleted) {
+      console.log('ℹ️ Node already marked as completed');
+      return false;
+    }
+
+    // Mark node as completed
+    set((state) => ({
+      nodes: {
+        ...state.nodes,
+        [nodeId]: {
+          ...state.nodes[nodeId],
+          isCompleted: true
+        }
+      }
+    }));
+
+    console.log('✅ Node marked as completed:', nodeId);
+
+    // Unlock next node
+    const unlockedNodeId = get().unlockNextNode(nodeId);
+
+    // Save to localStorage
+    get().saveToLocalStorage();
+
+    return unlockedNodeId !== null;
+  },
+
+  // 🔓 UNLOCK NEXT L1 SIBLING NODE
+  unlockNextNode: (currentNodeId: string) => {
+    console.log('🔓 ==========================================');
+    console.log('🔓 UNLOCKING NEXT NODE');
+    console.log('🔓   Current Node:', currentNodeId);
+
+    const state = get();
+    const currentNode = state.nodes[currentNodeId];
+
+    if (!currentNode) {
+      console.error('❌ Current node not found:', currentNodeId);
+      return null;
+    }
+
+    // Find the nexus (parent of current L1 node)
+    const nexusId = currentNode.parentId;
+    console.log('🔓   Nexus ID:', nexusId);
+
+    // Get all L1 nodes (direct children of nexus)
+    const l1Nodes = Object.values(state.nodes)
+      .filter(n => n.parentId === nexusId)
+      .sort((a, b) => a.id.localeCompare(b.id)); // Sort by creation time (ID is timestamp-based)
+
+    console.log('🔓   Total L1 nodes:', l1Nodes.length);
+
+    // Find current node's index
+    const currentIndex = l1Nodes.findIndex(n => n.id === currentNodeId);
+
+    if (currentIndex === -1) {
+      console.error('❌ Current node not found in L1 nodes');
+      return null;
+    }
+
+    console.log('🔓   Current node index:', currentIndex);
+
+    // Check if there's a next node
+    if (currentIndex >= l1Nodes.length - 1) {
+      console.log('ℹ️ No more nodes to unlock - this is the last L1 node');
+      return null;
+    }
+
+    // Get next L1 node
+    const nextNode = l1Nodes[currentIndex + 1];
+    console.log('🔓   Next node ID:', nextNode.id);
+    console.log('🔓   Next node locked status:', nextNode.isLocked);
+
+    // Unlock it
+    if (nextNode.isLocked) {
+      set((state) => ({
+        nodes: {
+          ...state.nodes,
+          [nextNode.id]: {
+            ...state.nodes[nextNode.id],
+            isLocked: false
+          }
+        }
+      }));
+
+      console.log('✅ Next node unlocked:', nextNode.id);
+      console.log('🔓 ==========================================');
+
+      // Save to localStorage
+      get().saveToLocalStorage();
+
+      return nextNode.id;
+    } else {
+      console.log('ℹ️ Next node was already unlocked');
+      console.log('🔓 ==========================================');
+      return null;
+    }
+  },
+
   // 📸 CREATE SNAPSHOT - Store original state for true revert
   createSnapshot: (universeId: string) => {
     console.log('📸 ==========================================');
@@ -3378,38 +3519,31 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     // Normalize coordinates before loading
     const normalized = get().normalizeUniverseCoordinates(universeData);
 
-    // 🔒 LOCK SYSTEM: Lock all L1 nodes except the first
-    const nexusId = normalized.nexuses[0]?.id;
-    if (nexusId) {
-      // Find all L1 nodes (direct children of nexus)
-      const l1Nodes = Object.values(normalized.nodes)
-        .filter(node => node.parentId === nexusId)
-        .sort((a, b) => a.id.localeCompare(b.id)); // Sort by creation time (ID is timestamp-based)
+    // 🎓 COURSE MODE: For course universes, preserve existing lock states
+    // Regular universes don't use the lock system
+    if (universeData.courseMode) {
+      console.log('🎓 Course mode detected - preserving lock states from saved data');
+      console.log('   - Course settings:', universeData.courseSettings);
 
-      console.log('🔒 Applying lock system:');
-      console.log('   - Total L1 nodes:', l1Nodes.length);
-
-      // Apply locks: first node unlocked, rest locked
-      const updatedNodes = { ...normalized.nodes };
-      l1Nodes.forEach((node, index) => {
-        updatedNodes[node.id] = {
-          ...node,
-          isLocked: index !== 0 // First node unlocked (false), rest locked (true)
-        };
-        console.log(`   - ${node.id.substring(0, 20)}... ${index === 0 ? '🔓 UNLOCKED' : '🔒 LOCKED'}`);
+      // Log lock states for debugging
+      Object.values(normalized.nodes).forEach(node => {
+        if (node.isLocked !== undefined) {
+          console.log(`   - ${node.id.substring(0, 20)}... ${node.isLocked ? '🔒 LOCKED' : '🔓 UNLOCKED'} ${node.isCompleted ? '✅ COMPLETED' : ''}`);
+        }
       });
 
-      // Load the universe with locked nodes
+      // Load universe with preserved lock states
       set({
         activeUniverseId: universeId,
         nexuses: normalized.nexuses,
-        nodes: updatedNodes,
+        nodes: normalized.nodes, // Keep lock states as-is from saved data
         selectedId: null,
         showContentOverlay: false,
         showReplyModal: false,
       });
     } else {
-      // No nexus found, load without locking
+      // Regular universe - no lock system
+      console.log('📚 Regular universe - no lock system');
       set({
         activeUniverseId: universeId,
         nexuses: normalized.nexuses,

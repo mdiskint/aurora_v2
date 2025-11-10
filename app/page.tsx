@@ -22,6 +22,10 @@ export default function Home() {
     window.location.href = '/chat';
   };
 
+  const handleCreateCourse = () => {
+    window.location.href = '/course-builder';
+  };
+
   return (
     <div style={{
       width: '100vw',
@@ -178,6 +182,24 @@ export default function Home() {
         >
           Chat
         </button>
+
+        <button
+          onClick={handleCreateCourse}
+          className="button-hover"
+          style={{
+            padding: '20px 50px',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
+            color: '#050A1E',
+            border: '3px solid #FFD700',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            minWidth: '200px'
+          }}
+        >
+          Create Course
+        </button>
       </div>
 
       <div style={{
@@ -209,6 +231,14 @@ export default function Home() {
           textAlign: 'center'
         }}>
           Chat with Claude AI
+        </p>
+        <p style={{
+          color: '#9CA3AF',
+          fontSize: '14px',
+          width: '200px',
+          textAlign: 'center'
+        }}>
+          Build structured courses
         </p>
       </div>
     </div>

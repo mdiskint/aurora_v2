@@ -53,7 +53,8 @@ export function exportToPDF(data: ExportData) {
   // Title
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
-  const titleLines = doc.splitTextToSize(data.title, maxWidth);
+  const 
+  titleLines = doc.splitTextToSize(data.title, maxWidth);
   titleLines.forEach((line: string) => {
     doc.text(line, pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;

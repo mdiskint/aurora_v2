@@ -1024,10 +1024,11 @@ ${analysis.doctrines.map(d => `Doctrine: ${d.name} - ${d.explanation}`).join('\n
                     )}
                   </div>
                 )}
-                </div>
               </div>
             </div>
-          )}
+          </div>
+          )
+        }
         </div>
       </div>
     </div>

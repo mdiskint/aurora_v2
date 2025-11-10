@@ -3,8 +3,236 @@
 import { useEffect, useState, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
+import { parseVideoUrl } from '@/lib/videoUtils';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
+
+// VideoPlayer component with YouTube API for proper end time enforcement
+function VideoPlayer({ videoUrl, startTime, endTime }: {
+  videoUrl: string;
+  startTime?: number | null;
+  endTime?: number | null;
+}) {
+  const playerRef = useRef<any>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [playerId] = useState(`youtube-player-${Math.random().toString(36).substr(2, 9)}`);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+
+  useEffect(() => {
+    const parsedVideo = parseVideoUrl(videoUrl, startTime, endTime);
+    if (!parsedVideo || parsedVideo.provider !== 'youtube') {
+      return; // Only handle YouTube for now
+    }
+
+    // Extract video ID from embed URL
+    const videoIdMatch = parsedVideo.embedUrl.match(/embed\/([a-zA-Z0-9_-]{11})/);
+    if (!videoIdMatch) return;
+    const videoId = videoIdMatch[1];
+
+    // Load YouTube IFrame API
+    if (!(window as any).YT) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+
+      (window as any).onYouTubeIframeAPIReady = () => {
+        initPlayer();
+      };
+    } else {
+      initPlayer();
+    }
+
+    function initPlayer() {
+      playerRef.current = new (window as any).YT.Player(playerId, {
+        videoId: videoId,
+        playerVars: {
+          start: startTime && startTime > 0 ? Math.floor(startTime) : undefined,
+          autoplay: 0,
+          modestbranding: 1,
+        },
+        events: {
+          onReady: onPlayerReady,
+          onStateChange: onPlayerStateChange,
+        },
+      });
+    }
+
+    function onPlayerReady(event: any) {
+      // Get the total video duration
+      const duration = event.target.getDuration();
+      setVideoDuration(duration);
+    }
+
+    function onPlayerStateChange(event: any) {
+      // When video is playing, monitor the time
+      if (event.data === (window as any).YT.PlayerState.PLAYING && endTime && endTime > 0) {
+        // Clear any existing interval
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+        }
+
+        // Check every 100ms if we've reached the end time and update progress
+        intervalRef.current = setInterval(() => {
+          if (playerRef.current && playerRef.current.getCurrentTime) {
+            const time = playerRef.current.getCurrentTime();
+            setCurrentTime(time);
+
+            if (time >= endTime) {
+              playerRef.current.pauseVideo();
+              if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+              }
+            }
+          }
+        }, 100);
+      }
+
+      // Clear interval when video is paused or ended
+      if (event.data === (window as any).YT.PlayerState.PAUSED ||
+          event.data === (window as any).YT.PlayerState.ENDED) {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (playerRef.current && playerRef.current.destroy) {
+        playerRef.current.destroy();
+      }
+    };
+  }, [videoUrl, startTime, endTime, playerId]);
+
+  const parsedVideo = parseVideoUrl(videoUrl, startTime, endTime);
+
+  console.log('🎬 VideoPlayer rendering:', {
+    videoUrl,
+    startTime,
+    endTime,
+    parsedVideo,
+  });
+
+  if (!parsedVideo) {
+    console.error('❌ Failed to parse video URL:', videoUrl);
+    return null;
+  }
+
+  // Format time as MM:SS
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Calculate segment position and width for timeline
+  const segmentStart = startTime || 0;
+  const segmentEnd = endTime || videoDuration || 0;
+  const totalDuration = videoDuration || segmentEnd;
+
+  const segmentLeftPercent = totalDuration > 0 ? (segmentStart / totalDuration) * 100 : 0;
+  const segmentWidthPercent = totalDuration > 0 ? ((segmentEnd - segmentStart) / totalDuration) * 100 : 100;
+
+  // For YouTube, use the div that will be replaced by the player
+  if (parsedVideo.provider === 'youtube') {
+    console.log('✅ Using YouTube IFrame API for:', parsedVideo.embedUrl);
+    return (
+      <div className="w-full mx-auto" style={{ maxWidth: '1000px' }}>
+        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+          <div
+            id={playerId}
+            className="absolute top-0 left-0 w-full h-full rounded-lg border-2 border-cyan-500/30"
+          />
+        </div>
+
+        {/* Timeline Indicator */}
+        {videoDuration && (
+          <div className="mt-4 px-2">
+            <div className="flex justify-between items-center mb-2 text-xs text-gray-400">
+              <span>Section: {formatTime(segmentStart)} - {formatTime(segmentEnd)}</span>
+              <span>Total: {formatTime(totalDuration)}</span>
+            </div>
+
+            {/* Timeline bar */}
+            <div className="relative h-8 bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+              {/* Grayed out left section */}
+              {segmentStart > 0 && (
+                <div
+                  className="absolute top-0 left-0 h-full bg-gray-900/50"
+                  style={{ width: `${segmentLeftPercent}%` }}
+                />
+              )}
+
+              {/* Active playable segment */}
+              <div
+                className="absolute top-0 h-full bg-gradient-to-r from-cyan-500/30 to-blue-500/30 border-x-2 border-cyan-400"
+                style={{
+                  left: `${segmentLeftPercent}%`,
+                  width: `${segmentWidthPercent}%`
+                }}
+              >
+                <div className="h-full flex items-center justify-center">
+                  <span className="text-xs font-bold text-cyan-300 drop-shadow-lg">
+                    {formatTime(segmentEnd - segmentStart)} segment
+                  </span>
+                </div>
+              </div>
+
+              {/* Grayed out right section */}
+              {segmentEnd < totalDuration && (
+                <div
+                  className="absolute top-0 right-0 h-full bg-gray-900/50"
+                  style={{ width: `${100 - (segmentLeftPercent + segmentWidthPercent)}%` }}
+                />
+              )}
+
+              {/* Current playback position indicator */}
+              {currentTime > 0 && currentTime >= segmentStart && currentTime <= segmentEnd && (
+                <div
+                  className="absolute top-0 h-full w-1 bg-red-500 transition-all duration-100"
+                  style={{
+                    left: `${(currentTime / totalDuration) * 100}%`
+                  }}
+                >
+                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full shadow-lg" />
+                </div>
+              )}
+            </div>
+
+            {/* Time labels */}
+            <div className="flex justify-between mt-1 text-xs text-gray-500">
+              <span>0:00</span>
+              <span>{formatTime(totalDuration)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // For other providers (Vimeo, etc), use regular iframe
+  console.log('🎥 Using fallback iframe for:', {
+    provider: parsedVideo.provider,
+    embedUrl: parsedVideo.embedUrl,
+  });
+
+  return (
+    <div className="relative w-full mx-auto" style={{ maxWidth: '1000px', paddingBottom: '56.25%' }}>
+      <iframe
+        src={parsedVideo.embedUrl}
+        className="absolute top-0 left-0 w-full h-full rounded-lg border-2 border-cyan-500/30"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      />
+    </div>
+  );
+}
 
 export default function UnifiedNodeModal() {
   const pathname = usePathname();
@@ -47,6 +275,10 @@ export default function UnifiedNodeModal() {
   const [isVisible, setIsVisible] = useState(false);
   const [showAnchorFeedback, setShowAnchorFeedback] = useState(false);
 
+  // Toast notification state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   // Quiz Me / Deep Thinking mode state
   const [explorationMode, setExplorationMode] = useState<'deep-thinking' | 'quiz' | 'quiz-mc' | null>(null);
   const [quizFeedback, setQuizFeedback] = useState('');
@@ -85,6 +317,15 @@ export default function UnifiedNodeModal() {
   const node = selectedId ? nodes[selectedId] : null;
   const nexus = selectedId ? nexuses.find((n) => n.id === selectedId) : null;
   const selectedItem = node || nexus;
+
+  // Toast notification helper
+  const showToastNotification = (message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+    }, 3000); // Auto-dismiss after 3 seconds
+  };
 
   // For connection nodes, build content from all connected nodes
   const getConnectionContent = () => {
@@ -733,6 +974,18 @@ export default function UnifiedNodeModal() {
 
           updateNode(node.id, { quizProgress: updatedProgress });
           console.log('💾 Quiz progress saved:', updatedProgress.questionsAsked.length, 'questions');
+
+          // 🎯 MARK NODE AS COMPLETED AFTER 3 QUESTIONS (shows engagement with material)
+          if (updatedProgress.questionsAsked.length >= 3 && !node.isCompleted) {
+            console.log('🎯 Quiz threshold reached (3 questions) - marking node as completed');
+            const { markNodeCompleted } = useCanvasStore.getState();
+            const wasUnlocked = markNodeCompleted(node.id);
+
+            if (wasUnlocked) {
+              console.log('🔓 Next section unlocked!');
+              showToastNotification('🔓 Next section unlocked!');
+            }
+          }
         }
 
         // Create a single node with question, answer, and feedback
@@ -994,6 +1247,41 @@ export default function UnifiedNodeModal() {
 
   // End MC quiz
   const handleEndMcQuiz = () => {
+    // 💾 SAVE MCQ RESULTS TO NODE & MARK AS COMPLETED
+    if (node && mcResults.length > 0) {
+      console.log('📊 Saving MCQ quiz results to node:', node.id);
+
+      // Convert MCQ results to answersGiven format
+      const mcAnswersGiven = mcResults.map(result => ({
+        question: result.question,
+        answer: result.selectedAnswer,
+        wasCorrect: result.isCorrect
+      }));
+
+      // Update node with MCQ progress
+      const updatedProgress = {
+        questionsAsked: mcQuestions.map(q => q.question),
+        answersGiven: [
+          ...(node.quizProgress?.answersGiven || []),
+          ...mcAnswersGiven
+        ],
+        lastQuizDate: Date.now(),
+        completedCycles: (node.quizProgress?.completedCycles || 0) + 1
+      };
+
+      updateNode(node.id, { quizProgress: updatedProgress });
+      console.log('✅ MCQ progress saved:', updatedProgress.questionsAsked.length, 'questions');
+
+      // 🎯 MARK NODE AS COMPLETED AND UNLOCK NEXT
+      const { markNodeCompleted } = useCanvasStore.getState();
+      const wasUnlocked = markNodeCompleted(node.id);
+
+      if (wasUnlocked) {
+        console.log('🔓 Next section unlocked!');
+        showToastNotification('🔓 Next section unlocked!');
+      }
+    }
+
     isSocraticModeActive.current = false;
     setSocraticRootId(null);
     setExplorationMode(null);
@@ -1173,7 +1461,8 @@ export default function UnifiedNodeModal() {
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          width: '70vw',
+          width: '90vw',
+          maxWidth: '1400px',
           maxHeight: '90vh',
           display: 'flex',
           flexDirection: 'column',
@@ -1191,7 +1480,7 @@ export default function UnifiedNodeModal() {
         >
 
           {/* TOP SECTION - Content Display */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col">
             {/* Header */}
             <div className="p-6 border-b border-cyan-500/30 flex items-start justify-between flex-shrink-0">
               <div className="flex-1">
@@ -1251,8 +1540,19 @@ export default function UnifiedNodeModal() {
               </button>
             </div>
 
+            {/* Video Player (if node has video) */}
+            {node?.videoUrl && (
+              <div className="px-6 pt-6 pb-3 flex-shrink-0">
+                <VideoPlayer
+                  videoUrl={node.videoUrl}
+                  startTime={node.videoStart}
+                  endTime={node.videoEnd}
+                />
+              </div>
+            )}
+
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 p-6">
               {isExplorePage && selectedItem ? (
                 <div className="relative h-full flex flex-col">
                   <textarea
@@ -1928,6 +2228,31 @@ export default function UnifiedNodeModal() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Toast Notification */}
+      {showToast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: '#10b981',
+            color: '#FFFFFF',
+            padding: '16px 24px',
+            borderRadius: '12px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            zIndex: 10001,
+            fontSize: '16px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            animation: 'slideInUp 0.3s ease-out',
+          }}
+        >
+          {toastMessage}
+        </div>
       )}
     </>
   );

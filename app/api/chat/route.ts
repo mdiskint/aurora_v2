@@ -562,69 +562,132 @@ Now ask your question (QUESTION ONLY, NO ANSWER):`;
     if (mode === 'quiz-mc') {
       console.log('📝 QUIZ-MC MODE: Generating multiple choice questions');
 
-      const { numberOfQuestions = 5 } = body;
+      const { numberOfQuestions = 5, questionNumber = 1 } = body;
       const userTopic = userMessage;
 
-      const mcQuizPrompt = `Generate ${numberOfQuestions} UWorld-style multiple choice questions about this content:
+      // 🎯 RANDOMIZE DIFFICULTY based on question number (UWorld style)
+      // Questions 1-2: Easy
+      // Questions 3-4: Medium
+      // Questions 5+: Hard
+      let difficultyLevel: 'easy' | 'medium' | 'hard';
+      if (questionNumber <= 2) {
+        difficultyLevel = 'easy';
+      } else if (questionNumber <= 4) {
+        difficultyLevel = 'medium';
+      } else {
+        difficultyLevel = 'hard';
+      }
+
+      console.log(`📊 Question ${questionNumber}: Difficulty = ${difficultyLevel.toUpperCase()}`);
+
+      // Difficulty-specific instructions following UWorld patterns
+      const difficultyInstructions = {
+        easy: `**EASY DIFFICULTY** (Question ${questionNumber}/5):
+- **STRAIGHTFORWARD FACT PATTERN** (1-2 paragraphs, 100-200 words):
+  - Simple, clear scenario with essential facts only
+  - Limited number of parties or elements
+  - Direct application of core principles
+
+- **DIRECT RECALL & BASIC APPLICATION**:
+  - Test fundamental understanding of key concepts
+  - "What is the rule?" or "What is the basic outcome?"
+  - Should be answerable with solid understanding of core material
+  - One clearly correct answer based on fundamental principles
+
+- **ANSWER CHOICES**:
+  - One obviously correct answer
+  - Three plausible but clearly wrong distractors
+  - Distractors should test common misconceptions
+  - Clear distinctions between options`,
+
+        medium: `**MEDIUM DIFFICULTY** (Question ${questionNumber}/5):
+- **MODERATE FACT PATTERN** (2-3 paragraphs, 200-350 words):
+  - Realistic scenario with relevant details
+  - Multiple parties or elements to consider
+  - Some extraneous information mixed with key facts
+
+- **APPLICATION & ANALYSIS**:
+  - Require applying principles to moderately complex facts
+  - "What is the most likely outcome?" or "Which argument is strongest?"
+  - May involve balancing competing considerations
+  - Requires distinguishing between closely related concepts
+
+- **ANSWER CHOICES**:
+  - Include some partially correct answers as strong distractors
+  - Test ability to distinguish between similar principles
+  - Options should require careful analysis
+  - Two options may seem plausible at first glance`,
+
+        hard: `**HARD DIFFICULTY** (Question ${questionNumber}/5):
+- **COMPLEX FACT PATTERN** (3-4 paragraphs, 350-500 words):
+  - Multi-layered scenario with intricate details
+  - Multiple parties, transactions, or time periods
+  - Significant extraneous information to filter through
+  - May involve procedural complexities or exceptions
+
+- **MULTI-STEP REASONING & SYNTHESIS**:
+  - Require synthesizing multiple concepts or doctrines
+  - "Given these facts, what is the best argument?" or "What is the correct legal analysis?"
+  - May involve exceptions to general rules
+  - Requires nuanced understanding of how principles interact
+  - May test edge cases or less obvious applications
+
+- **ANSWER CHOICES**:
+  - Multiple answers may appear correct on initial reading
+  - Test subtle distinctions between closely related doctrines
+  - Include answers that are correct but for wrong reasons
+  - Require careful elimination and deep understanding
+  - May involve two-step reasoning to identify correct answer`
+      };
+
+      const mcQuizPrompt = `Generate exactly ONE UWorld-style multiple choice question about this content:
 
 "${userTopic}"
 
-Create exam-level questions that:
+${difficultyInstructions[difficultyLevel]}
 
-1. **MODERATE FACT PATTERNS** (2-3 paragraphs):
-   - Start with a scenario setting the context
-   - Include key facts and some relevant details
-   - Add important dates, parties, or amounts when necessary
-   - Make the scenario realistic but focused
+Create an exam-level question that follows these general principles:
 
-2. **APPLICATION QUESTIONS**:
-   - Test ability to apply legal principles to facts
-   - Require thoughtful analysis
-   - Focus on "What is the most likely outcome?" or "Which argument is strongest?"
-   - Balance difficulty with clarity
-
-3. **GOOD ANSWER CHOICES**:
-   - All 4 options should be plausible and clear
-   - Include some partially correct answers as distractors
+1. **GOOD ANSWER CHOICES** (all difficulties):
+   - All 4 options should be grammatically parallel and clear
    - Options should be similar in length
-   - Avoid obviously wrong answers
    - Test understanding of key distinctions
+   - Avoid "all of the above" or "none of the above"
 
-4. **CLEAR EXPLANATIONS**:
+2. **CLEAR EXPLANATIONS**:
    - Explain why the correct answer is right (1-2 sentences)
-   - Briefly explain why the other answers are incorrect
+   - Briefly explain why each other answer is incorrect
    - Reference key facts from the hypothetical
-   - Cite relevant legal principles
+   - Cite relevant legal principles or rules
 
-Return as JSON array:
-[
-  {
-    "question": "Multi-paragraph fact pattern followed by: What is the most likely result?",
-    "options": {
-      "A": "Plausible option",
-      "B": "Plausible option",
-      "C": "Plausible option",
-      "D": "Plausible option"
-    },
-    "correctAnswer": "C",
-    "explanation": "Clear explanation (2-3 sentences) explaining why C is correct and why the others are incorrect, with reference to key facts"
-  }
-]
+CRITICAL: You MUST respond in this EXACT format with NO additional text, NO introductions, NO thank you messages:
+
+**Question:**
+[The full question text including fact pattern]
+
+**Options:**
+A) [Option A text]
+B) [Option B text]
+C) [Option C text]
+D) [Option D text]
+
+**Correct Answer:** [A, B, C, or D - just the letter]
+
+**Explanation:**
+[2-4 sentences explaining why the correct answer is right and why the others are wrong]
 
 IMPORTANT:
-- Return ONLY valid JSON, no markdown code blocks
-- ${numberOfQuestions} questions total
-- Each fact pattern should be 2-3 paragraphs (200-350 words)
-- Make questions thoughtful but not overly complex
-- All answer choices should be clear and plausible
-- Explanations should be concise (2-3 sentences)`;
+- Return ONLY the question in the format shown above
+- NO markdown code blocks, NO JSON, NO extra text
+- Follow the ${difficultyLevel.toUpperCase()} difficulty requirements
+- Make the question appropriately challenging for ${difficultyLevel} level`;
 
       console.log('📤 Sending MC quiz generation prompt...');
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 6144,
-        system: 'You are an expert exam question writer creating UWorld-style multiple choice questions for law students. These questions should be thoughtful and test understanding through application, with clear fact patterns and concise explanations. Always return ONLY valid JSON.',
+        system: `You are an expert exam question writer creating UWorld-style multiple choice questions for law students. You excel at creating questions with varied difficulty levels (easy, medium, hard) following UWorld's progressive challenge model. Your questions test understanding through application, with appropriately complex fact patterns and clear explanations. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
         messages: [{ role: 'user', content: mcQuizPrompt }],
       });
 
@@ -633,7 +696,57 @@ IMPORTANT:
 
       console.log('✅ MC quiz response received:', rawResponse.substring(0, 200));
 
-      return NextResponse.json({ response: rawResponse });
+      return NextResponse.json({ content: rawResponse });
+    }
+
+    // 📝 SHORT ANSWER QUIZ MODE: Generate short answer questions
+    if (mode === 'quiz-short-answer') {
+      console.log('📝 QUIZ-SHORT-ANSWER MODE: Generating short answer questions');
+
+      const { numberOfQuestions = 2, questionNumber = 1 } = body;
+      const userTopic = userMessage;
+
+      console.log(`📊 Generating Short Answer ${questionNumber}/${numberOfQuestions}`);
+
+      const shortAnswerPrompt = `Generate exactly ONE short answer question about this content:
+
+"${userTopic}"
+
+Create a thoughtful short answer question that:
+- Tests deep understanding and ability to explain concepts
+- Requires a paragraph-length response (3-5 sentences)
+- Cannot be answered with simple yes/no or one-word answers
+- Focuses on application, analysis, or synthesis of ideas
+
+CRITICAL: You MUST respond in this EXACT format with NO additional text, NO introductions, NO thank you messages:
+
+**Question:**
+[The question text - should be clear and specific about what is being asked]
+
+**Sample Answer:**
+[A comprehensive sample answer showing the key points that should be covered, written in 3-5 sentences. This serves as a rubric for grading.]
+
+IMPORTANT:
+- Return ONLY the question in the format shown above
+- NO markdown code blocks, NO JSON, NO extra text
+- The sample answer should demonstrate the level of depth expected
+- Focus on conceptual understanding, not just facts`;
+
+      console.log('📤 Sending short answer generation prompt...');
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: `You are an expert exam question writer creating thoughtful short answer questions for students. You excel at creating questions that test deep understanding and require explanation rather than simple recall. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
+        messages: [{ role: 'user', content: shortAnswerPrompt }],
+      });
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+
+      console.log('✅ Short answer response received:', rawResponse.substring(0, 200));
+
+      return NextResponse.json({ content: rawResponse });
     }
 
     // 🔬 ANALYZE UNIVERSE MODE: Extract topics, cases, and doctrines
