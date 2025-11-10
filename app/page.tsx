@@ -10,14 +10,6 @@ export default function Home() {
     // loadFromLocalStorage(); // ← Removed: Canvas should start EMPTY
   }, []);
 
-  const handleCreate = () => {
-    window.location.href = '/create';
-  };
-
-  const handleExplore = () => {
-    window.location.href = '/explore';
-  };
-
   const handleChat = () => {
     window.location.href = '/chat';
   };
@@ -130,42 +122,6 @@ export default function Home() {
         zIndex: 1
       }}>
         <button
-          onClick={handleCreate}
-          className="button-hover"
-          style={{
-            padding: '20px 50px',
-            fontSize: '24px',
-            fontWeight: 'bold',
-            backgroundColor: '#9333EA',
-            color: 'white',
-            border: '3px solid #9333EA',
-            borderRadius: '12px',
-            cursor: 'pointer',
-            minWidth: '200px'
-          }}
-        >
-          Create
-        </button>
-
-        <button
-          onClick={handleExplore}
-          className="button-hover"
-          style={{
-            padding: '20px 50px',
-            fontSize: '24px',
-            fontWeight: 'bold',
-            backgroundColor: '#00FFD4',
-            color: '#050A1E',
-            border: '3px solid #00FFD4',
-            borderRadius: '12px',
-            cursor: 'pointer',
-            minWidth: '200px'
-          }}
-        >
-          Explore
-        </button>
-
-        <button
           onClick={handleChat}
           className="button-hover"
           style={{
@@ -174,7 +130,7 @@ export default function Home() {
             fontWeight: 'bold',
             backgroundColor: '#3B82F6',
             color: 'white',
-           border: '3px solid #3B82F6',
+            border: '3px solid #3B82F6',
             borderRadius: '12px',
             cursor: 'pointer',
             minWidth: '200px'
@@ -208,22 +164,6 @@ export default function Home() {
         marginTop: '16px',
         zIndex: 1
       }}>
-        <p style={{
-          color: '#9CA3AF',
-          fontSize: '14px',
-          width: '200px',
-          textAlign: 'center'
-        }}>
-          Build your own conversations
-        </p>
-        <p style={{
-          color: '#9CA3AF',
-          fontSize: '14px',
-          width: '200px',
-          textAlign: 'center'
-        }}>
-          Navigate academic papers
-        </p>
         <p style={{
           color: '#9CA3AF',
           fontSize: '14px',
