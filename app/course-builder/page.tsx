@@ -487,7 +487,7 @@ export default function CourseBuilderPage() {
   };
 
   const nextStep = () => {
-    if (currentStep < 5) setCurrentStep(currentStep + 1);
+    if (currentStep < 6) setCurrentStep(currentStep + 1);
   };
 
   const prevStep = () => {
