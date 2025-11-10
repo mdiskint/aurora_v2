@@ -905,6 +905,39 @@ Return ONLY valid JSON in this exact format:
       return NextResponse.json({ content: rawResponse });
     }
 
+    // 📊 GRADE APPLICATION ESSAY: Grade student essay using rubric
+    if (mode === 'grade-application-essay') {
+      console.log('📊 GRADE-APPLICATION-ESSAY MODE: Grading student essay with rubric');
+
+      const userContent = userMessage;
+
+      const gradingPrompt = `You are a law professor grading a student's application essay. You have the essay question, the grading rubric, and the student's answer.
+
+${userContent}
+
+Provide comprehensive feedback that:
+1. Evaluates the student's answer against each criterion in the rubric
+2. Identifies which legal issues and doctrines they correctly addressed
+3. Points out what they missed or misunderstood
+4. Explains the correct analysis for any gaps
+5. Provides specific suggestions for improvement
+6. Assigns an overall assessment (e.g., Excellent, Good, Needs Improvement)
+
+Format your feedback in clear, structured paragraphs with headers. Be constructive, specific, and encouraging while maintaining academic rigor.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 6000,
+        system: 'You are an experienced law professor providing detailed, constructive feedback on application essays. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
+        messages: [{ role: 'user', content: gradingPrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('📊 Essay graded successfully');
+
+      return NextResponse.json({ response: rawResponse });
+    }
+
     // 📝 APPLICATION LAB: Generate essay question
     if (mode === 'essay-question') {
       console.log('📝 ESSAY-QUESTION MODE: Generating essay question based on analysis');

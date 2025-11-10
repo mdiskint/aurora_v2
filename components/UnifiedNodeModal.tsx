@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { parseVideoUrl } from '@/lib/videoUtils';
+import ApplicationEssaySection from './ApplicationEssaySection';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -309,6 +310,9 @@ export default function UnifiedNodeModal() {
     correctAnswer: string;
     isCorrect: boolean;
   }>>([]);
+
+  // Application essay state
+  const [showEssaySection, setShowEssaySection] = useState(false);
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -1529,6 +1533,18 @@ export default function UnifiedNodeModal() {
                 </div>
               )}
 
+              {/* Application Essay Button - For nexuses with application essays */}
+              {nexus?.applicationEssay && (
+                <div className="flex flex-col items-center mx-6">
+                  <button
+                    onClick={() => setShowEssaySection(true)}
+                    className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-bold flex items-center gap-2"
+                  >
+                    📝 Application Essay
+                  </button>
+                </div>
+              )}
+
               <button
                 onClick={handleClose}
                 className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/10 rounded"
@@ -2253,6 +2269,14 @@ export default function UnifiedNodeModal() {
         >
           {toastMessage}
         </div>
+      )}
+
+      {/* Application Essay Section - Full Screen Overlay */}
+      {showEssaySection && nexus?.applicationEssay && (
+        <ApplicationEssaySection
+          applicationEssay={nexus.applicationEssay}
+          onClose={() => setShowEssaySection(false)}
+        />
       )}
     </>
   );
