@@ -1,9 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useCanvasStore } from '@/lib/store';
 
 export default function Navigation() {
   const router = useRouter();
+  const enableApplicationLabMode = useCanvasStore((state) => state.enableApplicationLabMode);
+  const hasUniverse = useCanvasStore((state) => {
+    const activeUniverseId = state.activeUniverseId;
+    return activeUniverseId ? Object.keys(state.universeLibrary[activeUniverseId]?.nexuses || {}).length > 0 : false;
+  });
+  const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
 
   return (
     <div style={{
@@ -65,8 +72,48 @@ export default function Navigation() {
         }
       `}</style>
 
-      {/* Right Section - Memories Button */}
-      <div style={{ flex: '0 0 150px', display: 'flex', justifyContent: 'flex-end' }}>
+      {/* Right Section - Application Lab & Memories Buttons */}
+      <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+        {/* Application Lab Button - only show when there's a universe */}
+        {hasUniverse && !isApplicationLabMode && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              console.log('🔬 ========== APPLICATION LAB BUTTON CLICKED ==========');
+              console.log('🔬 BEFORE enable - Current mode:', isApplicationLabMode);
+              enableApplicationLabMode();
+              console.log('🔬 AFTER enable - Mode should now be TRUE');
+            }}
+            style={{
+              padding: '12px 24px',
+              background: 'rgba(16, 185, 129, 0.2)',
+              border: '2px solid #10B981',
+              borderRadius: '8px',
+              color: '#00FFD4',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(16, 185, 129, 0.4)';
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <span style={{ fontSize: '20px' }}>🔬</span>
+            Application Lab
+          </button>
+        )}
+
+        {/* Memories Button */}
         <button
           onClick={() => router.push('/memories')}
           style={{

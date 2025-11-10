@@ -1542,7 +1542,6 @@ export default function CanvasScene() {
 
   // 🔬 Application Lab Mode
   const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
-  const enableApplicationLabMode = useCanvasStore((state) => state.enableApplicationLabMode);
 
   // 🔬 Monitor Application Lab Mode state changes
   useEffect(() => {
@@ -1698,48 +1697,6 @@ export default function CanvasScene() {
   // 🔬 Main content (will be wrapped by ApplicationLabScene if in Application Lab mode)
   const mainContent = (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: '#050A1E' }}>
-      {/* 🔬 Application Lab Toggle Button - hidden when in Application Lab mode */}
-      {hasUniverse && !isApplicationLabMode && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            console.log('🔬 ========== APPLICATION LAB BUTTON CLICKED ==========');
-            console.log('🔬 BEFORE enable - Current mode:', isApplicationLabMode);
-            enableApplicationLabMode();
-            console.log('🔬 AFTER enable - Mode should now be TRUE');
-          }}
-          style={{
-            position: 'absolute',
-            top: '80px',
-            right: '20px',
-            padding: '12px 24px',
-            backgroundColor: '#10B981',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '16px',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            zIndex: 10001,
-            boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-            transition: 'all 0.2s ease',
-            pointerEvents: 'auto'
-          }}
-          onMouseEnter={(e) => {
-            console.log('🔬 Mouse entered Application Lab button');
-            e.currentTarget.style.backgroundColor = '#059669';
-            e.currentTarget.style.transform = 'scale(1.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#10B981';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-        >
-          🔬 Application Lab
-        </button>
-      )}
-
       <Controls />
 
       {/* Universe Title - editable on right-click (only for single universe) */}
