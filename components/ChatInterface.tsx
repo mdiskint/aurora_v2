@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store';
+import { NodeType } from '@/lib/types';
 import SpatialNavigator from './SpatialNavigator';
 import DoctrinalGenerationModal from './DoctrinalGenerationModal';
 
@@ -818,13 +819,58 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
 
         console.log('✅ Found nexus in store:', chatNexus.id);
 
-        // Step 3: Create all child nodes
-        console.log(`🔄 Creating ${nodes.length} child nodes...`);
+        // Step 3: Create all child nodes (doctrines with atomized children)
+        console.log(`🔄 Creating ${nodes.length} doctrine nodes...`);
         for (let i = 0; i < nodes.length; i++) {
           const node = nodes[i];
-          console.log(`✅ Creating node ${i + 1}/${nodes.length}:`, node.content.substring(0, 50) + '...');
-          addNode(node.content, chatNexus.id, undefined, 'ai-response');
+          console.log(`✅ Creating doctrine ${i + 1}/${nodes.length}:`, node.content.substring(0, 50) + '...');
+
+          // Create the doctrine node
+          const doctrineId = addNode(
+            node.content,
+            chatNexus.id,
+            undefined,
+            node.nodeType || 'ai-response'
+          );
           await new Promise(resolve => setTimeout(resolve, 50));
+
+          // 🎓 Create atomized children if they exist
+          if (node.children && Array.isArray(node.children)) {
+            console.log(`   📚 Creating ${node.children.length} atomized children for doctrine ${i + 1}...`);
+
+            for (let j = 0; j < node.children.length; j++) {
+              const child = node.children[j];
+              console.log(`      ✅ Creating child ${j + 1}: ${child.nodeType || 'ai-response'}`);
+
+              // Create child node with explicit nodeType
+              const childId = addNode(
+                child.content,
+                doctrineId, // Parent is the doctrine node
+                undefined,
+                (child.nodeType as NodeType) || 'ai-response'
+              );
+
+              // If it's a quiz node with options, update it with quiz data
+              if (child.nodeType === 'quiz-mc' && child.options && child.correctOption) {
+                const { updateNode } = useCanvasStore.getState();
+                updateNode(childId, {
+                  mcqQuestions: [{
+                    question: child.content,
+                    options: {
+                      A: child.options[0] || '',
+                      B: child.options[1] || '',
+                      C: child.options[2] || '',
+                      D: child.options[3] || ''
+                    },
+                    correctAnswer: child.correctOption,
+                    explanation: child.explanation || ''
+                  }]
+                });
+              }
+
+              await new Promise(resolve => setTimeout(resolve, 30));
+            }
+          }
         }
 
         console.log('✅ Universe created with', nodes.length, 'nodes');

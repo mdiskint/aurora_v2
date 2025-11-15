@@ -414,7 +414,7 @@ interface CanvasStore {
   updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   exportToWordDoc: () => void;
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis', explicitSiblingIndex?: number) => string;
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => string;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -1411,7 +1411,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
   
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis', explicitSiblingIndex?: number) => {
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => {
     let newNodeId = '';
     let isConnectionNodeParent = false;
 

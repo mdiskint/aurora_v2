@@ -125,44 +125,55 @@ export async function POST(request: NextRequest) {
 
 CRITICAL: Ignore any formatting (numbers, bullet points, dashes) in the user's input. Treat the ENTIRE text as ONE TOPIC to explore and break down into your own logical subtopics.
 
-You have the freedom to create 4-20 total artifacts (1 nexus + 3-19 child nodes).
+You will create a Leopold Teaching Doctrine structure with ATOMIZED PRACTICE NODES for each doctrine (concept).
 
-Assess the topic and decide the optimal number based on:
-- How many distinct subtopics exist naturally?
-- Can the topic be well-covered with fewer nodes, or does it require comprehensive breakdown?
-- Balance breadth (many areas) vs. depth (detailed coverage)
+Assess the topic and decide 2-8 core doctrines (learning concepts) based on:
+- How many fundamental principles or concepts does this topic contain?
+- Simple topics (e.g., "primary colors"): 2-3 doctrines
+- Medium complexity (e.g., "photosynthesis"): 3-5 doctrines
+- Complex topics (e.g., "quantum mechanics"): 6-8 doctrines
 
-Guidelines for scaling:
-- Simple/narrow topics (e.g., "primary colors", "traffic lights"): 4-6 total (nexus + 3-5 nodes)
-- Medium complexity (e.g., "building a startup", "photosynthesis"): 7-12 total (nexus + 6-11 nodes)
-- Complex/broad topics (e.g., "causes of World War I", "quantum mechanics", "history of philosophy"): 13-20 total (nexus + 12-19 nodes)
-
-Create the optimal number to give users a complete conceptual map without overwhelming or under-serving the topic.
+For EACH doctrine, create 6 atomized practice children following Leopold Teaching methodology:
+1. **intuition-example**: A concrete, relatable example to build intuition (2-3 sentences)
+2. **model-answer**: Show the correct reasoning pattern or approach (2-3 sentences)
+3. **imitate**: A practice prompt where students apply the pattern ("Now you try...")
+4. **quiz-mc**: A multiple choice question testing understanding
+5. **application-scenario**: A real-world application scenario (2-3 sentences)
+6. **synthesis**: A reflection prompt connecting to broader understanding
 
 Format your response as VALID JSON (and ONLY JSON, no other text):
 {
   "nexusTitle": "brief title (3-7 words)",
   "nexusContent": "overview paragraph explaining the topic",
   "nodes": [
-    {"content": "Subtopic 1: Title\\n\\nDetailed explanation (2-3 sentences minimum)"},
-    {"content": "Subtopic 2: Title\\n\\nDetailed explanation (2-3 sentences minimum)"},
-    {"content": "Subtopic 3: Title\\n\\nDetailed explanation (2-3 sentences minimum)"}
+    {
+      "content": "Doctrine 1 Title\\n\\nCore concept explanation (2-3 sentences)",
+      "nodeType": "doctrine",
+      "children": [
+        {"content": "Concrete example to build intuition...", "nodeType": "intuition-example"},
+        {"content": "Here's the correct reasoning pattern...", "nodeType": "model-answer"},
+        {"content": "Now you try: Apply this pattern to...", "nodeType": "imitate"},
+        {"content": "Question: ...", "nodeType": "quiz-mc", "options": ["A", "B", "C", "D"], "correctOption": "B"},
+        {"content": "Real-world scenario: ...", "nodeType": "application-scenario"},
+        {"content": "Reflect: How does this connect to...", "nodeType": "synthesis"}
+      ]
+    }
   ]
 }
 
 IMPORTANT:
 - Return ONLY valid JSON, no markdown code blocks
 - Use \\n for line breaks within strings (NOT literal newlines)
-- Each node should be substantive (2-3 sentences minimum)
-- Create 3-19 nodes based on topic complexity
-- DO NOT create one node per line from the user input - analyze the WHOLE topic and create your own logical breakdown`;
+- Create 2-8 doctrine nodes, each with exactly 6 atomized children
+- Each child must have explicit "nodeType" field
+- DO NOT create one node per line from user input - create your own logical doctrines`;
 
       console.log('📤 Sending spatial universe generation prompt...');
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096, // Increased to handle up to 19 nodes
-        system: 'You are Aurora AI, a universe architect. Generate structured spatial knowledge graphs with intelligent scaling. Assess topic complexity and create the optimal number of nodes (3-19) to comprehensively map the conceptual space. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        max_tokens: 8192, // Increased to handle atomized children
+        system: 'You are Aurora AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 6 practice children: intuition-example, model-answer, imitate, quiz-mc, application-scenario, and synthesis. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       });
 
