@@ -10,6 +10,48 @@ interface SectionQuestions {
   shortAnswers: ShortAnswer[];
 }
 
+interface AtomizationBlueprint {
+  topic: string;
+  doctrines: Array<{
+    id: string;
+    title: string;
+    role: string;
+    summary: string;
+    content: string;
+    metaSkillTags: string[];
+    children: Array<{
+      id: string;
+      role: string;
+      summary?: string;
+      content?: string;
+      prompt?: string;
+      question?: string;
+      options?: string[];
+      correctOption?: string;
+      explanation?: string;
+      sampleAnswer?: string;
+      guidance?: string;
+      metaSkillTags: string[];
+    }>;
+  }>;
+  finalSynthesis: {
+    role: string;
+    title: string;
+    content: string;
+    metaSkillTags: string[];
+  };
+  applicationLabSuggestion: {
+    doctrineSummary: string;
+    scenarios: Array<{
+      id: string;
+      prompt: string;
+      guidance: string;
+    }>;
+    finalEssayPrompt: string;
+    rubric: string;
+  };
+}
+
 interface CourseData {
   title: string;
   description: string;
@@ -22,6 +64,7 @@ interface CourseData {
   shortAnswerCount: number;
   generatedQuestions: SectionQuestions[]; // Questions for each section
   applicationEssay: ApplicationEssay | null; // Application essay question and rubric
+  atomizationBlueprint: AtomizationBlueprint | null; // AI-generated content structure
 }
 
 export default function CourseBuilderPage() {
@@ -29,6 +72,7 @@ export default function CourseBuilderPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  const [isAtomizing, setIsAtomizing] = useState(false);
   const [questionGenerationProgress, setQuestionGenerationProgress] = useState({ current: 0, total: 0 });
 
   const [courseData, setCourseData] = useState<CourseData>({
@@ -43,6 +87,7 @@ export default function CourseBuilderPage() {
     shortAnswerCount: 2,
     generatedQuestions: [],
     applicationEssay: null,
+    atomizationBlueprint: null,
   });
 
   // Parse timestamp string into chunks
@@ -75,6 +120,79 @@ export default function CourseBuilderPage() {
         end: parseTime(endStr)
       };
     });
+  };
+
+  // Atomize content using Leopold Teaching Doctrines
+  const handleAtomizeContent = async () => {
+    if (!courseData.fullTextContent || courseData.fullTextContent.trim() === '') {
+      alert('Please enter the full text content first.');
+      return;
+    }
+
+    setIsAtomizing(true);
+    console.log('📚 Atomizing content using Leopold Teaching Doctrines...');
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: courseData.fullTextContent
+          }],
+          mode: 'atomize-content'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📚 Atomization response:', data);
+
+      // Clean and parse JSON
+      const cleanJsonString = (str: string): string => {
+        let cleaned = str.trim();
+        if (cleaned.startsWith('```json')) {
+          cleaned = cleaned.substring(7);
+        } else if (cleaned.startsWith('```')) {
+          cleaned = cleaned.substring(3);
+        }
+        if (cleaned.endsWith('```')) {
+          cleaned = cleaned.substring(0, cleaned.length - 3);
+        }
+        cleaned = cleaned.trim();
+        cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+        return cleaned;
+      };
+
+      try {
+        const cleanedContent = cleanJsonString(data.message || data.response);
+        console.log('🧹 Cleaned atomization JSON (first 500 chars):', cleanedContent.substring(0, 500));
+
+        const blueprint = JSON.parse(cleanedContent) as AtomizationBlueprint;
+
+        if (!blueprint.topic || !blueprint.doctrines || !Array.isArray(blueprint.doctrines)) {
+          throw new Error('Invalid atomization blueprint structure');
+        }
+
+        console.log(`✅ Atomization complete! Generated ${blueprint.doctrines.length} doctrines`);
+        setCourseData({ ...courseData, atomizationBlueprint: blueprint });
+
+        alert(`✨ Content atomized into ${blueprint.doctrines.length} learning doctrines!\n\nScroll down to review the blueprint.`);
+      } catch (parseError: any) {
+        console.error('❌ Failed to parse atomization response:', parseError);
+        console.error('❌ Raw content:', data.message || data.response);
+        throw new Error(`Failed to parse AI response: ${parseError.message}`);
+      }
+    } catch (error) {
+      console.error('❌ Error atomizing content:', error);
+      alert(`Failed to atomize content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsAtomizing(false);
+    }
   };
 
   // Generate questions for all sections
@@ -683,6 +801,85 @@ export default function CourseBuilderPage() {
                   className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none font-mono text-sm"
                 />
               </div>
+
+              {/* AI Atomization Button */}
+              {courseData.fullTextContent.trim() && !courseData.atomizationBlueprint && (
+                <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-lg p-4">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="text-2xl">🧠</div>
+                    <div className="flex-1">
+                      <div className="font-bold text-purple-300">AI-Powered Content Atomization</div>
+                      <div className="text-sm text-purple-200/80 mt-1">
+                        Use Leopold Teaching Doctrines to automatically chunk your content into structured learning units with intuition examples, model answers, quizzes, and application scenarios.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleAtomizeContent}
+                    disabled={isAtomizing}
+                    className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-bold disabled:cursor-not-allowed"
+                  >
+                    {isAtomizing ? '🧠 Atomizing Content...' : '✨ Atomize Content with AI'}
+                  </button>
+                </div>
+              )}
+
+              {/* Atomization Blueprint Display */}
+              {courseData.atomizationBlueprint && (
+                <div className="bg-slate-900/50 rounded-lg p-6 border border-purple-500/20">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-purple-300">📚 Atomization Blueprint</h3>
+                    <button
+                      onClick={() => setCourseData({ ...courseData, atomizationBlueprint: null })}
+                      className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-gray-300 rounded text-sm"
+                    >
+                      Clear Blueprint
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="bg-purple-900/20 border border-purple-500/30 rounded p-3">
+                      <div className="text-sm font-semibold text-purple-300">Topic</div>
+                      <div className="text-gray-200 mt-1">{courseData.atomizationBlueprint.topic}</div>
+                    </div>
+
+                    <div className="bg-purple-900/20 border border-purple-500/30 rounded p-3">
+                      <div className="text-sm font-semibold text-purple-300 mb-2">
+                        Doctrines ({courseData.atomizationBlueprint.doctrines.length} learning units)
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {courseData.atomizationBlueprint.doctrines.map((doctrine, idx) => (
+                          <div key={doctrine.id} className="bg-slate-800/50 rounded p-2">
+                            <div className="text-sm font-medium text-cyan-300">
+                              {idx + 1}. {doctrine.title}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              {doctrine.summary}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {doctrine.children.map(child => (
+                                <span
+                                  key={child.id}
+                                  className="text-xs px-2 py-0.5 bg-purple-600/30 text-purple-200 rounded"
+                                >
+                                  {child.role}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
+                      <div className="text-sm font-semibold text-green-300">✨ Ready to Use</div>
+                      <div className="text-xs text-green-200/80 mt-1">
+                        This blueprint will be used to automatically structure your course content and generate targeted questions for each doctrine.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">

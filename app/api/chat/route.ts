@@ -1091,6 +1091,137 @@ Remember: Return ONLY the JSON object, nothing else.`,
       return NextResponse.json({ message: applicationLab, response: applicationLab });
     }
 
+    // 📚 ATOMIZE-CONTENT MODE: Generate learning blueprint using Leopold Teaching Doctrines
+    if (mode === 'atomize-content') {
+      console.log('📚 ATOMIZE-CONTENT MODE: Generating atomization blueprint');
+
+      const contentToAtomize = `${userMessage}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 16000,
+        system: `You are an expert educational designer who atomizes content into structured learning experiences using the Leopold Teaching Doctrines.
+
+**LEOPOLD TEACHING DOCTRINES:**
+1. Understanding Before Memorization
+2. Ear Before Eye (Intuition Before Rule)
+3. Chunk First, Then Whole
+4. Imitation, Then Transformation
+5. Practice Disguised as Play
+6. Technique Serves Expression
+7. Integrated Skills, Not Silos
+8. Micro-Steps, Macro-Arc
+9. Immediate Feedback, Minimal Shame
+10. Expose the Student to Masters Early
+11. Multiple Instruments, One Mind
+12. Hidden Curriculum
+13. Regularity Over Heroics
+14. Structure First, Freedom Inside It
+15. Child-Sized Tasks, Adult-Sized Content
+
+**YOUR TASK:**
+Analyze the provided educational content and produce a JSON blueprint for atomizing it into an Aurora learning universe.
+
+**OUTPUT FORMAT (JSON only, no other text):**
+{
+  "topic": "string - the main subject",
+  "doctrines": [
+    {
+      "id": "doctrine-1",
+      "title": "Doctrine Title",
+      "role": "concept",
+      "summary": "short explanation",
+      "content": "full concept explanation",
+      "metaSkillTags": ["issue-spotting", "rule-articulation", "etc"],
+      "children": [
+        {
+          "id": "intuition-1",
+          "role": "intuition-example",
+          "summary": "short description",
+          "content": "concrete example that builds intuition",
+          "metaSkillTags": ["intuition", "pattern-recognition"]
+        },
+        {
+          "id": "model-1",
+          "role": "model-answer",
+          "content": "model reasoning pattern to demonstrate",
+          "metaSkillTags": ["modeling", "structure"]
+        },
+        {
+          "id": "imitate-1",
+          "role": "imitate",
+          "prompt": "ask student to imitate the reasoning",
+          "metaSkillTags": ["reasoning", "application"]
+        },
+        {
+          "id": "quiz-mc-1",
+          "role": "quiz-mc",
+          "question": "question text",
+          "options": ["Option A", "Option B", "Option C", "Option D"],
+          "correctOption": "A",
+          "explanation": "why that option is correct",
+          "metaSkillTags": ["testing", "memory"]
+        },
+        {
+          "id": "quiz-sa-1",
+          "role": "quiz-short-answer",
+          "question": "short answer prompt",
+          "sampleAnswer": "model answer",
+          "metaSkillTags": ["precision", "rule-articulation"]
+        },
+        {
+          "id": "scenario-1",
+          "role": "application-scenario",
+          "prompt": "realistic fact pattern",
+          "guidance": "how to approach it",
+          "metaSkillTags": ["issue-spotting", "fact-application", "judgment"]
+        },
+        {
+          "id": "synthesis-1",
+          "role": "synthesis",
+          "content": "what this doctrine means and how it connects",
+          "metaSkillTags": ["synthesis", "big-picture"]
+        }
+      ]
+    }
+  ],
+  "finalSynthesis": {
+    "role": "synthesis",
+    "title": "Overall Understanding",
+    "content": "Macro-level explanation of what student now understands",
+    "metaSkillTags": ["big-picture", "integration"]
+  },
+  "applicationLabSuggestion": {
+    "doctrineSummary": "Second-person summary of learning outcomes",
+    "scenarios": [
+      {
+        "id": "scenario-id",
+        "prompt": "applied fact pattern",
+        "guidance": "how to approach"
+      }
+    ],
+    "finalEssayPrompt": "comprehensive essay prompt",
+    "rubric": "grading criteria"
+  }
+}
+
+**ATOMIZATION RULES:**
+1. Break content into 4-15 doctrines (mini-units)
+2. Each doctrine must have ALL child types: intuition-example, model-answer, imitate, at least one quiz, application-scenario, synthesis
+3. Every node needs metaSkillTags from: issue-spotting, rule-articulation, distinguishing, analogical-reasoning, fact-application, pattern-recognition, synthesis, judgment, modeling, memory, precision, self-explanation, integration
+4. Apply Leopold principles: concept before quiz, intuition before rule, model before imitate, vivid examples
+5. Include applicationLabSuggestion for final evolution
+
+**IMPORTANT:** Output ONLY valid JSON, nothing else. No markdown, no commentary.`,
+        messages: [{ role: 'user', content: contentToAtomize }],
+      });
+
+      const atomizationBlueprint = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('✨ Atomization blueprint generated:', atomizationBlueprint.substring(0, 200) + '...');
+
+      return NextResponse.json({ message: atomizationBlueprint, response: atomizationBlueprint });
+    }
+
     // 🎓 QUIZ MODE: Handle quiz grading (PROVIDE ANSWER HERE)
     if (mode === 'quiz' && userMessage.includes('Previous question:')) {
       console.log('📝 QUIZ GRADING MODE - Evaluating student answer');
