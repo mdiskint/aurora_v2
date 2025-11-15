@@ -103,17 +103,27 @@ export default function CourseBuilderPage() {
     console.log('🔍 ========================================');
     return chunks.map((chunk, index) => {
       console.log(`🔍 Parsing chunk ${index}: "${chunk}"`);
-      const [startStr, endStr] = chunk.split('-').map(s => s.trim());
+      const parts = chunk.split('-').map(s => s.trim());
+      const startStr = parts[0];
+      const endStr = parts[1];
 
-      const parseTime = (timeStr: string): number => {
-        const parts = timeStr.split(':').map(p => parseInt(p));
-        if (parts.length === 2) {
-          return parts[0] * 60 + parts[1]; // MM:SS
-        } else if (parts.length === 3) {
-          return parts[0] * 3600 + parts[1] * 60 + parts[2]; // HH:MM:SS
+      const parseTime = (timeStr: string | undefined): number => {
+        if (!timeStr) {
+          console.warn(`⚠️ Missing time value in chunk ${index}: "${chunk}"`);
+          return 0;
+        }
+        const timeParts = timeStr.split(':').map(p => parseInt(p));
+        if (timeParts.length === 2) {
+          return timeParts[0] * 60 + timeParts[1]; // MM:SS
+        } else if (timeParts.length === 3) {
+          return timeParts[0] * 3600 + timeParts[1] * 60 + timeParts[2]; // HH:MM:SS
         }
         return 0;
       };
+
+      if (!endStr) {
+        console.warn(`⚠️ Chunk ${index} missing end time: "${chunk}". Expected format: "0:00-5:00"`);
+      }
 
       return {
         start: parseTime(startStr),
