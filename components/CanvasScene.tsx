@@ -1191,6 +1191,30 @@ if (node.nodeType === 'synthesis') {
   // Inspiration/Socratic questions: Dodecahedron star (gold)
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
   nodeColor = isNodeLocked(node) ? "#808080" : "#FFD700";
+} else if (node.nodeType === 'doctrine') {
+  // 🎓 Doctrine nodes: Larger spheres (green)
+  Geometry = <sphereGeometry args={[size * 1.2, 32, 32]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#10B981"; // Emerald green
+} else if (node.nodeType === 'intuition-example') {
+  // 💡 Intuition example nodes: Octahedron (yellow)
+  Geometry = <octahedronGeometry args={[size, 0]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#EAB308"; // Yellow
+} else if (node.nodeType === 'model-answer') {
+  // 📐 Model answer nodes: Box (blue)
+  Geometry = <boxGeometry args={[size * 1.5, size * 1.5, size * 1.5]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#3B82F6"; // Blue
+} else if (node.nodeType === 'imitate') {
+  // 🎯 Imitate nodes: Cone (orange)
+  Geometry = <coneGeometry args={[size, size * 2, 8]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#F97316"; // Orange
+} else if (node.nodeType === 'quiz-mc' || node.nodeType === 'quiz-short-answer') {
+  // 📝 Quiz nodes: Tetrahedron (purple)
+  Geometry = <tetrahedronGeometry args={[size * 1.1, 0]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
+} else if (node.nodeType === 'application-scenario') {
+  // 🌍 Application scenario nodes: Torus (teal)
+  Geometry = <torusGeometry args={[size * 0.7, size * 0.3, 16, 100]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#14B8A6"; // Teal
 }
 // Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
 
