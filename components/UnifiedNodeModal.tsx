@@ -5,6 +5,12 @@ import { usePathname } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { parseVideoUrl } from '@/lib/videoUtils';
 import ApplicationEssaySection from './ApplicationEssaySection';
+import {
+  buildDoctrinePracticeBundle,
+  getAvailablePracticeSteps,
+  type DoctrinePracticeBundle,
+  type PracticeStepId,
+} from '@/lib/guidedPracticeHelpers';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -317,6 +323,12 @@ export default function UnifiedNodeModal() {
   // 🌱 EVOLVING NEXUS - Toggle for viewing original content vs mastery summary
   const [showOriginalContent, setShowOriginalContent] = useState(false);
 
+  // 🎓 GUIDED PRACTICE - State for atomization-based practice panel
+  const [showGuidedPractice, setShowGuidedPractice] = useState(false);
+  const [activePracticeStep, setActivePracticeStep] = useState<PracticeStepId>('intuition');
+  const [practiceStepInput, setPracticeStepInput] = useState('');
+  const [practiceStepFeedback, setPracticeStepFeedback] = useState('');
+
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
 
@@ -348,6 +360,15 @@ export default function UnifiedNodeModal() {
 
   // Get the appropriate nexus (either selected nexus or root nexus of selected node)
   const displayNexus = nexus || getRootNexus(node);
+
+  // 🎓 GUIDED PRACTICE - Build practice bundle if available
+  const practiceBundle: DoctrinePracticeBundle | null = node
+    ? buildDoctrinePracticeBundle(node, nodes)
+    : null;
+  const availablePracticeSteps = practiceBundle
+    ? getAvailablePracticeSteps(practiceBundle)
+    : [];
+  const hasGuidedPractice = availablePracticeSteps.length > 0;
 
   // Toast notification helper
   const showToastNotification = (message: string) => {
@@ -2055,11 +2076,20 @@ export default function UnifiedNodeModal() {
                     🤖 Ask AI
                   </button>
                   <button
-                    onClick={() => setShowQuizFormatModal(true)}
+                    onClick={() => {
+                      if (hasGuidedPractice) {
+                        // Show guided practice panel
+                        setShowGuidedPractice(true);
+                        setActivePracticeStep(availablePracticeSteps[0]);
+                      } else {
+                        // Show traditional quiz format modal
+                        setShowQuizFormatModal(true);
+                      }
+                    }}
                     disabled={isLoadingAI}
                     className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                   >
-                    📝 Quiz Me
+                    {hasGuidedPractice ? '🎓 Guided Practice' : '📝 Quiz Me'}
                   </button>
 
                   {/* Delete button - only for nodes, not nexuses */}
@@ -2422,6 +2452,306 @@ export default function UnifiedNodeModal() {
                   className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all font-medium"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 🎓 GUIDED PRACTICE PANEL */}
+      {showGuidedPractice && practiceBundle && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+            onClick={() => setShowGuidedPractice(false)}
+          />
+          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-br from-slate-900 via-purple-900/10 to-slate-900 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-purple-300">🎓 Guided Practice</h2>
+                <button
+                  onClick={() => setShowGuidedPractice(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Step Navigation */}
+              <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+                {availablePracticeSteps.map((stepId, idx) => {
+                  const stepLabels: Record<PracticeStepId, string> = {
+                    intuition: '💡 Intuition',
+                    model: '📐 Model',
+                    imitate: '🎯 Imitate',
+                    quiz: '📝 Quiz',
+                    scenario: '🌍 Scenario',
+                    synthesis: '🔗 Synthesis',
+                  };
+
+                  const isActive = activePracticeStep === stepId;
+                  const stepIndex = availablePracticeSteps.indexOf(activePracticeStep);
+                  const isPast = idx < stepIndex;
+
+                  return (
+                    <button
+                      key={stepId}
+                      onClick={() => setActivePracticeStep(stepId)}
+                      className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all font-medium text-sm
+                        ${isActive
+                          ? 'bg-purple-600 text-white border-2 border-purple-400'
+                          : isPast
+                          ? 'bg-green-900/30 text-green-300 border border-green-500/50'
+                          : 'bg-slate-700/50 text-gray-300 border border-slate-600 hover:bg-slate-600/50'
+                        }`}
+                    >
+                      {stepLabels[stepId]}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Step Content */}
+              <div className="min-h-[300px] mb-6">
+                {/* Intuition Step */}
+                {activePracticeStep === 'intuition' && practiceBundle.intuitionExampleNode && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-cyan-300">💡 Build Your Intuition</h3>
+                    <div className="bg-slate-800/50 rounded-lg p-4 border border-cyan-500/30">
+                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                        {practiceBundle.intuitionExampleNode.content}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        What's your gut take on this?
+                      </label>
+                      <textarea
+                        value={practiceStepInput}
+                        onChange={(e) => setPracticeStepInput(e.target.value)}
+                        placeholder="Share your initial thoughts..."
+                        rows={4}
+                        className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (practiceStepInput.trim()) {
+                          // Create user-reply node
+                          addNode(practiceStepInput, node!.id, undefined, 'user-reply');
+                          setPracticeStepInput('');
+                          setPracticeStepFeedback('✓ Your intuition has been recorded!');
+                          setTimeout(() => setPracticeStepFeedback(''), 3000);
+                        }
+                      }}
+                      disabled={!practiceStepInput.trim()}
+                      className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                    >
+                      Submit Response
+                    </button>
+                    {practiceStepFeedback && (
+                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Model Step */}
+                {activePracticeStep === 'model' && practiceBundle.modelAnswerNode && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-blue-300">📐 Model Reasoning Pattern</h3>
+                    <div className="bg-gradient-to-r from-blue-900/20 to-indigo-900/20 rounded-lg p-4 border border-blue-500/30">
+                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                        {practiceBundle.modelAnswerNode.content}
+                      </p>
+                    </div>
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                      <p className="text-sm text-blue-200">
+                        💡 <strong>Tip:</strong> Study this pattern carefully - you'll apply it in the next step.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Imitate Step */}
+                {activePracticeStep === 'imitate' && practiceBundle.imitateNode && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-yellow-300">🎯 Imitate the Pattern</h3>
+                    <div className="bg-slate-800/50 rounded-lg p-4 border border-yellow-500/30">
+                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                        {practiceBundle.imitateNode.content}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Your attempt:
+                      </label>
+                      <textarea
+                        value={practiceStepInput}
+                        onChange={(e) => setPracticeStepInput(e.target.value)}
+                        placeholder="Apply the reasoning pattern you just learned..."
+                        rows={6}
+                        className="w-full px-4 py-3 bg-slate-900 border border-yellow-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 resize-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (practiceStepInput.trim()) {
+                          addNode(practiceStepInput, node!.id, undefined, 'user-reply');
+                          setPracticeStepInput('');
+                          setPracticeStepFeedback('✓ Great work applying the pattern!');
+                          setTimeout(() => setPracticeStepFeedback(''), 3000);
+                        }
+                      }}
+                      disabled={!practiceStepInput.trim()}
+                      className="px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                    >
+                      Submit Attempt
+                    </button>
+                    {practiceStepFeedback && (
+                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Quiz Step */}
+                {activePracticeStep === 'quiz' && (practiceBundle.quizMcNode || practiceBundle.quizShortAnswerNode) && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-purple-300">📝 Test Your Understanding</h3>
+                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
+                      <p className="text-sm text-purple-200">
+                        Click the button below to take the quiz for this section.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowGuidedPractice(false);
+                        setShowQuizFormatModal(true);
+                      }}
+                      className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-medium"
+                    >
+                      Start Quiz
+                    </button>
+                  </div>
+                )}
+
+                {/* Scenario Step */}
+                {activePracticeStep === 'scenario' && practiceBundle.scenarioNode && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-green-300">🌍 Application Scenario</h3>
+                    <div className="bg-green-900/20 rounded-lg p-4 border border-green-500/30">
+                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                        {practiceBundle.scenarioNode.content}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Your analysis:
+                      </label>
+                      <textarea
+                        value={practiceStepInput}
+                        onChange={(e) => setPracticeStepInput(e.target.value)}
+                        placeholder="How would you approach this scenario? Apply what you've learned..."
+                        rows={8}
+                        className="w-full px-4 py-3 bg-slate-900 border border-green-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500 resize-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (practiceStepInput.trim()) {
+                          addNode(practiceStepInput, node!.id, undefined, 'user-reply');
+                          setPracticeStepInput('');
+                          setPracticeStepFeedback('✓ Excellent application of the concepts!');
+                          setTimeout(() => setPracticeStepFeedback(''), 3000);
+                        }
+                      }}
+                      disabled={!practiceStepInput.trim()}
+                      className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                    >
+                      Submit Analysis
+                    </button>
+                    {practiceStepFeedback && (
+                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Synthesis Step */}
+                {activePracticeStep === 'synthesis' && practiceBundle.synthesisNode && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-amber-300">🔗 Synthesis & Connections</h3>
+                    <div className="bg-gradient-to-r from-amber-900/20 to-orange-900/20 rounded-lg p-4 border border-amber-500/30">
+                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                        {practiceBundle.synthesisNode.content}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Your 2-3 sentence summary:
+                      </label>
+                      <textarea
+                        value={practiceStepInput}
+                        onChange={(e) => setPracticeStepInput(e.target.value)}
+                        placeholder="In your own words, what did you learn and how does it connect?"
+                        rows={4}
+                        className="w-full px-4 py-3 bg-slate-900 border border-amber-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 resize-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (practiceStepInput.trim()) {
+                          addNode(practiceStepInput, node!.id, undefined, 'synthesis');
+                          setPracticeStepInput('');
+                          setPracticeStepFeedback('✓ Great synthesis! You completed the guided practice.');
+                          setTimeout(() => {
+                            setPracticeStepFeedback('');
+                            setShowGuidedPractice(false);
+                          }, 2000);
+                        }
+                      }}
+                      disabled={!practiceStepInput.trim()}
+                      className="px-6 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                    >
+                      Complete Practice
+                    </button>
+                    {practiceStepFeedback && (
+                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Navigation Buttons */}
+              <div className="flex justify-between pt-4 border-t border-purple-500/30">
+                <button
+                  onClick={() => {
+                    const currentIdx = availablePracticeSteps.indexOf(activePracticeStep);
+                    if (currentIdx > 0) {
+                      setActivePracticeStep(availablePracticeSteps[currentIdx - 1]);
+                      setPracticeStepInput('');
+                      setPracticeStepFeedback('');
+                    }
+                  }}
+                  disabled={availablePracticeSteps.indexOf(activePracticeStep) === 0}
+                  className="px-6 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                >
+                  ← Back
+                </button>
+                <button
+                  onClick={() => {
+                    const currentIdx = availablePracticeSteps.indexOf(activePracticeStep);
+                    if (currentIdx < availablePracticeSteps.length - 1) {
+                      setActivePracticeStep(availablePracticeSteps[currentIdx + 1]);
+                      setPracticeStepInput('');
+                      setPracticeStepFeedback('');
+                    }
+                  }}
+                  disabled={availablePracticeSteps.indexOf(activePracticeStep) === availablePracticeSteps.length - 1}
+                  className="px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                >
+                  Next →
                 </button>
               </div>
             </div>
