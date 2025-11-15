@@ -1344,7 +1344,17 @@ if (node.nodeType === 'synthesis') {
         geometry={Geometry}
         color={nodeColor}
         emissive={nodeColor}
-        emissiveIntensity={node.nodeType === 'synthesis' ? 0.8 : 0.3}
+        emissiveIntensity={
+          node.nodeType === 'synthesis' ? 0.8 :
+          node.nodeType === 'doctrine' ? 0.7 :
+          node.nodeType === 'intuition-example' ? 0.7 :
+          node.nodeType === 'model-answer' ? 0.7 :
+          node.nodeType === 'imitate' ? 0.7 :
+          node.nodeType === 'quiz-mc' ? 0.7 :
+          node.nodeType === 'quiz-short-answer' ? 0.7 :
+          node.nodeType === 'application-scenario' ? 0.7 :
+          0.3
+        }
         roughness={0.0}
         opacity={nodeOpacity}
         onPointerDown={undefined}
