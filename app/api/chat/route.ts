@@ -886,16 +886,20 @@ Create:
    - Outlines the expected analysis steps
    - Provides clear criteria for what constitutes a strong answer
 
-Return ONLY valid JSON in this exact format:
+CRITICAL: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO explanation text.
+Do NOT wrap the JSON in \`\`\`json or \`\`\` markers.
+Return ONLY this exact JSON structure:
 {
   "question": "The full essay question including the hypothetical scenario (4-6 paragraphs)",
   "rubric": "Detailed grading rubric with key issues, relevant doctrines, and evaluation criteria (structured with clear sections)"
-}`;
+}
+
+Your entire response must be valid, parseable JSON starting with { and ending with }. Nothing else.`;
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 6000,
-        system: 'You are an experienced law professor creating comprehensive assessments. Always return ONLY valid JSON with no additional text.',
+        system: 'You are an experienced law professor creating comprehensive assessments. CRITICAL: Your response must be ONLY valid, parseable JSON with no markdown code blocks, no explanation text, and no additional formatting. Start with { and end with }. Nothing else.',
         messages: [{ role: 'user', content: essayPrompt }],
       });
 
@@ -1005,6 +1009,86 @@ DO NOT include answer guidance or rubrics - just the question itself.`;
       console.log('📝 Essay question generated');
 
       return NextResponse.json({ response: rawResponse });
+    }
+
+    // 🌱 NEXUS-SUMMARIZE MODE: Generate mastery summary for completed nexus
+    if (mode === 'nexus-summarize') {
+      console.log('🌱 NEXUS-SUMMARIZE MODE: Generating mastery summary');
+
+      const summaryPrompt = `${userMessage}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: `You are an expert learning scientist creating personalized "What You've Learned" summaries.
+
+Your task is to synthesize a learning conversation into a comprehensive mastery summary that:
+- Uses second person ("You now understand...", "You can now...")
+- Focuses on LEARNING OUTCOMES and CAPABILITIES gained, not just topics discussed
+- Explains the core concepts, frameworks, and mental models the student has developed
+- Shows how different pieces connect and build on each other
+- Describes what kinds of problems/scenarios the student can now handle
+- Highlights 1-2 key pitfalls or common mistakes to watch out for
+- Is 3-5 well-structured paragraphs
+
+Write in a warm, encouraging tone that celebrates the student's progress while being substantive and specific.`,
+        messages: [{ role: 'user', content: summaryPrompt }],
+      });
+
+      const masterySummary = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('✨ Mastery summary generated:', masterySummary.substring(0, 100) + '...');
+
+      return NextResponse.json({ message: masterySummary, response: masterySummary });
+    }
+
+    // 🎓 NEXUS-APPLICATION-LAB MODE: Generate Application Lab for completed nexus
+    if (mode === 'nexus-application-lab') {
+      console.log('🎓 NEXUS-APPLICATION-LAB MODE: Generating Application Lab');
+
+      const labPrompt = `${userMessage}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 8192,
+        system: `You are an expert learning scientist creating personalized Application Labs that help students apply what they've learned.
+
+Your task is to synthesize a learning conversation into a comprehensive Application Lab that:
+1. Summarizes the core concepts and capabilities the student has developed
+2. Provides 2-5 progressively challenging scenario-based questions
+3. Includes a final capstone essay prompt that requires synthesis
+4. Optionally includes a grading rubric
+
+You must return ONLY valid JSON with NO additional text before or after. The JSON must match this exact structure:
+
+{
+  "doctrineSummary": "A 2-4 paragraph summary using second person ('You now understand...') that explains the core concepts, frameworks, and mental models the student has developed. Focus on learning outcomes and capabilities gained, not just topics discussed.",
+  "scenarios": [
+    {
+      "id": "scenario-1",
+      "prompt": "A concrete scenario that tests application of the concepts in a realistic situation. Should be specific and require thoughtful analysis.",
+      "guidance": "Optional hints or framework for thinking through this scenario. Help the student know where to start."
+    }
+  ],
+  "finalEssayPrompt": "A capstone application essay prompt that requires synthesizing multiple concepts and applying them to a complex, realistic challenge. Should be open-ended and require deep engagement with the material. Make it intellectually stimulating.",
+  "rubric": "Optional grading rubric that explains what excellent, good, and weak responses would demonstrate. Focus on quality of reasoning and application, not just coverage."
+}
+
+Guidelines:
+- Generate 2-5 scenarios that progressively increase in complexity
+- Each scenario should test different aspects or combinations of what was learned
+- Make scenarios concrete and realistic, not generic or theoretical
+- The final essay prompt should be the most challenging and comprehensive
+- Write in a warm, encouraging tone that celebrates the student's progress
+- Be specific about what the student now understands and can do
+
+Remember: Return ONLY the JSON object, nothing else.`,
+        messages: [{ role: 'user', content: labPrompt }],
+      });
+
+      const applicationLab = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('✨ Application Lab generated:', applicationLab.substring(0, 150) + '...');
+
+      return NextResponse.json({ message: applicationLab, response: applicationLab });
     }
 
     // 🎓 QUIZ MODE: Handle quiz grading (PROVIDE ANSWER HERE)

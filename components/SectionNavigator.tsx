@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store';
 import ExportModal from './ExportModal';
 import { Node } from '@/lib/types';
@@ -22,11 +22,46 @@ export default function SectionNavigator() {
   const getAnchoredNodes = useCanvasStore((state) => state.getAnchoredNodes);
   const reparentNode = useCanvasStore((state) => state.reparentNode);
   const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
+  const createMultiConnection = useCanvasStore((state) => state.createMultiConnection);
   const [showExportModal, setShowExportModal] = useState(false);
 
   // 🎯 DRAG-AND-DROP STATE
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // 🔗 CONNECTION MODE STATE
+  const [isHoldingShift, setIsHoldingShift] = useState(false);
+  const [selectedForConnection, setSelectedForConnection] = useState<string | null>(null);
+
+  // 🔗 KEYBOARD LISTENERS FOR SHIFT KEY (CONNECTION MODE)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey && !isHoldingShift) {
+        console.log('🔗 Shift held - connection mode active in navigation tree');
+        setIsHoldingShift(true);
+      } else if (e.key === 'Escape') {
+        console.log('❌ Escape pressed - clearing connection selection');
+        setIsHoldingShift(false);
+        setSelectedForConnection(null);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        console.log('🔗 Shift released - clearing connection selection');
+        setIsHoldingShift(false);
+        setSelectedForConnection(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isHoldingShift]);
 
   // Hide navigation tree when Application Lab is active
   if (isApplicationLabMode) {
@@ -56,7 +91,7 @@ export default function SectionNavigator() {
 
   // Fallback to most recent nexus (chat or paper)
   if (!nexus) {
-    nexus = nexuses.find(n => n.id.startsWith('chat-') || n.id.startsWith('l1-')) || nexuses[0];
+    nexus = nexuses.find(n => n && n.id && (n.id.startsWith('chat-') || n.id.startsWith('l1-'))) || nexuses[0];
   }
 
   if (!nexuses.length || !nexus) return null;
@@ -89,6 +124,34 @@ export default function SectionNavigator() {
   };
 
   const handleClick = (id: string) => {
+    // 🔗 CONNECTION MODE: Shift+click to create connections
+    if (isHoldingShift) {
+      // Don't allow connecting to nexuses
+      const isNexus = nexuses.some(n => n.id === id);
+      if (isNexus) {
+        console.log('⚠️ Cannot create connections with nexuses');
+        return;
+      }
+
+      if (!selectedForConnection) {
+        // First node selected
+        console.log('🔗 First section selected for connection:', id);
+        setSelectedForConnection(id);
+      } else if (selectedForConnection === id) {
+        // Clicking same node - deselect
+        console.log('🔗 Deselected section:', id);
+        setSelectedForConnection(null);
+      } else {
+        // Second node selected - create connection immediately
+        console.log('🔗 Creating connection between:', selectedForConnection, 'and', id);
+        createMultiConnection([selectedForConnection, id]);
+        setSelectedForConnection(null);
+        setIsHoldingShift(false); // Optional: auto-exit shift mode after connection
+      }
+      return;
+    }
+
+    // Normal click - select node
     selectNode(id, true);
   };
 
@@ -348,6 +411,9 @@ export default function SectionNavigator() {
     const isDropTarget = dropTargetId === treeNode.id;
     const isDragActive = draggedNodeId !== null;
 
+    // Visual feedback for connection mode
+    const isSelectedForConnection = selectedForConnection === treeNode.id;
+
     return (
       <>
         <div
@@ -364,17 +430,23 @@ export default function SectionNavigator() {
             marginBottom: isNexus ? '8px' : '4px',
             borderRadius: '6px',
             cursor: isBeingDragged ? 'grabbing' : !isNexus ? 'grab' : 'pointer',
-            backgroundColor: isDropTarget
+            backgroundColor: isSelectedForConnection
+              ? 'rgba(255, 215, 0, 0.3)' // Gold for connection selection
+              : isDropTarget
               ? 'rgba(34, 197, 94, 0.3)' // Green for drop target
               : selectedId === treeNode.id
               ? 'rgba(147, 51, 234, 0.3)'
               : 'transparent',
-            border: isDropTarget
+            border: isSelectedForConnection
+              ? '2px solid #FFD700' // Gold border for connection selection
+              : isDropTarget
               ? '2px solid #22C55E' // Green border for drop target
               : selectedId === treeNode.id
               ? '2px solid #9333EA'
               : '2px solid transparent',
-            color: selectedId === treeNode.id
+            color: isSelectedForConnection
+              ? '#FFD700'
+              : selectedId === treeNode.id
               ? '#FFD700'
               : isNexus
               ? 'white'
@@ -382,14 +454,18 @@ export default function SectionNavigator() {
             opacity: isBeingDragged ? 0.5 : 1,
             transition: 'all 0.2s',
             fontSize: isNexus ? '13px' : '12px',
-            fontWeight: selectedId === treeNode.id ? 'bold' : isNexus ? 'bold' : 'normal',
+            fontWeight: selectedId === treeNode.id || isSelectedForConnection ? 'bold' : isNexus ? 'bold' : 'normal',
             wordBreak: 'break-word',
             lineHeight: '1.4',
             display: 'flex',
             alignItems: 'flex-start',
             gap: '6px',
-            transform: isDropTarget ? 'scale(1.05)' : 'scale(1)',
-            boxShadow: isDropTarget ? '0 0 10px rgba(34, 197, 94, 0.5)' : 'none',
+            transform: isDropTarget || isSelectedForConnection ? 'scale(1.05)' : 'scale(1)',
+            boxShadow: isSelectedForConnection
+              ? '0 0 10px rgba(255, 215, 0, 0.5)' // Gold glow for connection selection
+              : isDropTarget
+              ? '0 0 10px rgba(34, 197, 94, 0.5)'
+              : 'none',
           }}
           onMouseEnter={(e) => {
             if (selectedId !== treeNode.id && !isDragActive) {

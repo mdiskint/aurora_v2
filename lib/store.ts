@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Node, ApplicationEssay } from './types';
+import { Node, NodeType, ApplicationEssay } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup } from './db';
 
@@ -323,6 +323,19 @@ if (typeof window !== 'undefined') {
   console.log('   auroraDebug.dumpRaw()      - Dump raw localStorage data');
 }
 
+type NexusEvolutionState = 'seed' | 'growing' | 'application-lab';
+
+interface ApplicationLabConfig {
+  doctrineSummary: string;
+  scenarios: {
+    id: string;
+    prompt: string;
+    guidance?: string;
+  }[];
+  finalEssayPrompt: string;
+  rubric?: string;
+}
+
 interface Nexus {
   id: string;
   position: [number, number, number];
@@ -332,6 +345,12 @@ interface Nexus {
   audioUrl?: string;
   type?: 'academic' | 'social';
   applicationEssay?: ApplicationEssay;  // For course mode: application essay question and rubric
+
+  // 🌱 EVOLVING NEXUS → APPLICATION LAB - Tracks learning progression
+  evolutionState?: NexusEvolutionState;
+  originalContent?: string | null;     // Preserves original professor/AI framing
+  applicationLabConfig?: ApplicationLabConfig | null;  // Generated Application Lab content
+  needsApplicationLab?: boolean;       // Flag to trigger Application Lab generation
 }
 
 interface Folder {
@@ -395,7 +414,7 @@ interface CanvasStore {
   updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   exportToWordDoc: () => void;
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis') => string;
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis', explicitSiblingIndex?: number) => string;
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -415,6 +434,11 @@ interface CanvasStore {
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
+
+  // 🌱 EVOLVING NEXUS → APPLICATION LAB - Completion heuristics
+  getNodesForNexus: (nexusId: string) => Node[];
+  isNexusCompleted: (nexusId: string) => boolean;
+  setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => void;
   addNodeFromWebSocket: (data: any) => void;
   addNexusFromWebSocket: (data: any) => void;
   activatedConversations: string[];
@@ -900,6 +924,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         console.log(`✅ Auto-fixed ${orphanedFixed} orphaned universes during load`);
       }
 
+      // 🔧 FIX CORRUPTED NEXUSES: Ensure nexuses is always an array, not an object
+      let nexusesFixed = 0;
+      Object.keys(universeLibrary).forEach(id => {
+        const universe = universeLibrary[id];
+        if (!Array.isArray(universe.nexuses)) {
+          console.log(`🔧 Fixing corrupted nexuses in universe: "${universe.title}" (object → array)`);
+          // Convert object to array by extracting values and filtering out undefined/null
+          universe.nexuses = Object.values(universe.nexuses as any).filter((n: any) => n && n.id);
+          nexusesFixed++;
+        }
+      });
+      if (nexusesFixed > 0) {
+        console.log(`✅ Auto-fixed ${nexusesFixed} universes with corrupted nexuses data`);
+      }
+
       // 🔍 DIAGNOSTIC: Log what's about to be set in state
       console.log('📂 🔍 SETTING STATE WITH:');
       console.log('📂 🔍   - Universes:', Object.keys(universeLibrary).length);
@@ -991,6 +1030,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         videoUrl,
         audioUrl,
         type: 'social',
+        // 🌱 Initialize evolution state
+        evolutionState: 'seed',
+        originalContent: content, // Preserve original framing
+        applicationLabConfig: null,
+        needsApplicationLab: false,
       };
 
       console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
@@ -1030,7 +1074,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           position: data.nexus.position,
           title: data.nexus.title,
           content: data.nexus.content,
-          type: 'academic'
+          type: 'academic',
+          // 🌱 Initialize evolution state
+          evolutionState: 'seed',
+          originalContent: data.nexus.content,
+          applicationLabConfig: null,
+          needsApplicationLab: false,
         };
 
         const newNodes: { [id: string]: Node } = {};
@@ -1054,8 +1103,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             const direction = ringIndex % 2 === 1 ? 1 : -1;
             y = step * 2.5 * direction;
           }
-          
-          const x = radius * Math.cos(angle);
+
+          const x = -radius * Math.cos(angle); // Flipped: first node on left
           const z = radius * Math.sin(angle);
           
           newNodes[jsonNode.id] = {
@@ -1103,7 +1152,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       position: data.nexus.position || [0, 0, 0],
       title: data.nexus.title,
       content: data.nexus.content,
-      type: 'academic'
+      type: 'academic',
+      // 🌱 Initialize evolution state
+      evolutionState: 'seed',
+      originalContent: data.nexus.content,
+      applicationLabConfig: null,
+      needsApplicationLab: false,
     };
 
     const nexuses = [nexus];
@@ -1130,10 +1184,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         const direction = ringIndex % 2 === 1 ? 1 : -1;
         y = step * 2.5 * direction;
       }
-      
-      const x = radius * Math.cos(angle);
+
+      const x = -radius * Math.cos(angle); // Flipped: first node on left
       const z = radius * Math.sin(angle);
-      
+
       nodes[nodeId] = {
         id: nodeId,
         position: [x, y, z],
@@ -1357,7 +1411,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
   
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis') => {
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis', explicitSiblingIndex?: number) => {
     let newNodeId = '';
     let isConnectionNodeParent = false;
 
@@ -1365,7 +1419,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       newNodeId = `node-${Date.now()}`;
 
       const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
-      const siblingIndex = siblings.length;
+      const siblingIndex = explicitSiblingIndex !== undefined ? explicitSiblingIndex : siblings.length;
 
       // Check if parent is a connection node (Socratic mode)
       const parentNode = state.nodes[parentId];
@@ -1393,7 +1447,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         const angle = siblingIndex * goldenAngle;
 
         // Position in horizontal plane around the meta-star
-        const x = metaPos[0] + Math.cos(angle) * radius;
+        const x = metaPos[0] - Math.cos(angle) * radius; // Flipped: first node on left
         const z = metaPos[2] + Math.sin(angle) * radius;
 
         position = [x, y, z];
@@ -1422,10 +1476,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           const direction = ringIndex % 2 === 1 ? 1 : -1;
           y = step * 2.5 * direction;
         }
-        
-        const x = nexusPos[0] + radius * Math.cos(angle);
+
+        const x = nexusPos[0] - radius * Math.cos(angle); // Flipped: first node on left
         const z = nexusPos[2] + radius * Math.sin(angle);
-        
+
         position = [x, y, z];
         console.log(`➕ L1 Node: Ring ${ringIndex}, Position ${positionInRing}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
       } else {
@@ -1627,12 +1681,18 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // Step 4: Create nexus
     console.log('📝 Step 4: Creating nexus...');
 
+    const initialContent = `You: ${userMessage}\n\nClaude: ${aiResponse}`;
     let newNexus: Nexus = {
       id: newUniverseId,
       position: [0, 0, 0],
       title: title,
-      content: `You: ${userMessage}\n\nClaude: ${aiResponse}`,
-      type: 'social'
+      content: initialContent,
+      type: 'social',
+      // 🌱 Initialize evolution state
+      evolutionState: 'seed',
+      originalContent: initialContent,
+      applicationLabConfig: null,
+      needsApplicationLab: false,
     };
 
     console.log(`💬 Created Chat Nexus "${title}" with ID:`, newUniverseId);
@@ -1704,10 +1764,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           const direction = ringIndex % 2 === 1 ? 1 : -1;
           y = step * 2.5 * direction;
         }
-        
-        const x = nexusPos[0] + radius * Math.cos(angle);
+
+        const x = nexusPos[0] - radius * Math.cos(angle); // Flipped: first node on left
         const z = nexusPos[2] + radius * Math.sin(angle);
-        
+
         position = [x, y, z];
       } else {
         const parentNode = state.nodes[parentId];
@@ -2443,17 +2503,121 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     const state = get();
     const node = state.nodes[nodeId];
     if (!node) return null;
-    
+
     let currentNode = node;
     while (currentNode.parentId) {
       const nexus = state.nexuses.find(n => n.id === currentNode.parentId);
       if (nexus) return nexus;
-      
+
       currentNode = state.nodes[currentNode.parentId];
       if (!currentNode) break;
     }
-    
+
     return null;
+  },
+
+  // 🌱 EVOLVING NEXUS - Get all nodes belonging to a nexus
+  getNodesForNexus: (nexusId: string) => {
+    const state = get();
+    const allNodes = Object.values(state.nodes);
+
+    // Find all nodes that belong to this nexus (directly or indirectly)
+    const nodesForNexus: Node[] = [];
+
+    for (const node of allNodes) {
+      // Check if this node's root nexus is the target nexus
+      const rootNexus = get().getNexusForNode(node.id);
+      if (rootNexus && rootNexus.id === nexusId) {
+        nodesForNexus.push(node);
+      }
+    }
+
+    return nodesForNexus;
+  },
+
+  // 🌱 EVOLVING NEXUS - Check if a nexus is completed based on node completion
+  isNexusCompleted: (nexusId: string) => {
+    const CORE_NODE_TYPES: NodeType[] = [
+      'socratic-question',
+      'socratic-answer',
+      'user-reply',
+      'ai-response',
+      'synthesis',
+    ];
+
+    const COMPLETION_THRESHOLD = 0.8; // 80% of core nodes must be completed
+
+    const allNodes = get().getNodesForNexus(nexusId);
+    if (allNodes.length === 0) return false;
+
+    // Filter for core learning nodes
+    const coreNodes = allNodes.filter(node =>
+      node.nodeType && CORE_NODE_TYPES.includes(node.nodeType)
+    );
+
+    // If no core nodes exist, consider all nodes
+    const nodesToCheck = coreNodes.length > 0 ? coreNodes : allNodes;
+    if (nodesToCheck.length === 0) return false;
+
+    // Count completed nodes
+    const completedNodes = nodesToCheck.filter(node => node.isCompleted === true);
+    const completionRate = completedNodes.length / nodesToCheck.length;
+
+    console.log(`🌱 [Nexus ${nexusId}] Completion check:`, {
+      totalNodes: allNodes.length,
+      coreNodes: coreNodes.length,
+      completedNodes: completedNodes.length,
+      completionRate: `${(completionRate * 100).toFixed(1)}%`,
+      threshold: `${(COMPLETION_THRESHOLD * 100)}%`,
+      isCompleted: completionRate >= COMPLETION_THRESHOLD
+    });
+
+    return completionRate >= COMPLETION_THRESHOLD;
+  },
+
+  // 🌱 EVOLVING NEXUS → APPLICATION LAB - Set Application Lab config and evolve nexus
+  setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => {
+    console.log(`🌱 [Nexus ${nexusId}] Setting Application Lab config`);
+
+    set((state) => {
+      const nexuses = state.nexuses.map(nexus => {
+        if (nexus.id === nexusId) {
+          console.log(`✨ [Nexus ${nexusId}] Evolved to 'application-lab' state`);
+          return {
+            ...nexus,
+            evolutionState: 'application-lab' as NexusEvolutionState,
+            applicationLabConfig: config,
+            content: config.doctrineSummary, // Update display content to show doctrine summary
+            needsApplicationLab: false, // Clear the flag
+          };
+        }
+        return nexus;
+      });
+
+      // Also update in universe library
+      const updatedLibrary = { ...state.universeLibrary };
+      if (updatedLibrary[nexusId]) {
+        updatedLibrary[nexusId] = {
+          ...updatedLibrary[nexusId],
+          nexuses: updatedLibrary[nexusId].nexuses.map((n: Nexus) =>
+            n.id === nexusId
+              ? {
+                  ...n,
+                  evolutionState: 'application-lab' as NexusEvolutionState,
+                  applicationLabConfig: config,
+                  content: config.doctrineSummary,
+                  needsApplicationLab: false
+                }
+              : n
+          )
+        };
+      }
+
+      return { nexuses, universeLibrary: updatedLibrary };
+    });
+
+    // Save to localStorage
+    get().saveToLocalStorage();
   },
 
   addNodeFromWebSocket: (data: any) => {
@@ -2938,17 +3102,13 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     const universeId = node.parentId;
     const universe = state.universeLibrary[universeId];
 
-    if (!universe) {
-      console.error('❌ Universe not found:', universeId);
-      return false;
-    }
+    const isCourseUniverse = universe && universe.courseMode;
 
-    if (!universe.courseMode) {
-      console.log('ℹ️ Skipping completion - not a course universe');
-      return false;
+    if (isCourseUniverse) {
+      console.log('✅ Course universe confirmed - proceeding with completion');
+    } else {
+      console.log('ℹ️ Non-course universe - allowing completion for evolution tracking');
     }
-
-    console.log('✅ Course universe confirmed - proceeding with completion');
 
     // Check if already completed
     if (node.isCompleted) {
@@ -2969,8 +3129,29 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
     console.log('✅ Node marked as completed:', nodeId);
 
-    // Unlock next node
-    const unlockedNodeId = get().unlockNextNode(nodeId);
+    // Unlock next node (only for course universes)
+    let unlockedNodeId = null;
+    if (isCourseUniverse) {
+      unlockedNodeId = get().unlockNextNode(nodeId);
+    }
+
+    // 🌱 EVOLVING NEXUS → APPLICATION LAB - Check if this completion triggers Application Lab generation
+    const rootNexus = get().getNexusForNode(nodeId);
+    if (rootNexus && rootNexus.evolutionState !== 'application-lab') {
+      console.log(`🌱 Checking if nexus ${rootNexus.id} is now complete...`);
+      const isComplete = get().isNexusCompleted(rootNexus.id);
+      if (isComplete) {
+        console.log(`✨ Nexus ${rootNexus.id} is complete! Marking for Application Lab generation.`);
+        // Set needsApplicationLab flag to trigger Application Lab generation hook
+        set((state) => ({
+          nexuses: state.nexuses.map(n =>
+            n.id === rootNexus.id
+              ? { ...n, needsApplicationLab: true }
+              : n
+          )
+        }));
+      }
+    }
 
     // Save to localStorage
     get().saveToLocalStorage();
@@ -3686,7 +3867,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     // Calculate angle for this universe (evenly distributed around circle)
     const angle = (index / total) * Math.PI * 2;
 
-    const x = Math.cos(angle) * radius;
+    const x = -Math.cos(angle) * radius; // Flipped: first universe on left
     const z = Math.sin(angle) * radius;
     const y = 0; // Keep all on same horizontal plane
 
@@ -4298,7 +4479,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
               y = step * 2.5 * direction;
             }
 
-            const x = nexusPos[0] + Math.cos(angle) * radius;
+            const x = nexusPos[0] - Math.cos(angle) * radius; // Flipped: first node on left
             const z = nexusPos[2] + Math.sin(angle) * radius;
 
             const newNodeId = `node-${Date.now()}-${i}-${nodeIndex}`;

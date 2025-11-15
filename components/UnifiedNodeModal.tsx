@@ -314,6 +314,9 @@ export default function UnifiedNodeModal() {
   // Application essay state
   const [showEssaySection, setShowEssaySection] = useState(false);
 
+  // 🌱 EVOLVING NEXUS - Toggle for viewing original content vs mastery summary
+  const [showOriginalContent, setShowOriginalContent] = useState(false);
+
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
 
@@ -321,6 +324,30 @@ export default function UnifiedNodeModal() {
   const node = selectedId ? nodes[selectedId] : null;
   const nexus = selectedId ? nexuses.find((n) => n.id === selectedId) : null;
   const selectedItem = node || nexus;
+
+  // Find root nexus for a node (traverse up the parent chain)
+  const getRootNexus = (nodeObj: typeof node): typeof nexus => {
+    if (!nodeObj) return null;
+
+    let currentId = nodeObj.parentId;
+    while (currentId) {
+      // Check if current is a nexus
+      const foundNexus = nexuses.find(n => n.id === currentId);
+      if (foundNexus) return foundNexus;
+
+      // Otherwise, check if it's a node and go up
+      const parentNode = nodes[currentId];
+      if (parentNode) {
+        currentId = parentNode.parentId;
+      } else {
+        break;
+      }
+    }
+    return null;
+  };
+
+  // Get the appropriate nexus (either selected nexus or root nexus of selected node)
+  const displayNexus = nexus || getRootNexus(node);
 
   // Toast notification helper
   const showToastNotification = (message: string) => {
@@ -394,7 +421,13 @@ export default function UnifiedNodeModal() {
     return combined;
   };
 
-  const displayContent = node?.isConnectionNode ? getConnectionContent() : (selectedItem?.content || '');
+  // 🎓 EVOLVING NEXUS - Display Application Lab for completed nexuses (unless user wants to see original)
+  const isApplicationLabNexus = nexus && nexus.evolutionState === 'application-lab' && nexus.applicationLabConfig;
+  const displayContent = node?.isConnectionNode
+    ? getConnectionContent()
+    : (isApplicationLabNexus && !showOriginalContent)
+      ? (nexus.applicationLabConfig?.doctrineSummary || '')
+      : (selectedItem?.content || '');
 
   console.log('🎨 UnifiedNodeModal render:', {
     selectedId,
@@ -1177,10 +1210,74 @@ export default function UnifiedNodeModal() {
 
         const data = await response.json();
 
-        // Parse JSON response
-        const jsonStr = data.response.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
-        const questions = JSON.parse(jsonStr);
-        return questions[0]; // Return the single question
+        // Parse MARKDOWN response (not JSON!)
+        const rawText = (data.content || data.response || '').trim();
+        console.log('📥 Raw response from quiz API:', rawText.substring(0, 300));
+
+        try {
+          // Parse markdown format
+          const questionMatch = rawText.match(/\*\*Question:\*\*\s*([\s\S]*?)(?=\*\*Options:\*\*)/);
+          const optionsSection = rawText.match(/\*\*Options:\*\*\s*([\s\S]*?)(?=\*\*Correct Answer:\*\*)/);
+          const correctMatch = rawText.match(/\*\*Correct Answer:\*\*\s*([A-D])/i);
+          const explanationMatch = rawText.match(/\*\*Explanation:\*\*\s*([\s\S]*?)$/);
+
+          if (!questionMatch || !optionsSection || !correctMatch || !explanationMatch) {
+            throw new Error('Could not parse markdown format');
+          }
+
+          const question = questionMatch[1].trim();
+          const optionsText = optionsSection[1].trim();
+
+          console.log('🔍 Options section text:', optionsText);
+
+          // Parse options - split by A), B), C), D) and extract text between them
+          const optionA = optionsText.match(/A\)([\s\S]*?)(?=B\)|$)/i);
+          const optionB = optionsText.match(/B\)([\s\S]*?)(?=C\)|$)/i);
+          const optionC = optionsText.match(/C\)([\s\S]*?)(?=D\)|$)/i);
+          const optionD = optionsText.match(/D\)([\s\S]*?)$/i);
+
+          console.log('🔍 Option A match:', optionA);
+          console.log('🔍 Option B match:', optionB);
+          console.log('🔍 Option C match:', optionC);
+          console.log('🔍 Option D match:', optionD);
+
+          const options = [
+            optionA ? optionA[1].trim() : '',
+            optionB ? optionB[1].trim() : '',
+            optionC ? optionC[1].trim() : '',
+            optionD ? optionD[1].trim() : ''
+          ];
+
+          console.log('📋 Parsed options:', options);
+
+          if (options.some(opt => !opt)) {
+            console.error('❌ Some options are empty!');
+            console.error('Options text was:', optionsText);
+            throw new Error(`Failed to parse all options. Got: ${JSON.stringify(options)}`);
+          }
+
+          const correctAnswer = correctMatch[1].toUpperCase();
+          const explanation = explanationMatch[1].trim();
+
+          const parsedQuestion = {
+            question,
+            options: {
+              A: options[0],
+              B: options[1],
+              C: options[2],
+              D: options[3]
+            },
+            correctAnswer, // Keep as letter 'A', 'B', 'C', or 'D'
+            explanation
+          };
+
+          console.log('✅ Parsed MC question:', parsedQuestion.question.substring(0, 100));
+          return parsedQuestion;
+        } catch (parseError) {
+          console.error('❌ Failed to parse quiz markdown:', parseError);
+          console.error('📄 Raw response:', rawText);
+          throw new Error('AI returned invalid format. Please try again.');
+        }
       };
 
       // Generate first question immediately
@@ -1222,7 +1319,7 @@ export default function UnifiedNodeModal() {
 
   // Submit MC answer
   const handleSubmitMcAnswer = () => {
-    if (!selectedMcAnswer || mcAnswered) return;
+    if (!selectedMcAnswer || mcAnswered || !socraticRootId) return;
 
     const currentQ = mcQuestions[currentMcQuestion];
     const isCorrect = selectedMcAnswer === currentQ.correctAnswer;
@@ -1237,7 +1334,20 @@ export default function UnifiedNodeModal() {
       }
     ]);
 
+    // Create a user reply node in 3D space
+    const resultEmoji = isCorrect ? '✓' : '✗';
+    const mcAnswerNode = `Q: ${currentQ.question}\n\nYour answer: ${selectedMcAnswer}) ${currentQ.options[selectedMcAnswer as keyof typeof currentQ.options]}\n\n${resultEmoji} ${isCorrect ? 'Correct!' : 'Incorrect'}\n\n${currentQ.explanation}`;
+
+    console.log('📝 Creating MC answer node...');
+    addNode(mcAnswerNode, socraticRootId);
+
     setMcAnswered(true);
+
+    // Keep modal open to show feedback
+    setTimeout(() => {
+      selectNode(socraticRootId, true);
+      setShowContentOverlay(true);
+    }, 100);
   };
 
   // Next MC question
@@ -1489,9 +1599,24 @@ export default function UnifiedNodeModal() {
             <div className="p-6 border-b border-cyan-500/30 flex items-start justify-between flex-shrink-0">
               <div className="flex-1">
                 <h2 className={`text-2xl font-bold mb-2 ${(node?.isSynthesis) ? 'text-cyan-300' : isConnectionNode ? 'text-yellow-300' : 'text-cyan-400'}`}>
-                  {selectedItem.title || (selectedItem.content?.substring(0, 50) + (selectedItem.content?.length > 50 ? '...' : ''))}
+                  {displayNexus?.title || selectedItem.title || (selectedItem.content?.substring(0, 50) + (selectedItem.content?.length > 50 ? '...' : ''))}
                 </h2>
                 <div className="flex items-center gap-4">
+                  {/* 🎓 EVOLVING NEXUS - Show Application Lab badge and toggle */}
+                  {isApplicationLabNexus && (
+                    <div className="flex items-center gap-2">
+                      <div className="px-3 py-1 bg-gradient-to-r from-yellow-600/20 to-cyan-500/20 border border-yellow-400/50 rounded-full text-xs font-semibold text-yellow-200 flex items-center gap-1.5">
+                        🎓 Application Lab
+                      </div>
+                      <button
+                        onClick={() => setShowOriginalContent(!showOriginalContent)}
+                        className="px-3 py-1 bg-slate-700/50 hover:bg-slate-600/50 border border-slate-500/50 rounded-lg text-xs text-slate-300 hover:text-white transition-all"
+                      >
+                        {showOriginalContent ? '← Back to Lab' : 'View Original'}
+                      </button>
+                    </div>
+                  )}
+
                   {hasUnsavedChanges && isExplorePage && (
                     <div className="text-sm text-yellow-400 flex items-center gap-2">
                       <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
@@ -1589,12 +1714,77 @@ export default function UnifiedNodeModal() {
                   </div>
                 </div>
               ) : (
-                <div
-                  className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap"
-                  onMouseUp={handleTextSelection}
-                >
-                  {displayContent || 'No content available.'}
-                </div>
+                <>
+                  {/* 🎓 APPLICATION LAB VIEW - Show structured lab content */}
+                  {isApplicationLabNexus && !showOriginalContent && nexus.applicationLabConfig ? (
+                    <div className="space-y-6">
+                      {/* Doctrine Summary */}
+                      <div>
+                        <h3 className="text-lg font-semibold text-yellow-300 mb-3">📚 What You've Learned</h3>
+                        <div className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap">
+                          {nexus.applicationLabConfig.doctrineSummary}
+                        </div>
+                      </div>
+
+                      {/* Scenarios */}
+                      {nexus.applicationLabConfig.scenarios && nexus.applicationLabConfig.scenarios.length > 0 && (
+                        <div>
+                          <h3 className="text-lg font-semibold text-cyan-300 mb-3">🎯 Application Scenarios</h3>
+                          <div className="space-y-4">
+                            {nexus.applicationLabConfig.scenarios.map((scenario, index) => (
+                              <div key={scenario.id} className="p-4 bg-slate-800/50 border border-cyan-500/30 rounded-lg">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-300 text-sm font-semibold">
+                                    {index + 1}
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="text-gray-200 mb-2">{scenario.prompt}</div>
+                                    {scenario.guidance && (
+                                      <div className="text-sm text-cyan-300/70 italic mt-2 pl-3 border-l-2 border-cyan-500/30">
+                                        💡 {scenario.guidance}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Final Essay Prompt */}
+                      {nexus.applicationLabConfig.finalEssayPrompt && (
+                        <div>
+                          <h3 className="text-lg font-semibold text-yellow-300 mb-3">✍️ Capstone Application Essay</h3>
+                          <div className="p-4 bg-gradient-to-r from-yellow-900/20 to-yellow-800/20 border border-yellow-400/40 rounded-lg">
+                            <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                              {nexus.applicationLabConfig.finalEssayPrompt}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Rubric (Optional) */}
+                      {nexus.applicationLabConfig.rubric && (
+                        <div>
+                          <h3 className="text-lg font-semibold text-purple-300 mb-3">📊 Grading Rubric</h3>
+                          <div className="p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg">
+                            <div className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
+                              {nexus.applicationLabConfig.rubric}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap"
+                      onMouseUp={handleTextSelection}
+                    >
+                      {displayContent || 'No content available.'}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1865,18 +2055,11 @@ export default function UnifiedNodeModal() {
                     🤖 Ask AI
                   </button>
                   <button
-                    onClick={() => handleExploreTogether('deep-thinking')}
+                    onClick={() => setShowQuizFormatModal(true)}
                     disabled={isLoadingAI}
                     className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
                   >
-                    🧠 Explore This Idea (Deep Thinking)
-                  </button>
-                  <button
-                    onClick={() => setShowQuizFormatModal(true)}
-                    disabled={isLoadingAI}
-                    className="flex-1 px-4 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
-                  >
-                    📝 Quiz Me On This (Test Knowledge)
+                    📝 Quiz Me
                   </button>
 
                   {/* Delete button - only for nodes, not nexuses */}

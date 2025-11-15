@@ -48,8 +48,16 @@ export default function CourseBuilderPage() {
   // Parse timestamp string into chunks
   const parseTimestamps = (timestampStr: string): Array<{ start: number; end: number }> => {
     const chunks = timestampStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
-    console.log('🔍 Timestamp parsing - raw chunks after split:', chunks);
-    return chunks.map(chunk => {
+    console.log('🔍 ========================================');
+    console.log('🔍 TIMESTAMP PARSING');
+    console.log('🔍 Raw input:', timestampStr);
+    console.log('🔍 After split by comma:', timestampStr.split(','));
+    console.log('🔍 After trim:', timestampStr.split(',').map(s => s.trim()));
+    console.log('🔍 After filter (empty removed):', chunks);
+    console.log('🔍 Number of chunks:', chunks.length);
+    console.log('🔍 ========================================');
+    return chunks.map((chunk, index) => {
+      console.log(`🔍 Parsing chunk ${index}: "${chunk}"`);
       const [startStr, endStr] = chunk.split('-').map(s => s.trim());
 
       const parseTime = (timeStr: string): number => {
@@ -314,18 +322,43 @@ export default function CourseBuilderPage() {
       const data = await response.json();
       console.log('📝 API response:', data);
 
+      // Helper function to strip markdown code blocks and fix common JSON issues
+      const cleanJsonString = (str: string): string => {
+        // Remove ```json or ``` wrappers if present
+        let cleaned = str.trim();
+        if (cleaned.startsWith('```json')) {
+          cleaned = cleaned.substring(7);
+        } else if (cleaned.startsWith('```')) {
+          cleaned = cleaned.substring(3);
+        }
+        if (cleaned.endsWith('```')) {
+          cleaned = cleaned.substring(0, cleaned.length - 3);
+        }
+        cleaned = cleaned.trim();
+
+        // Remove trailing commas before closing braces/brackets (common AI mistake)
+        cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+
+        return cleaned;
+      };
+
       // Parse the response (expecting JSON with question and rubric)
       try {
-        const parsed = JSON.parse(data.content);
+        const cleanedContent = cleanJsonString(data.content);
+        console.log('🧹 Cleaned JSON content (first 500 chars):', cleanedContent.substring(0, 500));
+
+        const parsed = JSON.parse(cleanedContent);
         if (parsed.question && parsed.rubric) {
           setCourseData({ ...courseData, applicationEssay: parsed });
           console.log('✅ Application essay generated successfully');
         } else {
           throw new Error('Invalid response format: missing question or rubric');
         }
-      } catch (parseError) {
-        console.error('Failed to parse application essay response:', parseError);
-        throw new Error('Failed to parse AI response');
+      } catch (parseError: any) {
+        console.error('❌ Failed to parse application essay response:', parseError);
+        console.error('❌ Raw content:', data.content);
+        console.error('❌ Cleaned content:', cleanJsonString(data.content));
+        throw new Error(`Failed to parse AI response: ${parseError.message}`);
       }
     } catch (error) {
       console.error('❌ Error generating application essay:', error);
@@ -340,10 +373,15 @@ export default function CourseBuilderPage() {
     try {
       // Parse timestamps
       const timestampChunks = parseTimestamps(courseData.timestamps);
+      console.log('📊 ========================================');
+      console.log('📊 COURSE GENERATION DEBUG');
+      console.log('📊 ========================================');
+      console.log('📊 Raw timestamps string:', courseData.timestamps);
       console.log('📊 Parsed timestamp chunks:', timestampChunks);
       console.log('📊 Number of timestamp chunks:', timestampChunks.length);
       console.log('📊 Number of section contents:', courseData.sectionContents.length);
       console.log('📊 Number of generated question sets:', courseData.generatedQuestions.length);
+      console.log('📊 ========================================');
 
       // Create Nexus with full content
       const { createNexus } = useCanvasStore.getState();
@@ -365,16 +403,25 @@ export default function CourseBuilderPage() {
 
       // Create L1 nodes for each timestamp chunk
       const nodeIds: string[] = [];
+      console.log(`🔄 Starting forEach loop to create ${timestampChunks.length} nodes...`);
       timestampChunks.forEach((chunk, index) => {
+        console.log(`🔄 Loop iteration ${index}: Creating node for chunk`, chunk);
+
         // Use section-specific content if available, fallback to placeholder
         const sectionContent = courseData.sectionContents[index] || `Section ${index + 1}`;
+
+        console.log(`   - Section content length: ${sectionContent.length} chars`);
+        console.log(`   - Calling addNode with index: ${index}`);
 
         const nodeId = addNode(
           sectionContent, // Use section-specific content
           nexusId,
           undefined, // No quoted text
-          'ai-response' // Node type - AI-response for course content
+          'ai-response', // Node type - AI-response for course content
+          index // Pass explicit sibling index to prevent race condition
         );
+
+        console.log(`   ✅ Node created with ID: ${nodeId}`);
 
         // Get questions for this section
         const sectionQuestions = courseData.generatedQuestions[index];
@@ -384,7 +431,7 @@ export default function CourseBuilderPage() {
           videoUrl: courseData.videoUrl,
           videoStart: chunk.start,
           videoEnd: chunk.end,
-          isLocked: index !== 0, // Lock all except first
+          isLocked: false, // All nodes unlocked immediately
           title: `Section ${index + 1}`,
           // Store questions in the node
           mcqQuestions: sectionQuestions?.mcqs || [],
@@ -418,7 +465,19 @@ export default function CourseBuilderPage() {
       console.log(`🎓 COURSE CREATION SUMMARY:`);
       console.log(`   - Total nodes created: ${nodeIds.length}`);
       console.log(`   - Expected nodes: ${timestampChunks.length}`);
+      console.log(`   - Nodes match expected: ${nodeIds.length === timestampChunks.length ? '✅ YES' : '❌ NO'}`);
       console.log(`   - Node IDs:`, nodeIds.map(id => id.substring(0, 20) + '...'));
+
+      // Verify each node was created correctly
+      const { nodes } = useCanvasStore.getState();
+      nodeIds.forEach((id, idx) => {
+        const node = nodes[id];
+        if (node) {
+          console.log(`   - Section ${idx + 1}: position [${node.position.map(p => p.toFixed(2)).join(', ')}]`);
+        } else {
+          console.error(`   ❌ Section ${idx + 1}: NODE NOT FOUND IN STATE!`);
+        }
+      });
 
       // Save universe with course metadata
       const { saveCurrentUniverse, saveToLocalStorage } = useCanvasStore.getState();
@@ -436,7 +495,17 @@ export default function CourseBuilderPage() {
         // Use Zustand's setState to properly update the universe
         useCanvasStore.setState((state) => {
           const universe = state.universeLibrary[savedUniverseId];
-          const updatedNexus = universe.nexuses[nexusId];
+
+          // nexuses is an array, not an object - find the nexus by ID
+          const updatedNexuses = universe.nexuses.map(nexus => {
+            if (nexus.id === nexusId) {
+              return {
+                ...nexus,
+                applicationEssay: courseData.applicationEssay || undefined
+              };
+            }
+            return nexus;
+          });
 
           return {
             universeLibrary: {
@@ -449,13 +518,7 @@ export default function CourseBuilderPage() {
                   mcqCount: courseData.mcqCount,
                   shortAnswerCount: courseData.shortAnswerCount,
                 },
-                nexuses: {
-                  ...universe.nexuses,
-                  [nexusId]: {
-                    ...updatedNexus,
-                    applicationEssay: courseData.applicationEssay || undefined
-                  }
-                }
+                nexuses: updatedNexuses
               }
             }
           };
@@ -535,7 +598,7 @@ export default function CourseBuilderPage() {
       {/* Progress Indicator */}
       <div className="max-w-5xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-8">
-          {[1, 2, 3, 4, 5].map((step) => (
+          {[1, 2, 3, 4, 5, 6].map((step) => (
             <div key={step} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
                 <div
@@ -555,9 +618,10 @@ export default function CourseBuilderPage() {
                   {step === 3 && 'Settings'}
                   {step === 4 && 'Review'}
                   {step === 5 && 'Questions'}
+                  {step === 6 && 'Essay'}
                 </div>
               </div>
-              {step < 5 && (
+              {step < 6 && (
                 <div className={`h-1 flex-1 ${step < currentStep ? 'bg-green-500' : 'bg-slate-700'}`} />
               )}
             </div>

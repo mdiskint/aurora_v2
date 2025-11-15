@@ -65,3 +65,23 @@ export function getNodeTypeIcon(nodeType?: string): string {
       return '📝';
   }
 }
+
+/**
+ * Get color for node type (matches CanvasScene colors)
+ */
+export function getNodeTypeColor(nodeType?: string): string {
+  switch (nodeType) {
+    case 'ai-response':
+      return '#D2691E'; // Deep burnt orange
+    case 'socratic-question':
+    case 'inspiration':
+      return '#FFD700'; // Gold
+    case 'synthesis':
+      return '#00FFFF'; // Cyan
+    case 'user-reply':
+    case 'socratic-answer':
+      return '#8B5CF6'; // Purple
+    default:
+      return '#8B5CF6'; // Default purple
+  }
+}

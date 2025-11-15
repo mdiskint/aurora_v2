@@ -293,25 +293,67 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
 
 function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const glowMeshRef = useRef<THREE.Mesh>(null);
 
-  // Rotate the mesh every frame (slowed by 1/3)
-  useFrame(() => {
+  // 🌱 EVOLVING NEXUS - Check evolution state
+  const isApplicationLab = nexus.evolutionState === 'application-lab';
+  const isGrowing = nexus.evolutionState === 'growing';
+
+  // Rotate and pulse the mesh every frame
+  useFrame(({ clock }) => {
     if (meshRef.current) {
       meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
       meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
+
+      // 🎓 Pulsing animation for Application Lab nexuses
+      if (isApplicationLab) {
+        const time = clock.getElapsedTime();
+        const pulse = Math.sin(time * 1.5) * 0.05 + 1.0; // Oscillate between 0.95 and 1.05
+        meshRef.current.scale.setScalar(pulse);
+      }
+    }
+
+    // Pulse the glow for Application Lab nexuses
+    if (glowMeshRef.current && isApplicationLab) {
+      const time = clock.getElapsedTime();
+      const glowPulse = Math.sin(time * 2) * 0.15 + 0.85; // Oscillate opacity
+      (glowMeshRef.current.material as THREE.MeshBasicMaterial).opacity = glowPulse * 0.3;
     }
   });
 
+  // Color based on evolution state
+  const color = isApplicationLab
+    ? "#FFD700" // Cyan-Gold for Application Lab (using gold as dominant)
+    : isGrowing
+    ? "#00CED1" // Cyan for growing (transitioning)
+    : "#00FF9D"; // Original green for seed
+
   return (
-    <mesh ref={meshRef} position={nexus.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-      <sphereGeometry args={[2, 32, 32]} />
-      <meshBasicMaterial
-        color="#00FF9D"
-        wireframe={true}
-        transparent={true}
-        opacity={opacity}
-      />
-    </mesh>
+    <group>
+      {/* Main mesh */}
+      <mesh ref={meshRef} position={nexus.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+        <sphereGeometry args={[2, 32, 32]} />
+        <meshBasicMaterial
+          color={color}
+          wireframe={true}
+          transparent={true}
+          opacity={opacity}
+        />
+      </mesh>
+
+      {/* 🎓 Glow effect for Application Lab nexuses */}
+      {isApplicationLab && (
+        <mesh ref={glowMeshRef} position={nexus.position}>
+          <sphereGeometry args={[2.5, 32, 32]} />
+          <meshBasicMaterial
+            color="#FFD700"
+            transparent={true}
+            opacity={0.3}
+            side={THREE.BackSide}
+          />
+        </mesh>
+      )}
+    </group>
   );
 }
 
@@ -746,23 +788,10 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
   const setShowContentOverlay = useCanvasStore((state) => state.setShowContentOverlay);
   const setHoveredNode = useCanvasStore((state) => state.setHoveredNode);
 
-  // 🎓 Helper function: Check if node is locked (only applies to course universes)
+  // 🎓 Helper function: Check if node is locked (DISABLED - all nodes are now unlocked)
   const isNodeLocked = (node: any) => {
-    // Always log for debugging
-    const hasIsLockedFlag = node.isLocked === true;
-    const universe = activeUniverseId ? universeLibrary[activeUniverseId] : null;
-    const isCourseMode = universe?.courseMode === true;
-    const result = hasIsLockedFlag && isCourseMode;
-
-    console.log('🔒 isNodeLocked check:', {
-      nodeId: node.id.substring(0, 30),
-      nodeIsLocked: node.isLocked,
-      activeUniverseId: activeUniverseId?.substring(0, 30),
-      universeCourseMode: universe?.courseMode,
-      result: result
-    });
-
-    return result;
+    // Lock feature disabled - all nodes are immediately accessible
+    return false;
   };
 
   useCameraAnimation();
@@ -897,11 +926,9 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
               // Update last click tracking
               lastNexusClickRef.current = { nexusId: nexus.id, timestamp: now };
 
-              // NEW: Multi-node connection mode (hold Shift)
-              if (isHoldingShift) {
-                console.log('🔗 Adding nexus to selection (Shift held):', nexus.id);
-                addNodeToConnection(nexus.id);
-              } else if (connectionModeActive) {
+              // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+              // Old connection mode (connectionModeActive) kept for compatibility
+              if (connectionModeActive) {
                 if (!connectionModeNodeA) {
                   console.log('🔗 Node A selected:', nexus.id);
                   startConnectionMode(nexus.id);
@@ -1190,11 +1217,8 @@ if (node.nodeType === 'synthesis') {
             return;
           }
 
-          // NEW: Multi-node connection mode (hold Shift)
-          if (isHoldingShift) {
-            console.log('🔗 Adding connection node to selection (Shift held):', node.id);
-            addNodeToConnection(node.id);
-          } else if (connectionModeActive) {
+          // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+          if (connectionModeActive) {
             if (!connectionModeNodeA) {
               console.log('🔗 Node A selected:', node.id);
               startConnectionMode(node.id);
@@ -1252,11 +1276,8 @@ if (node.nodeType === 'synthesis') {
             return;
           }
 
-          // NEW: Multi-node connection mode (hold Shift)
-          if (isHoldingShift) {
-            console.log('🔗 Adding node to selection (Shift held):', node.id);
-            addNodeToConnection(node.id);
-          } else if (connectionModeActive) {
+          // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+          if (connectionModeActive) {
             if (!connectionModeNodeA) {
               console.log('🔗 Node A selected:', node.id);
               startConnectionMode(node.id);
@@ -1312,11 +1333,8 @@ if (node.nodeType === 'synthesis') {
             return;
           }
 
-          // NEW: Multi-node connection mode (hold Shift)
-          if (isHoldingShift) {
-            console.log('🔗 Adding node to selection (Shift held):', node.id);
-            addNodeToConnection(node.id);
-          } else if (connectionModeActive) {
+          // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+          if (connectionModeActive) {
             if (!connectionModeNodeA) {
               console.log('🔗 Node A selected:', node.id);
               startConnectionMode(node.id);
@@ -1548,7 +1566,6 @@ export default function CanvasScene() {
     console.log('🔬🔬🔬 APPLICATION LAB MODE STATE CHANGED:', isApplicationLabMode);
   }, [isApplicationLabMode]);
 
-  const [isHoldingShift, setIsHoldingShift] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
 
@@ -1563,12 +1580,9 @@ export default function CanvasScene() {
   // Keyboard handling moved to parent component
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && !isHoldingShift) {
-        console.log('🔗 Multi-connection mode ACTIVE - Hold Shift and click nodes to select');
-        setIsHoldingShift(true);
-      } else if (e.key === 'Escape') {
+      // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+      if (e.key === 'Escape') {
         console.log('❌ Cancelled connection mode');
-        setIsHoldingShift(false);
         clearConnectionMode();
       } else if (e.key === 'Delete' && selectedId) {
         // Handle deletion of selected node or nexus (Delete key only, not 'x')
@@ -1606,30 +1620,12 @@ export default function CanvasScene() {
       }
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') {
-        console.log('🔗 Shift key released');
-        setIsHoldingShift(false);
-
-        // Create connection if 2+ nodes selected
-        if (selectedNodesForConnection.length >= 2) {
-          console.log('✨ Creating multi-connection with', selectedNodesForConnection.length, 'nodes');
-          createMultiConnection(selectedNodesForConnection);
-        } else if (selectedNodesForConnection.length === 1) {
-          console.log('⚠️ Only 1 node selected - need at least 2');
-          clearConnectionMode();
-        }
-      }
-    };
-
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isHoldingShift, selectedNodesForConnection, createMultiConnection, clearConnectionMode, selectedId, nexuses, nodes, deleteNode, deleteConversation]);
+  }, [clearConnectionMode, selectedId, nexuses, nodes, deleteNode, deleteConversation]);
 
   useEffect(() => {
     console.log('🔵 useEffect running, attempting connection...');
@@ -1791,11 +1787,11 @@ export default function CanvasScene() {
       )}
 
       <UnifiedNodeModal />
-      <ConnectionModeHint isHoldingShift={isHoldingShift} selectedCount={selectedNodesForConnection.length} />
+      {/* 🔗 CONNECTION MODE HINT DISABLED - Now handled by SectionNavigator */}
       {hasUniverse && <SectionNavigator />}
 
       <Canvas camera={{ position: [10, 8, 15], fov: 60 }}>
-        <Scene isHoldingShift={isHoldingShift} />
+        <Scene isHoldingShift={false} />
         <CameraPositionManager />
       </Canvas>
     </div>
