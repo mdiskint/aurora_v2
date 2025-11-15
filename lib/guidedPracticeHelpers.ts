@@ -23,12 +23,32 @@ export interface DoctrinePracticeBundle {
  * Infer the practice role of a node based on its fields
  */
 function inferNodeRole(node: Node): string | null {
-  // Synthesis nodes
-  if (node.isSynthesis || node.nodeType === 'synthesis') {
+  // Check explicit nodeType first (most reliable for atomized content)
+  if (node.nodeType) {
+    switch (node.nodeType) {
+      case 'intuition-example':
+        return 'intuition-example';
+      case 'model-answer':
+        return 'model-answer';
+      case 'imitate':
+        return 'imitate';
+      case 'quiz-mc':
+        return 'quiz-mc';
+      case 'quiz-short-answer':
+        return 'quiz-short-answer';
+      case 'application-scenario':
+        return 'application-scenario';
+      case 'synthesis':
+        return 'synthesis';
+    }
+  }
+
+  // Synthesis nodes (legacy check for isSynthesis flag)
+  if (node.isSynthesis) {
     return 'synthesis';
   }
 
-  // Quiz nodes
+  // Quiz nodes (check for actual question data)
   if (node.mcqQuestions && node.mcqQuestions.length > 0) {
     return 'quiz-mc';
   }
@@ -36,7 +56,7 @@ function inferNodeRole(node: Node): string | null {
     return 'quiz-short-answer';
   }
 
-  // Try to infer from title/content keywords
+  // Try to infer from title/content keywords (fallback)
   const title = node.title?.toLowerCase() || '';
   const content = node.content?.toLowerCase() || '';
 
@@ -75,13 +95,20 @@ export function buildDoctrinePracticeBundle(
     .map(childId => allNodes[childId])
     .filter(Boolean);
 
+  console.log('🔍 Building practice bundle for:', doctrineNode.title, {
+    childrenCount: children.length,
+    children: children.map(c => ({ id: c.id, title: c.title, nodeType: c.nodeType }))
+  });
+
   if (children.length === 0) {
+    console.log('⚠️ No children found for practice bundle');
     return null; // No children, can't build bundle
   }
 
   // Categorize children by inferred role
   for (const child of children) {
     const role = inferNodeRole(child);
+    console.log(`  → Child "${child.title}" inferred role:`, role);
 
     switch (role) {
       case 'intuition-example':
@@ -113,6 +140,11 @@ export function buildDoctrinePracticeBundle(
     (bundle.intuitionExampleNode !== undefined) ||
     (bundle.modelAnswerNode !== undefined) ||
     (bundle.quizMcNode !== undefined || bundle.quizShortAnswerNode !== undefined);
+
+  console.log('📦 Bundle result:', {
+    hasMinimumNodes,
+    bundleKeys: Object.keys(bundle).filter(k => bundle[k as keyof DoctrinePracticeBundle] !== undefined)
+  });
 
   return hasMinimumNodes ? bundle : null;
 }

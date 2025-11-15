@@ -1,4 +1,17 @@
-export type NodeType = 'user-reply' | 'ai-response' | 'socratic-question' | 'socratic-answer' | 'inspiration' | 'synthesis';
+export type NodeType =
+  | 'user-reply'
+  | 'ai-response'
+  | 'socratic-question'
+  | 'socratic-answer'
+  | 'inspiration'
+  | 'synthesis'
+  | 'doctrine'
+  | 'intuition-example'
+  | 'model-answer'
+  | 'imitate'
+  | 'quiz-mc'
+  | 'quiz-short-answer'
+  | 'application-scenario';
 
 export interface MCQ {
   question: string;

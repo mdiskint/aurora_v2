@@ -607,6 +607,102 @@ export default function CourseBuilderPage() {
         }
       });
 
+      // 🎓 CREATE ATOMIZED CHILD NODES from blueprint
+      if (courseData.atomizationBlueprint) {
+        console.log('🎓 ========================================');
+        console.log('🎓 CREATING ATOMIZED DOCTRINE NODES');
+        console.log('🎓 ========================================');
+        console.log(`🎓 Found ${courseData.atomizationBlueprint.doctrines.length} doctrines in blueprint`);
+
+        const { addNode: addAtomizedNode, updateNode: updateAtomizedNode } = useCanvasStore.getState();
+
+        // Map doctrines to section nodes (distribute evenly)
+        courseData.atomizationBlueprint.doctrines.forEach((doctrine, doctrineIdx) => {
+          // Determine which section node to attach this doctrine to
+          // Distribute doctrines evenly across sections
+          const sectionIndex = Math.floor((doctrineIdx / courseData.atomizationBlueprint!.doctrines.length) * nodeIds.length);
+          const parentSectionId = nodeIds[sectionIndex];
+
+          console.log(`\n📚 Creating doctrine ${doctrineIdx + 1}: "${doctrine.title}"`);
+          console.log(`   - Attaching to Section ${sectionIndex + 1} (${parentSectionId.substring(0, 20)}...)`);
+          console.log(`   - Children count: ${doctrine.children.length}`);
+
+          // Create the doctrine parent node
+          const doctrineNodeId = addAtomizedNode(
+            doctrine.content || doctrine.summary,
+            parentSectionId,
+            undefined,
+            'doctrine', // Mark as doctrine type
+            undefined
+          );
+
+          // Update the doctrine node with metadata
+          updateAtomizedNode(doctrineNodeId, {
+            title: doctrine.title,
+            nodeType: 'doctrine',
+          });
+
+          console.log(`   ✅ Created doctrine node: ${doctrineNodeId.substring(0, 20)}...`);
+
+          // Create child nodes for each atomization role
+          doctrine.children.forEach((child, childIdx) => {
+            console.log(`      - Creating child ${childIdx + 1}: role="${child.role}"`);
+
+            // Determine content for the child
+            const childContent = child.content || child.summary || child.prompt || child.question || '';
+
+            // Determine node type based on role
+            let nodeType = child.role;
+            let additionalProps: any = {};
+
+            // Handle different roles
+            if (child.role === 'synthesis') {
+              nodeType = 'synthesis';
+              additionalProps.isSynthesis = true;
+            } else if (child.role === 'quiz-mc' && child.question && child.options) {
+              // Create MCQ structure
+              additionalProps.mcqQuestions = [{
+                question: child.question,
+                options: child.options,
+                correctOption: child.correctOption || child.options[0],
+                explanation: child.explanation || ''
+              }];
+            } else if (child.role === 'quiz-short-answer' && child.question) {
+              // Create short answer structure
+              additionalProps.shortAnswerQuestions = [{
+                question: child.question,
+                sampleAnswer: child.sampleAnswer || '',
+                guidance: child.guidance || ''
+              }];
+            }
+
+            // Create the child node
+            const childNodeId = addAtomizedNode(
+              childContent,
+              doctrineNodeId, // Parent is the doctrine node
+              undefined,
+              nodeType,
+              undefined
+            );
+
+            // Update with role-specific properties
+            updateAtomizedNode(childNodeId, {
+              title: child.role.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              nodeType: nodeType,
+              ...additionalProps
+            });
+
+            console.log(`         ✅ Created ${child.role} node: ${childNodeId.substring(0, 20)}...`);
+          });
+        });
+
+        console.log('🎓 ========================================');
+        console.log('🎓 ATOMIZATION COMPLETE');
+        console.log('🎓 ========================================\n');
+      } else {
+        console.log('ℹ️  No atomization blueprint found - skipping doctrine creation');
+      }
+
       // Save universe with course metadata
       const { saveCurrentUniverse, saveToLocalStorage } = useCanvasStore.getState();
 

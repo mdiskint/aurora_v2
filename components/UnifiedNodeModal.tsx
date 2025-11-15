@@ -370,6 +370,19 @@ export default function UnifiedNodeModal() {
     : [];
   const hasGuidedPractice = availablePracticeSteps.length > 0;
 
+  // Debug logging
+  if (node) {
+    console.log('🎓 Guided Practice Debug:', {
+      nodeId: node.id,
+      nodeTitle: node.title,
+      childrenCount: node.children?.length || 0,
+      children: node.children,
+      practiceBundle: practiceBundle,
+      availablePracticeSteps: availablePracticeSteps,
+      hasGuidedPractice: hasGuidedPractice
+    });
+  }
+
   // Toast notification helper
   const showToastNotification = (message: string) => {
     setToastMessage(message);
