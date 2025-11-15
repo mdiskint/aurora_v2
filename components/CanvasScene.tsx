@@ -237,7 +237,7 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
         // All other nodes: Standard material
         <meshStandardMaterial
           color={color}
-          metalness={0.8}
+          metalness={0.0}  // Changed from 0.8 to 0.0 for vibrant colors
           roughness={roughness}
           emissive={emissive}
           emissiveIntensity={emissiveIntensity * opacity} // Scale emissive with opacity
