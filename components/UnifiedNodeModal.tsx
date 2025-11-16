@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { parseVideoUrl } from '@/lib/videoUtils';
 import ApplicationEssaySection from './ApplicationEssaySection';
+import { NodeType } from '@/lib/types';
 import {
   buildDoctrinePracticeBundle,
   getAvailablePracticeSteps,
@@ -328,6 +329,7 @@ export default function UnifiedNodeModal() {
   const [activePracticeStep, setActivePracticeStep] = useState<PracticeStepId>('intuition');
   const [practiceStepInput, setPracticeStepInput] = useState('');
   const [practiceStepFeedback, setPracticeStepFeedback] = useState('');
+  const [isGradingPractice, setIsGradingPractice] = useState(false);
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -851,6 +853,162 @@ export default function UnifiedNodeModal() {
     } catch (error) {
       console.error('❌ Failed to get AI response:', error);
       setIsLoadingAI(false);
+    }
+  };
+
+  // ➡️ NAVIGATE TO NEXT PRACTICE STEP - From a completed L2 node
+  const handleGoToNextPracticeStep = () => {
+    if (!node || !node.parentId) return;
+
+    // Determine next step based on current node type
+    const nextStepMap: Record<string, PracticeStepId | null> = {
+      'intuition-example': 'model',
+      'model-answer': 'imitate',
+      'imitate': 'quiz',
+      'quiz-mc': 'synthesis',
+      'quiz-short-answer': 'synthesis',
+      'synthesis': null, // Final step, no next
+    };
+
+    const nextStep = node.nodeType ? nextStepMap[node.nodeType] : null;
+
+    if (nextStep) {
+      // Navigate to parent doctrine node
+      selectNode(node.parentId, true);
+
+      // Open guided practice panel and set active step
+      setTimeout(() => {
+        setShowGuidedPractice(true);
+        setActivePracticeStep(nextStep);
+      }, 300);
+    }
+  };
+
+  // 💾 SAVE PRACTICE STEP WITHOUT AI FEEDBACK - Creates L2 node and animates to it
+  const handleSavePracticeStepOnly = async (stepType: string, userAnswer: string, referenceContent: string) => {
+    if (!userAnswer.trim()) return;
+
+    try {
+      // Create L2 practice node with question + answer (no AI feedback)
+      const nodeTypeMap: Record<string, NodeType> = {
+        'intuition': 'intuition-example',
+        'imitate': 'imitate',
+        'scenario': 'synthesis'
+      };
+
+      const combinedContent = `${referenceContent}\n\n---\n\n**Your Response:**\n${userAnswer}`;
+      const newNodeId = addNode(combinedContent, node!.id, undefined, nodeTypeMap[stepType] || 'user-reply');
+
+      console.log('💾 Practice step saved (no AI feedback):', newNodeId);
+
+      // Brief pause to let the node materialize
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      // Animate camera to the new node
+      selectNode(newNodeId, true);
+
+      // Clear input and show success
+      setPracticeStepInput('');
+      setToastMessage('💾 Your answer has been saved!');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (error) {
+      console.error('❌ Failed to save practice step:', error);
+    }
+  };
+
+  // 🎓 GRADE PRACTICE STEP - AI grades user's practice attempt
+  const handleGradePracticeStep = async (stepType: string, userAnswer: string, referenceContent: string) => {
+    if (!userAnswer.trim()) return;
+
+    setIsGradingPractice(true);
+    setPracticeStepFeedback('');
+
+    try {
+      let gradingPrompt = '';
+
+      if (stepType === 'imitate') {
+        gradingPrompt = `The student was asked to apply this reasoning pattern:
+
+"${referenceContent}"
+
+Their attempt:
+"${userAnswer}"
+
+Provide constructive feedback in 2-3 sentences on:
+1. Whether they correctly applied the pattern
+2. What they did well
+3. One specific way to improve (if needed)
+
+Be encouraging but honest about accuracy.`;
+      } else if (stepType === 'scenario') {
+        gradingPrompt = `The student was given this application scenario:
+
+"${referenceContent}"
+
+Their analysis:
+"${userAnswer}"
+
+Provide constructive feedback in 2-3 sentences on:
+1. Whether they correctly analyzed the scenario
+2. Key insights they demonstrated
+3. Any important aspects they might have missed
+
+Be encouraging and help them think more deeply.`;
+      } else if (stepType === 'intuition') {
+        gradingPrompt = `The student was shown this intuition example:
+
+"${referenceContent}"
+
+Their thoughts:
+"${userAnswer}"
+
+Provide encouraging feedback in 1-2 sentences acknowledging their thinking and adding one interesting insight to deepen their intuition.`;
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: gradingPrompt }],
+          mode: 'standard',
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to get AI feedback');
+
+      const data = await response.json();
+      setPracticeStepFeedback(data.response);
+      setIsGradingPractice(false);
+
+      // 🎯 Create L2 practice node with question + answer + feedback
+      const nodeTypeMap: Record<string, NodeType> = {
+        'intuition': 'intuition-example',
+        'imitate': 'imitate',
+        'scenario': 'synthesis' // Scenario is now the synthesis step
+      };
+
+      const combinedContent = `${referenceContent}\n\n---\n\n**Your Response:**\n${userAnswer}\n\n**AI Feedback:**\n${data.response}`;
+      const newNodeId = addNode(combinedContent, node!.id, undefined, nodeTypeMap[stepType] || 'user-reply');
+
+      // 🎬 SMOOTH TRANSITION: Let node appear, then animate to it
+      console.log('✨ Practice step completed! New node created:', newNodeId);
+
+      // Brief pause to let the purple diamond materialize in 3D space
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      // Animate camera to the new node and show its content
+      selectNode(newNodeId, true);
+
+      // Clear input and show success message
+      setPracticeStepInput('');
+      setToastMessage('🎉 Great work! Your answer has been saved.');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (error) {
+      console.error('❌ Failed to grade practice step:', error);
+      setPracticeStepFeedback('Sorry, could not get feedback at this time. Please try again.');
+      setIsGradingPractice(false);
     }
   };
 
@@ -1394,7 +1552,7 @@ export default function UnifiedNodeModal() {
   };
 
   // End MC quiz
-  const handleEndMcQuiz = () => {
+  const handleEndMcQuiz = (continueToSynthesis = false) => {
     // 💾 SAVE MCQ RESULTS TO NODE & MARK AS COMPLETED
     if (node && mcResults.length > 0) {
       console.log('📊 Saving MCQ quiz results to node:', node.id);
@@ -1438,7 +1596,14 @@ export default function UnifiedNodeModal() {
     setSelectedMcAnswer(null);
     setMcAnswered(false);
     setMcResults([]);
-    selectNode(selectedId, false);
+
+    // If continuing to synthesis, open Guided Practice panel
+    if (continueToSynthesis) {
+      setShowGuidedPractice(true);
+      setActivePracticeStep('synthesis');
+    } else {
+      selectNode(selectedId, false);
+    }
   };
 
   // End exploration and create synthesis
@@ -1820,6 +1985,105 @@ export default function UnifiedNodeModal() {
                   )}
                 </>
               )}
+
+              {/* ➡️ NEXT STEP BUTTON - Appears when viewing a completed L2 practice node */}
+              {node &&
+                ['intuition-example', 'imitate', 'quiz-mc', 'quiz-short-answer'].includes(node.nodeType || '') &&
+                node.content.includes('**Your Response:**') && // Check if completed
+                (
+                  <div className="mt-6 flex justify-center">
+                    <button
+                      onClick={handleGoToNextPracticeStep}
+                      className="px-8 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-all font-bold text-lg shadow-lg hover:shadow-xl flex items-center gap-3"
+                    >
+                      Continue to Next Step
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </button>
+                  </div>
+                )
+              }
+
+              {/* 🎉 PRACTICE COMPLETE BUTTON - Appears when viewing completed synthesis node */}
+              {node &&
+                node.nodeType === 'synthesis' &&
+                node.content.includes('**Your Response:**') && // Check if completed
+                (
+                  <div className="mt-6 flex justify-center">
+                    <button
+                      onClick={() => {
+                        if (node.parentId) {
+                          selectNode(node.parentId, true);
+                        }
+                      }}
+                      className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg transition-all font-bold text-lg shadow-lg hover:shadow-xl flex items-center gap-3"
+                    >
+                      🎉 Practice Complete - Return to Doctrine
+                    </button>
+                  </div>
+                )
+              }
+
+              {/* 🎓 L2 PRACTICE NODE ANSWER SECTION - Only show for incomplete nodes */}
+              {node && ['intuition-example', 'imitate', 'application-scenario'].includes(node.nodeType || '') &&
+               !node.content.includes('**Your Response:**') && ( // Only show if not yet answered
+                <div className="mt-6 p-4 bg-gradient-to-r from-purple-900/20 to-indigo-900/20 border-2 border-purple-500/30 rounded-lg">
+                  <h3 className="text-lg font-semibold text-purple-300 mb-3">
+                    {node.nodeType === 'intuition-example' && '💡 Share Your Thoughts'}
+                    {node.nodeType === 'imitate' && '🎯 Your Answer'}
+                    {node.nodeType === 'application-scenario' && '🌍 Your Analysis'}
+                  </h3>
+
+                  <textarea
+                    value={practiceStepInput}
+                    onChange={(e) => setPracticeStepInput(e.target.value)}
+                    placeholder={
+                      node.nodeType === 'intuition-example' ? 'What are your initial thoughts?' :
+                      node.nodeType === 'imitate' ? 'Apply the reasoning pattern here...' :
+                      'How would you analyze this scenario?'
+                    }
+                    rows={node.nodeType === 'application-scenario' ? 8 : 5}
+                    className="w-full px-4 py-3 bg-slate-900 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none mb-3"
+                  />
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        if (practiceStepInput.trim()) {
+                          const stepType = node.nodeType === 'intuition-example' ? 'intuition' :
+                                          node.nodeType === 'imitate' ? 'imitate' : 'scenario';
+                          handleGradePracticeStep(stepType, practiceStepInput, node.content);
+                          setPracticeStepInput('');
+                        }
+                      }}
+                      disabled={!practiceStepInput.trim() || isGradingPractice}
+                      className="flex-1 px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                    >
+                      {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Get AI Feedback'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const stepType = node.nodeType === 'intuition-example' ? 'intuition'
+                          : node.nodeType === 'imitate' ? 'imitate'
+                          : 'scenario';
+                        handleSavePracticeStepOnly(stepType, practiceStepInput, node.content);
+                      }}
+                      disabled={!practiceStepInput.trim() || isGradingPractice}
+                      className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                    >
+                      💾 Save Only
+                    </button>
+                  </div>
+
+                  {practiceStepFeedback && (
+                    <div className="mt-4 bg-purple-900/20 border border-purple-500/50 rounded-lg p-4">
+                      <p className="text-sm font-semibold text-purple-300 mb-2">✨ AI Feedback:</p>
+                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1882,6 +2146,28 @@ export default function UnifiedNodeModal() {
                     >
                       {quizFeedback}
                     </div>
+
+                    {/* Continue to Synthesis button - appears when quiz is complete */}
+                    {(quizFeedback.includes('🎉') || quizFeedback.toLowerCase().includes('excellent work')) && (
+                      <button
+                        onClick={() => {
+                          // Close quiz mode
+                          setExplorationMode(null);
+                          setSocraticQuestion(null);
+                          setQuizFeedback('');
+
+                          // Open Guided Practice on synthesis step
+                          setShowGuidedPractice(true);
+                          setActivePracticeStep('synthesis');
+                        }}
+                        className="mt-4 w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-all font-bold flex items-center justify-center gap-2"
+                      >
+                        Continue to Synthesis Step
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -2359,7 +2645,7 @@ export default function UnifiedNodeModal() {
                       Submit Answer
                     </button>
                     <button
-                      onClick={handleEndMcQuiz}
+                      onClick={() => handleEndMcQuiz(false)}
                       className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
                     >
                       End Quiz
@@ -2383,7 +2669,7 @@ export default function UnifiedNodeModal() {
                       </button>
                     )}
                     <button
-                      onClick={handleEndMcQuiz}
+                      onClick={() => handleEndMcQuiz(false)}
                       className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
                     >
                       End Quiz
@@ -2456,12 +2742,21 @@ export default function UnifiedNodeModal() {
                     setMcAnswered(false);
                     setMcResults([]);
                   }}
-                  className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
+                  className="px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
                 >
                   Take Again
                 </button>
                 <button
-                  onClick={handleEndMcQuiz}
+                  onClick={() => handleEndMcQuiz(true)}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-all font-bold flex items-center justify-center gap-2"
+                >
+                  Continue to Synthesis
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleEndMcQuiz(false)}
                   className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all font-medium"
                 >
                   Close
@@ -2501,8 +2796,8 @@ export default function UnifiedNodeModal() {
                     model: '📐 Model',
                     imitate: '🎯 Imitate',
                     quiz: '📝 Quiz',
-                    scenario: '🌍 Scenario',
                     synthesis: '🔗 Synthesis',
+                    scenario: '🌍 Scenario', // Legacy support
                   };
 
                   const isActive = activePracticeStep === stepId;
@@ -2550,23 +2845,34 @@ export default function UnifiedNodeModal() {
                         className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
                       />
                     </div>
-                    <button
-                      onClick={() => {
-                        if (practiceStepInput.trim()) {
-                          // Create user-reply node
-                          addNode(practiceStepInput, node!.id, undefined, 'user-reply');
-                          setPracticeStepInput('');
-                          setPracticeStepFeedback('✓ Your intuition has been recorded!');
-                          setTimeout(() => setPracticeStepFeedback(''), 3000);
-                        }
-                      }}
-                      disabled={!practiceStepInput.trim()}
-                      className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                    >
-                      Submit Response
-                    </button>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (practiceStepInput.trim() && practiceBundle.intuitionExampleNode) {
+                            handleGradePracticeStep('intuition', practiceStepInput, practiceBundle.intuitionExampleNode.content);
+                            setPracticeStepInput('');
+                          }
+                        }}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        {isGradingPractice ? '⏳ Getting Feedback...' : '💡 Get Insight'}
+                      </button>
+                      <button
+                        onClick={() => handleSavePracticeStepOnly('intuition', practiceStepInput, practiceBundle.intuitionExampleNode?.content || '')}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        💾 Save Only
+                      </button>
+                    </div>
+
                     {practiceStepFeedback && (
-                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                      <div className="bg-cyan-900/20 border border-cyan-500/50 rounded-lg p-4">
+                        <p className="text-sm font-semibold text-cyan-300 mb-2">✨ AI Insight:</p>
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2597,6 +2903,17 @@ export default function UnifiedNodeModal() {
                         {practiceBundle.imitateNode.content}
                       </p>
                     </div>
+
+                    {/* Show model answer reference */}
+                    {practiceBundle.modelAnswerNode && (
+                      <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                        <p className="text-xs text-blue-300 font-semibold mb-1">📐 Reference Pattern:</p>
+                        <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                          {practiceBundle.modelAnswerNode.content}
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">
                         Your attempt:
@@ -2609,22 +2926,34 @@ export default function UnifiedNodeModal() {
                         className="w-full px-4 py-3 bg-slate-900 border border-yellow-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 resize-none"
                       />
                     </div>
-                    <button
-                      onClick={() => {
-                        if (practiceStepInput.trim()) {
-                          addNode(practiceStepInput, node!.id, undefined, 'user-reply');
-                          setPracticeStepInput('');
-                          setPracticeStepFeedback('✓ Great work applying the pattern!');
-                          setTimeout(() => setPracticeStepFeedback(''), 3000);
-                        }
-                      }}
-                      disabled={!practiceStepInput.trim()}
-                      className="px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                    >
-                      Submit Attempt
-                    </button>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (practiceStepInput.trim() && practiceBundle.modelAnswerNode) {
+                            handleGradePracticeStep('imitate', practiceStepInput, practiceBundle.modelAnswerNode.content);
+                            setPracticeStepInput('');
+                          }
+                        }}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="flex-1 px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Get AI Feedback'}
+                      </button>
+                      <button
+                        onClick={() => handleSavePracticeStepOnly('imitate', practiceStepInput, practiceBundle.modelAnswerNode!.content)}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        💾 Save Only
+                      </button>
+                    </div>
+
                     {practiceStepFeedback && (
-                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                      <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-4">
+                        <p className="text-sm font-semibold text-green-300 mb-2">✨ AI Feedback:</p>
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2650,87 +2979,74 @@ export default function UnifiedNodeModal() {
                   </div>
                 )}
 
-                {/* Scenario Step */}
-                {activePracticeStep === 'scenario' && practiceBundle.scenarioNode && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-green-300">🌍 Application Scenario</h3>
-                    <div className="bg-green-900/20 rounded-lg p-4 border border-green-500/30">
-                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                        {practiceBundle.scenarioNode.content}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Your analysis:
-                      </label>
-                      <textarea
-                        value={practiceStepInput}
-                        onChange={(e) => setPracticeStepInput(e.target.value)}
-                        placeholder="How would you approach this scenario? Apply what you've learned..."
-                        rows={8}
-                        className="w-full px-4 py-3 bg-slate-900 border border-green-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500 resize-none"
-                      />
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (practiceStepInput.trim()) {
-                          addNode(practiceStepInput, node!.id, undefined, 'user-reply');
-                          setPracticeStepInput('');
-                          setPracticeStepFeedback('✓ Excellent application of the concepts!');
-                          setTimeout(() => setPracticeStepFeedback(''), 3000);
-                        }
-                      }}
-                      disabled={!practiceStepInput.trim()}
-                      className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                    >
-                      Submit Analysis
-                    </button>
-                    {practiceStepFeedback && (
-                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
-                    )}
-                  </div>
-                )}
-
-                {/* Synthesis Step */}
+                {/* Synthesis Step (Final Application Scenario) */}
                 {activePracticeStep === 'synthesis' && practiceBundle.synthesisNode && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-amber-300">🔗 Synthesis & Connections</h3>
-                    <div className="bg-gradient-to-r from-amber-900/20 to-orange-900/20 rounded-lg p-4 border border-amber-500/30">
+                    <h3 className="text-lg font-semibold text-cyan-300">🔗 Synthesis & Application</h3>
+                    <div className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-lg p-4 border border-cyan-500/30">
                       <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
                         {practiceBundle.synthesisNode.content}
                       </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Your 2-3 sentence summary:
+                        Your synthesis and application:
                       </label>
                       <textarea
                         value={practiceStepInput}
                         onChange={(e) => setPracticeStepInput(e.target.value)}
-                        placeholder="In your own words, what did you learn and how does it connect?"
-                        rows={4}
-                        className="w-full px-4 py-3 bg-slate-900 border border-amber-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 resize-none"
+                        placeholder="Apply everything you've learned to analyze this scenario..."
+                        rows={8}
+                        className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
                       />
                     </div>
-                    <button
-                      onClick={() => {
-                        if (practiceStepInput.trim()) {
-                          addNode(practiceStepInput, node!.id, undefined, 'synthesis');
-                          setPracticeStepInput('');
-                          setPracticeStepFeedback('✓ Great synthesis! You completed the guided practice.');
-                          setTimeout(() => {
-                            setPracticeStepFeedback('');
-                            setShowGuidedPractice(false);
-                          }, 2000);
-                        }
-                      }}
-                      disabled={!practiceStepInput.trim()}
-                      className="px-6 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                    >
-                      Complete Practice
-                    </button>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (practiceStepInput.trim()) {
+                            handleGradePracticeStep('scenario', practiceStepInput, practiceBundle.synthesisNode!.content);
+                          }
+                        }}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Complete & Get Feedback'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (practiceStepInput.trim()) {
+                            const combinedContent = `${practiceBundle.synthesisNode!.content}\n\n---\n\n**Your Response:**\n${practiceStepInput}`;
+                            const newNodeId = addNode(combinedContent, node!.id, undefined, 'synthesis');
+                            setPracticeStepInput('');
+
+                            // Brief pause to let the cyan icosahedron materialize
+                            await new Promise(resolve => setTimeout(resolve, 600));
+
+                            // Animate camera to the new synthesis node
+                            selectNode(newNodeId, true);
+
+                            // Show success message
+                            setToastMessage('🎉 Synthesis complete! All practice steps finished.');
+                            setShowToast(true);
+                            setTimeout(() => {
+                              setShowToast(false);
+                              setShowGuidedPractice(false);
+                            }, 3000);
+                          }
+                        }}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        💾 Save Only
+                      </button>
+                    </div>
+
                     {practiceStepFeedback && (
-                      <div className="text-green-300 text-sm">{practiceStepFeedback}</div>
+                      <div className="bg-cyan-900/20 border border-cyan-500/50 rounded-lg p-4">
+                        <p className="text-sm font-semibold text-cyan-300 mb-2">✨ AI Feedback:</p>
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                      </div>
                     )}
                   </div>
                 )}

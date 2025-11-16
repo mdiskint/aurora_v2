@@ -222,15 +222,32 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
     }
   });
 
+  // Check if this is an atomization node type (excluding doctrine)
+  const isAtomizationNode = [
+    'intuition-example',
+    'model-answer',
+    'imitate',
+    'quiz-mc',
+    'quiz-short-answer',
+    'application-scenario'
+  ].includes(node.nodeType || '');
+
   return (
     <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} castShadow receiveShadow>
       {geometry}
-      {node.nodeType === 'ai-response' ? (
-        // AI responses: Wireframe like nexus
+      {node.nodeType === 'ai-response' || node.nodeType === 'doctrine' ? (
+        // AI responses and Doctrine (L1) nodes: Wireframe
         <meshBasicMaterial
           color={color}
           wireframe={true}
           transparent={true}
+          opacity={opacity}
+        />
+      ) : isAtomizationNode ? (
+        // Other atomization nodes: Use basic material like nexus for vibrant colors
+        <meshBasicMaterial
+          color={color}
+          transparent={opacity < 1}
           opacity={opacity}
         />
       ) : (
@@ -1192,29 +1209,29 @@ if (node.nodeType === 'synthesis') {
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
   nodeColor = isNodeLocked(node) ? "#808080" : "#FFD700";
 } else if (node.nodeType === 'doctrine') {
-  // 🎓 Doctrine nodes: Larger spheres (green)
+  // 🎓 Doctrine nodes: Larger spheres (burnt orange)
   Geometry = <sphereGeometry args={[size * 1.2, 32, 32]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#10B981"; // Emerald green
+  nodeColor = isNodeLocked(node) ? "#808080" : "#D2691E"; // Burnt orange
 } else if (node.nodeType === 'intuition-example') {
-  // 💡 Intuition example nodes: Octahedron (yellow)
+  // 💡 Intuition example nodes: Purple diamond
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#EAB308"; // Yellow
+  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
 } else if (node.nodeType === 'model-answer') {
-  // 📐 Model answer nodes: Box (blue)
-  Geometry = <boxGeometry args={[size * 1.5, size * 1.5, size * 1.5]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#3B82F6"; // Blue
+  // 📐 Model answer nodes: Purple diamond
+  Geometry = <octahedronGeometry args={[size, 0]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
 } else if (node.nodeType === 'imitate') {
-  // 🎯 Imitate nodes: Cone (orange)
-  Geometry = <coneGeometry args={[size, size * 2, 8]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#F97316"; // Orange
+  // 🎯 Imitate nodes: Purple diamond
+  Geometry = <octahedronGeometry args={[size, 0]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
 } else if (node.nodeType === 'quiz-mc' || node.nodeType === 'quiz-short-answer') {
-  // 📝 Quiz nodes: Tetrahedron (purple)
-  Geometry = <tetrahedronGeometry args={[size * 1.1, 0]} />;
+  // 📝 Quiz nodes: Purple diamond
+  Geometry = <octahedronGeometry args={[size, 0]} />;
   nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
 } else if (node.nodeType === 'application-scenario') {
-  // 🌍 Application scenario nodes: Torus (teal)
-  Geometry = <torusGeometry args={[size * 0.7, size * 0.3, 16, 100]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#14B8A6"; // Teal
+  // 🌍 Application scenario nodes: Purple diamond
+  Geometry = <octahedronGeometry args={[size, 0]} />;
+  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
 }
 // Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
 

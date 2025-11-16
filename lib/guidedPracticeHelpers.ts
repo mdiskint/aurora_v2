@@ -90,7 +90,63 @@ export function buildDoctrinePracticeBundle(
     conceptNode: doctrineNode,
   };
 
-  // Get all direct children of the doctrine node
+  // 🎓 NEW: Check if doctrine has practice metadata (for new atomized universes)
+  if (doctrineNode.practiceSteps && doctrineNode.practiceSteps.length > 0) {
+    console.log('🎓 Building bundle from practice metadata:', {
+      stepsCount: doctrineNode.practiceSteps.length,
+      steps: doctrineNode.practiceSteps.map(s => s.nodeType)
+    });
+
+    // Create virtual nodes from metadata for the practice panel
+    for (const step of doctrineNode.practiceSteps) {
+      const virtualNode: Node = {
+        id: `virtual-${doctrineNode.id}-${step.nodeType}`,
+        position: [0, 0, 0],
+        title: step.nodeType,
+        content: step.content,
+        parentId: doctrineNode.id,
+        children: [],
+        nodeType: step.nodeType,
+        mcqQuestions: step.nodeType === 'quiz-mc' && step.options && step.correctOption ? [{
+          question: step.content,
+          options: {
+            A: step.options[0] || '',
+            B: step.options[1] || '',
+            C: step.options[2] || '',
+            D: step.options[3] || ''
+          },
+          correctAnswer: step.correctOption,
+          explanation: step.explanation || ''
+        }] : undefined
+      };
+
+      switch (step.nodeType) {
+        case 'intuition-example':
+          bundle.intuitionExampleNode = virtualNode;
+          break;
+        case 'model-answer':
+          bundle.modelAnswerNode = virtualNode;
+          break;
+        case 'imitate':
+          bundle.imitateNode = virtualNode;
+          break;
+        case 'quiz-mc':
+          bundle.quizMcNode = virtualNode;
+          break;
+        case 'quiz-short-answer':
+          bundle.quizShortAnswerNode = virtualNode;
+          break;
+        case 'synthesis':
+          bundle.synthesisNode = virtualNode;
+          break;
+      }
+    }
+
+    console.log('✅ Bundle created from metadata');
+    return bundle;
+  }
+
+  // Legacy: Get all direct children of the doctrine node (for old universes)
   const children = doctrineNode.children
     .map(childId => allNodes[childId])
     .filter(Boolean);

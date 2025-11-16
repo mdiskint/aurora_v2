@@ -819,8 +819,8 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
 
         console.log('✅ Found nexus in store:', chatNexus.id);
 
-        // Step 3: Create all child nodes (doctrines with atomized children)
-        console.log(`🔄 Creating ${nodes.length} doctrine nodes...`);
+        // Step 3: Create L1 doctrine nodes ONLY (L2 practice nodes created during guided practice)
+        console.log(`🔄 Creating ${nodes.length} doctrine nodes with practice metadata...`);
         for (let i = 0; i < nodes.length; i++) {
           const node = nodes[i];
           console.log(`✅ Creating doctrine ${i + 1}/${nodes.length}:`, node.content.substring(0, 50) + '...');
@@ -830,47 +830,19 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
             node.content,
             chatNexus.id,
             undefined,
-            node.nodeType || 'ai-response'
+            node.nodeType || 'doctrine'
           );
-          await new Promise(resolve => setTimeout(resolve, 50));
 
-          // 🎓 Create atomized children if they exist
+          // 🎓 Store practice metadata in doctrine node (for Guided Practice to use later)
           if (node.children && Array.isArray(node.children)) {
-            console.log(`   📚 Creating ${node.children.length} atomized children for doctrine ${i + 1}...`);
-
-            for (let j = 0; j < node.children.length; j++) {
-              const child = node.children[j];
-              console.log(`      ✅ Creating child ${j + 1}: ${child.nodeType || 'ai-response'}`);
-
-              // Create child node with explicit nodeType
-              const childId = addNode(
-                child.content,
-                doctrineId, // Parent is the doctrine node
-                undefined,
-                (child.nodeType as NodeType) || 'ai-response'
-              );
-
-              // If it's a quiz node with options, update it with quiz data
-              if (child.nodeType === 'quiz-mc' && child.options && child.correctOption) {
-                const { updateNode } = useCanvasStore.getState();
-                updateNode(childId, {
-                  mcqQuestions: [{
-                    question: child.content,
-                    options: {
-                      A: child.options[0] || '',
-                      B: child.options[1] || '',
-                      C: child.options[2] || '',
-                      D: child.options[3] || ''
-                    },
-                    correctAnswer: child.correctOption,
-                    explanation: child.explanation || ''
-                  }]
-                });
-              }
-
-              await new Promise(resolve => setTimeout(resolve, 30));
-            }
+            console.log(`   📚 Storing ${node.children.length} practice steps as metadata for doctrine ${i + 1}`);
+            const { updateNode } = useCanvasStore.getState();
+            updateNode(doctrineId, {
+              practiceSteps: node.children // Store the practice questions/prompts
+            });
           }
+
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
 
         console.log('✅ Universe created with', nodes.length, 'nodes');

@@ -133,13 +133,14 @@ Assess the topic and decide 2-8 core doctrines (learning concepts) based on:
 - Medium complexity (e.g., "photosynthesis"): 3-5 doctrines
 - Complex topics (e.g., "quantum mechanics"): 6-8 doctrines
 
-For EACH doctrine, create 6 atomized practice children following Leopold Teaching methodology:
+For EACH doctrine, create 5 atomized practice children following Leopold Teaching methodology:
 1. **intuition-example**: A concrete, relatable example to build intuition (2-3 sentences)
 2. **model-answer**: Show the correct reasoning pattern or approach (2-3 sentences)
 3. **imitate**: A practice prompt where students apply the pattern ("Now you try...")
 4. **quiz-mc**: A multiple choice question testing understanding
-5. **application-scenario**: A real-world application scenario (2-3 sentences)
-6. **synthesis**: A reflection prompt connecting to broader understanding
+5. **synthesis**: A real-world application scenario that serves as synthesis/reflection (3-4 sentences combining all previous concepts)
+
+NOTE: These children are METADATA for guided practice. They will NOT be created as nodes initially - only when the student completes each practice step.
 
 Format your response as VALID JSON (and ONLY JSON, no other text):
 {
@@ -154,8 +155,7 @@ Format your response as VALID JSON (and ONLY JSON, no other text):
         {"content": "Here's the correct reasoning pattern...", "nodeType": "model-answer"},
         {"content": "Now you try: Apply this pattern to...", "nodeType": "imitate"},
         {"content": "Question: ...", "nodeType": "quiz-mc", "options": ["A", "B", "C", "D"], "correctOption": "B"},
-        {"content": "Real-world scenario: ...", "nodeType": "application-scenario"},
-        {"content": "Reflect: How does this connect to...", "nodeType": "synthesis"}
+        {"content": "Real-world application scenario combining all concepts: ...", "nodeType": "synthesis"}
       ]
     }
   ]
@@ -164,16 +164,17 @@ Format your response as VALID JSON (and ONLY JSON, no other text):
 IMPORTANT:
 - Return ONLY valid JSON, no markdown code blocks
 - Use \\n for line breaks within strings (NOT literal newlines)
-- Create 2-8 doctrine nodes, each with exactly 6 atomized children
+- Create 2-8 doctrine nodes, each with exactly 5 atomized children
 - Each child must have explicit "nodeType" field
-- DO NOT create one node per line from user input - create your own logical doctrines`;
+- DO NOT create one node per line from user input - create your own logical doctrines
+- The "synthesis" step is now the final application scenario that synthesizes all learning`;
 
       console.log('📤 Sending spatial universe generation prompt...');
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8192, // Increased to handle atomized children
-        system: 'You are Aurora AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 6 practice children: intuition-example, model-answer, imitate, quiz-mc, application-scenario, and synthesis. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        system: 'You are Aurora AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       });
 

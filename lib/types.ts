@@ -70,4 +70,13 @@ export interface Node {
   // Course questions (for course builder)
   mcqQuestions?: MCQ[];
   shortAnswerQuestions?: ShortAnswer[];
+
+  // Guided Practice metadata (for doctrine nodes)
+  practiceSteps?: Array<{
+    content: string;
+    nodeType: NodeType;
+    options?: string[];
+    correctOption?: string;
+    explanation?: string;
+  }>;
 }
