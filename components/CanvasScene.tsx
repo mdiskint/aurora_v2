@@ -198,11 +198,11 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerDown,
     <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <dodecahedronGeometry args={[finalSize, 0]} />
       <meshStandardMaterial
-        color="#FFD700" // Golden color for connection nodes!
+        color="#B8860B" // Darker vibrant neon gold for connection nodes!
         metalness={1.0}
         roughness={0.0}
-        emissive="#FFD700"
-        emissiveIntensity={0.5 * opacity} // Scale emissive with opacity
+        emissive="#B8860B"
+        emissiveIntensity={0.5 * opacity}
         envMapIntensity={3.0}
         transparent={opacity < 1}
         opacity={opacity}
@@ -211,14 +211,19 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerDown,
   );
 }
 
-function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, roughness = 0.0, onClick, onPointerDown, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
+function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, roughness = 0.0, onClick, onPointerDown, onPointerEnter, onPointerLeave, opacity = 1, isL2 = false }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const edgesRef = useRef<THREE.LineSegments>(null);
 
   // Rotate the mesh every frame (slowed by 1/3)
   useFrame(() => {
     if (meshRef.current) {
       meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
       meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
+    }
+    // Rotate edges with the mesh
+    if (edgesRef.current && meshRef.current) {
+      edgesRef.current.rotation.copy(meshRef.current.rotation);
     }
   });
 
@@ -233,38 +238,47 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
   ].includes(node.nodeType || '');
 
   return (
-    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} castShadow receiveShadow>
-      {geometry}
-      {node.nodeType === 'ai-response' || node.nodeType === 'doctrine' ? (
-        // AI responses and Doctrine (L1) nodes: Wireframe
-        <meshBasicMaterial
-          color={color}
-          wireframe={true}
-          transparent={true}
-          opacity={opacity}
-        />
-      ) : isAtomizationNode ? (
-        // Other atomization nodes: Use basic material like nexus for vibrant colors
-        <meshBasicMaterial
-          color={color}
-          transparent={opacity < 1}
-          opacity={opacity}
-        />
-      ) : (
-        // All other nodes: Standard material
-        <meshStandardMaterial
-          color={color}
-          metalness={0.0}  // Changed from 0.8 to 0.0 for vibrant colors
-          roughness={roughness}
-          emissive={emissive}
-          emissiveIntensity={emissiveIntensity * opacity} // Scale emissive with opacity
-          envMapIntensity={0.5}
-          flatShading={false}
-          transparent={opacity < 1}
-          opacity={opacity}
-        />
+    <group position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      <mesh ref={meshRef} castShadow receiveShadow>
+        {geometry}
+        {node.nodeType === 'ai-response' || node.nodeType === 'doctrine' ? (
+          // AI responses and Doctrine (L1) nodes: Wireframe
+          <meshBasicMaterial
+            color={color}
+            wireframe={true}
+            transparent={true}
+            opacity={opacity}
+          />
+        ) : isAtomizationNode ? (
+          // Other atomization nodes: Use basic material like nexus for vibrant colors
+          <meshBasicMaterial
+            color={color}
+            transparent={opacity < 1}
+            opacity={opacity}
+          />
+        ) : (
+          // All other nodes: Standard material with metallic flair
+          <meshStandardMaterial
+            color={color}
+            metalness={0.6}  // Metallic flair for shiny facets
+            roughness={0.2}  // Low roughness for reflective surfaces
+            emissive={emissive}
+            emissiveIntensity={emissiveIntensity * opacity}
+            envMapIntensity={1.2}  // Increased for better reflections
+            flatShading={false}
+            transparent={opacity < 1}
+            opacity={opacity}
+          />
+        )}
+      </mesh>
+      {/* Add visible edges for L2 nodes */}
+      {isL2 && meshRef.current && (
+        <lineSegments ref={edgesRef}>
+          <edgesGeometry attach="geometry" args={[meshRef.current.geometry]} />
+          <lineBasicMaterial attach="material" color="#FFFFFF" transparent opacity={0.5} />
+        </lineSegments>
       )}
-    </mesh>
+    </group>
   );
 }
 
@@ -296,9 +310,9 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
     >
       <octahedronGeometry args={[size, 0]} />
       <meshStandardMaterial
-        color="#8B5CF6"
-        emissive="#8B5CF6"
-        emissiveIntensity={1.5 * opacity} // Scale emissive with opacity
+        color="#6D28D9"
+        emissive="#6D28D9"
+        emissiveIntensity={1.5 * opacity}
         metalness={0.0}
         roughness={1.0}
         transparent={opacity < 1}
@@ -338,12 +352,12 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
     }
   });
 
-  // Color based on evolution state
+  // Color based on evolution state - darker but more vibrant/neon
   const color = isApplicationLab
-    ? "#FFD700" // Cyan-Gold for Application Lab (using gold as dominant)
+    ? "#B8860B" // Dark vibrant gold for Application Lab
     : isGrowing
-    ? "#00CED1" // Cyan for growing (transitioning)
-    : "#00FF9D"; // Original green for seed
+    ? "#008B8B" // Dark vibrant cyan for growing
+    : "#00695C"; // Dark emerald brilliance for seed
 
   return (
     <group>
@@ -363,7 +377,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
         <mesh ref={glowMeshRef} position={nexus.position}>
           <sphereGeometry args={[2.5, 32, 32]} />
           <meshBasicMaterial
-            color="#FFD700"
+            color="#B8860B"
             transparent={true}
             opacity={0.3}
             side={THREE.BackSide}
@@ -738,48 +752,105 @@ function CameraLight() {
     );
   });
   
+  // Create ring of lights at 45° above (8 lights in circle) - EXTREME INTENSITIES
+  const upperRingLights = Array.from({ length: 8 }).map((_, i) => {
+    const angle = (i / 8) * Math.PI * 2;
+    const radius = 30;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const y = radius * Math.tan(Math.PI / 4); // 45° elevation
+
+    return (
+      <React.Fragment key={`upper-${i}`}>
+        <directionalLight
+          position={[x, y, z]}
+          intensity={15.0}
+          color="#ffffff"
+          target-position={[0, 0, 0]}
+        />
+        <pointLight
+          position={[x, y, z]}
+          intensity={5000}
+          color="#ffffff"
+          distance={300}
+          decay={0.8}
+        />
+      </React.Fragment>
+    );
+  });
+
+  // Create ring of lights at 45° below (8 lights in circle) - EXTREME INTENSITIES
+  const lowerRingLights = Array.from({ length: 8 }).map((_, i) => {
+    const angle = (i / 8) * Math.PI * 2;
+    const radius = 30;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const y = -radius * Math.tan(Math.PI / 4); // -45° elevation
+
+    return (
+      <React.Fragment key={`lower-${i}`}>
+        <directionalLight
+          position={[x, y, z]}
+          intensity={15.0}
+          color="#ffffff"
+          target-position={[0, 0, 0]}
+        />
+        <pointLight
+          position={[x, y, z]}
+          intensity={5000}
+          color="#ffffff"
+          distance={300}
+          decay={0.8}
+        />
+      </React.Fragment>
+    );
+  });
+
   return (
     <>
-      <spotLight 
-        ref={lightRef} 
-        intensity={250} 
+      {upperRingLights}
+      {lowerRingLights}
+
+      <spotLight
+        ref={lightRef}
+        intensity={250}
         angle={Math.PI / 1.5}
         penumbra={0.3}
         distance={400}
         decay={0.4}
       />
-      
-      <spotLight 
-        ref={spotlight1Ref} 
-        intensity={200} 
+
+      <spotLight
+        ref={spotlight1Ref}
+        intensity={200}
         angle={Math.PI / 1.8}
         penumbra={0.3}
         distance={400}
         decay={0.4}
       />
-      
-      <spotLight 
-        ref={topLight2Ref} 
-        intensity={200} 
+
+      <spotLight
+        ref={topLight2Ref}
+        intensity={200}
         angle={Math.PI / 1.8}
         penumbra={0.3}
         distance={400}
         decay={0.4}
       />
-      
-      <pointLight 
-        ref={fillLight1Ref} 
+
+      <pointLight
+        ref={fillLight1Ref}
         intensity={50}
         distance={150}
         decay={1}
       />
-      <pointLight 
-        ref={fillLight2Ref} 
+      <pointLight
+        ref={fillLight2Ref}
         intensity={50}
         distance={150}
         decay={1}
       />
-      
+
       {equatorLights}
     </>
   );
@@ -1158,7 +1229,7 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
 
-        const baseColor = "#A855F7"; // Bright vibrant purple
+        const baseColor = "#7C3AED"; // Darker vibrant neon purple
 
         // Calculate opacity based on locked state
         let nodeOpacity = 1;
@@ -1174,16 +1245,16 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
         let haloType = null;
 
         if (selectedNodesForConnection.includes(node.id)) {
-          haloColor = "#FFD700"; // Gold color
+          haloColor = "#B8860B"; // Dark vibrant gold
           haloType = 'connection-selected';
         } else if (glowNodes.selected === node.id) {
-          haloColor = "#FFFF00";
+          haloColor = "#CCCC00"; // Darker vibrant yellow
           haloType = 'selected';
         } else if (glowNodes.next === node.id) {
-          haloColor = "#00FFFF";
+          haloColor = "#00CCCC"; // Darker vibrant cyan
           haloType = 'next';
         } else if (glowNodes.alternate === node.id) {
-          haloColor = "#00FFFF";
+          haloColor = "#00CCCC"; // Darker vibrant cyan
           haloType = 'alternate';
         }
         
@@ -1199,39 +1270,39 @@ if (isNodeLocked(node)) {
 if (node.nodeType === 'synthesis') {
   // Synthesis nodes: Gem-like icosahedron (cyan)
   Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#00FFFF";
+  nodeColor = isNodeLocked(node) ? "#808080" : "#00CCCC"; // Darker vibrant neon cyan
 } else if (node.nodeType === 'ai-response') {
-  // AI responses: Deep burnt orange sphere (wireframe)
+  // AI responses: Burnt orange sphere (wireframe)
   Geometry = <sphereGeometry args={[size, 32, 32]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#D2691E"; // Deep burnt orange
+  nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
 } else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
   // Inspiration/Socratic questions: Dodecahedron star (gold)
   Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#FFD700";
+  nodeColor = isNodeLocked(node) ? "#808080" : "#B8860B"; // Darker vibrant neon gold
 } else if (node.nodeType === 'doctrine') {
   // 🎓 Doctrine nodes: Larger spheres (burnt orange)
   Geometry = <sphereGeometry args={[size * 1.2, 32, 32]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#D2691E"; // Burnt orange
+  nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
 } else if (node.nodeType === 'intuition-example') {
   // 💡 Intuition example nodes: Purple diamond
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
+  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
 } else if (node.nodeType === 'model-answer') {
   // 📐 Model answer nodes: Purple diamond
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
+  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
 } else if (node.nodeType === 'imitate') {
   // 🎯 Imitate nodes: Purple diamond
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
+  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
 } else if (node.nodeType === 'quiz-mc' || node.nodeType === 'quiz-short-answer') {
   // 📝 Quiz nodes: Purple diamond
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
+  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
 } else if (node.nodeType === 'application-scenario') {
   // 🌍 Application scenario nodes: Purple diamond
   Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#A855F7"; // Purple
+  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
 }
 // Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
 
@@ -1361,6 +1432,7 @@ if (node.nodeType === 'synthesis') {
         geometry={Geometry}
         color={nodeColor}
         emissive={nodeColor}
+        isL2={level === 2}
         emissiveIntensity={
           node.nodeType === 'synthesis' ? 0.8 :
           node.nodeType === 'doctrine' ? 0.7 :
@@ -1518,8 +1590,8 @@ if (node.nodeType === 'synthesis') {
         );
       })}
 
-      <ambientLight intensity={0.02} />
-      <pointLight position={[10, 10, 10]} intensity={0.1} />
+      <ambientLight intensity={0.5} />
+      <pointLight position={[10, 10, 10]} intensity={50} />
     </>
   );
 }

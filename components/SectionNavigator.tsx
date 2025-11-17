@@ -401,10 +401,25 @@ export default function SectionNavigator() {
     const indent = treeNode.level * 20; // 20px per level
     const label = getNodeLabel(treeNode.data);
 
+    // Determine node level (L1, L2, L3+)
+    const nodeLevel = !isNexus ? getNodeLevel(treeNode.id) : 0;
+
+    // Check if this is an MCQ node
+    const isMcqNode = 'nodeType' in treeNode.data && treeNode.data.nodeType === 'quiz-mc';
+
     // Get node type icon if this is a Node
-    const icon = !isNexus && 'nodeType' in treeNode.data
+    let icon = !isNexus && 'nodeType' in treeNode.data
       ? getNodeTypeIcon(treeNode.data.nodeType)
       : null;
+
+    // Add different indicators for L2 nodes
+    if (nodeLevel === 2 && icon) {
+      if (isMcqNode) {
+        icon = `☑️ ${icon}`; // Checkbox for MCQ nodes
+      } else {
+        icon = `💠 ${icon}`; // Purple diamond for other L2 nodes
+      }
+    }
 
     // Visual feedback for drag-and-drop
     const isBeingDragged = draggedNodeId === treeNode.id;

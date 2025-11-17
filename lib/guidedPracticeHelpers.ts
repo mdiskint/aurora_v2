@@ -207,6 +207,7 @@ export function buildDoctrinePracticeBundle(
 
 /**
  * Get available practice steps based on what's in the bundle
+ * Note: Synthesis is excluded from L1 guided practice - it's only for application labs
  */
 export function getAvailablePracticeSteps(bundle: DoctrinePracticeBundle): PracticeStepId[] {
   const steps: PracticeStepId[] = [];
@@ -215,8 +216,9 @@ export function getAvailablePracticeSteps(bundle: DoctrinePracticeBundle): Pract
   if (bundle.modelAnswerNode) steps.push('model');
   if (bundle.imitateNode) steps.push('imitate');
   if (bundle.quizMcNode || bundle.quizShortAnswerNode) steps.push('quiz');
-  if (bundle.scenarioNode) steps.push('scenario');
-  if (bundle.synthesisNode) steps.push('synthesis');
+  // Synthesis is not included in regular L1 guided practice
+  // It's only for application labs
+  // if (bundle.synthesisNode) steps.push('synthesis');
 
   return steps;
 }
