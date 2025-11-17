@@ -208,16 +208,22 @@ export default function Home() {
 
         {/* Tagline */}
         <div className="hero-subtitle" style={{
-          fontSize: '28px',
-          color: 'rgba(255, 255, 255, 0.9)',
+          fontSize: '48px',
+          backgroundImage: 'linear-gradient(90deg, #60efff, #5eb3ff, #ffd700, #ffb347)',
+          backgroundClip: 'text',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
           marginBottom: '60px',
-          fontWeight: '300',
-          letterSpacing: '1px',
+          fontWeight: 'bold',
+          fontStyle: 'italic',
+          letterSpacing: '2px',
           maxWidth: '700px',
           margin: '0 auto 60px',
-          lineHeight: '1.5'
+          lineHeight: '1.5',
+          textShadow: '0 0 80px rgba(96, 239, 255, 0.3)',
+          filter: 'drop-shadow(0 0 20px rgba(255, 215, 0, 0.4))'
         }}>
-          Welcome to the Conversation
+          Learn Everything
         </div>
 
         {/* CTA Buttons */}
