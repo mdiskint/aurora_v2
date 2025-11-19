@@ -15,7 +15,7 @@ import { io } from 'socket.io-client';
 // 📸 Camera-tracking OrbitControls component
 function TrackedOrbitControls({ enabled = true }: { enabled?: boolean }) {
   const controlsRef = useRef<any>(null);
-  const saveCurrentUniverse = useCanvasStore ((state) => state.saveCurrentUniverse);
+  const saveCurrentUniverse = useCanvasStore((state) => state.saveCurrentUniverse);
   const { camera } = useThree();
 
   useEffect(() => {
@@ -141,11 +141,11 @@ function CameraPositionManager() {
 }
 
 function NodeSparkles({ position, opacity = 1 }: { position: [number, number, number]; opacity?: number }) {
-  const pointsRef = useRef<any>();
+  const pointsRef = useRef<any>(null);
 
   // Create sparkle positions in a ring around the node
   const particles = useMemo(() => {
-    const temp = [];
+    const temp: number[] = [];
     for (let i = 0; i < 20; i++) {
       const angle = (Math.PI * 2 * i) / 20;
       const radius = 1.3; // Just outside the node
@@ -356,8 +356,8 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
   const color = isApplicationLab
     ? "#B8860B" // Dark vibrant gold for Application Lab
     : isGrowing
-    ? "#008B8B" // Dark vibrant cyan for growing
-    : "#00695C"; // Dark emerald brilliance for seed
+      ? "#008B8B" // Dark vibrant cyan for growing
+      : "#00695C"; // Dark emerald brilliance for seed
 
   return (
     <group>
@@ -420,7 +420,7 @@ function ConnectionLines() {
   if (nexuses.length === 0) return null;
 
   const nodeArray = Object.values(nodes);
-  
+
   return (
     <>
       {nodeArray.map((node, idx) => {
@@ -541,10 +541,10 @@ function ConnectionLines() {
             </group>
           );
         }
-        
+
         // Normal node - draw single line to parent
         let parentPosition: [number, number, number];
-        
+
         const parentNexus = nexuses.find(n => n.id === node.parentId);
         if (parentNexus) {
           parentPosition = parentNexus.position;
@@ -553,16 +553,16 @@ function ConnectionLines() {
         } else {
           return null;
         }
-        
+
         const pulseProgress = pulseStates[node.id] || Math.random();
-        
+
         const pulseX = parentPosition[0] + (node.position[0] - parentPosition[0]) * pulseProgress;
         const pulseY = parentPosition[1] + (node.position[1] - parentPosition[1]) * pulseProgress;
         const pulseZ = parentPosition[2] + (node.position[2] - parentPosition[2]) * pulseProgress;
-        
+
         const hue = (pulseProgress + idx * 0.15) % 1;
         const rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
-        
+
         return (
           <group key={node.id}>
             <Line
@@ -676,67 +676,67 @@ function CameraLight() {
   const spotlight3Ref = useRef<THREE.SpotLight>(null);
   const topLight1Ref = useRef<THREE.SpotLight>(null);
   const topLight2Ref = useRef<THREE.SpotLight>(null);
-  
+
   useFrame(() => {
     if (lightRef.current) {
       lightRef.current.position.copy(camera.position);
       lightRef.current.target.position.set(0, 0, 0);
       lightRef.current.target.updateMatrixWorld();
     }
-    
+
     if (spotlight1Ref.current) {
       const offset = new THREE.Vector3(3, 2, 0);
       spotlight1Ref.current.position.copy(camera.position).add(offset);
       spotlight1Ref.current.target.position.set(0, 0, 0);
       spotlight1Ref.current.target.updateMatrixWorld();
     }
-    
+
     if (spotlight2Ref.current) {
       const offset = new THREE.Vector3(-3, 2, 0);
       spotlight2Ref.current.position.copy(camera.position).add(offset);
       spotlight2Ref.current.target.position.set(0, 0, 0);
       spotlight2Ref.current.target.updateMatrixWorld();
     }
-    
+
     if (spotlight3Ref.current) {
       const offset = new THREE.Vector3(0, 3, 0);
       spotlight3Ref.current.position.copy(camera.position).add(offset);
       spotlight3Ref.current.target.position.set(0, 0, 0);
       spotlight3Ref.current.target.updateMatrixWorld();
     }
-    
+
     if (topLight1Ref.current) {
       const offset = new THREE.Vector3(5, 8, 0);
       topLight1Ref.current.position.copy(camera.position).add(offset);
       topLight1Ref.current.target.position.set(0, -5, 0);
       topLight1Ref.current.target.updateMatrixWorld();
     }
-    
+
     if (topLight2Ref.current) {
       const offset = new THREE.Vector3(-5, 8, 0);
       topLight2Ref.current.position.copy(camera.position).add(offset);
       topLight2Ref.current.target.position.set(0, -5, 0);
       topLight2Ref.current.target.updateMatrixWorld();
     }
-    
+
     if (fillLight1Ref.current) {
       const offset1 = new THREE.Vector3(5, 3, 0);
       fillLight1Ref.current.position.copy(camera.position).add(offset1);
     }
-    
+
     if (fillLight2Ref.current) {
       const offset2 = new THREE.Vector3(-5, 3, 0);
       fillLight2Ref.current.position.copy(camera.position).add(offset2);
     }
   });
-  
+
   const equatorLights = Array.from({ length: 4 }).map((_, i) => {
     const angle = (i / 4) * Math.PI * 2;
     const radius = 15;
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;
     const y = 0;
-    
+
     return (
       <spotLight
         key={`equator-${i}`}
@@ -751,7 +751,7 @@ function CameraLight() {
       />
     );
   });
-  
+
   // Create ring of lights at 45° above (8 lights in circle) - EXTREME INTENSITIES
   const upperRingLights = Array.from({ length: 8 }).map((_, i) => {
     const angle = (i / 8) * Math.PI * 2;
@@ -899,7 +899,7 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const nodeArray = Object.values(nodes);
-  
+
   const getGlowNodes = () => {
     const glowNodes = {
       selected: null as string | null,
@@ -913,9 +913,9 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
     glowNodes.selected = selectedId;
 
     console.log(`🎨 Glow States - Selected: ${selectedId}, Next: calculating...`);
-    
+
     const selectedNexus = nexuses.find(n => n.id === selectedId);
-    
+
     if (selectedNexus) {
       const l1Nodes = allNodes.filter(n => n.parentId === selectedNexus.id);
       if (l1Nodes.length >= 1) {
@@ -925,10 +925,10 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
       const currentNode = nodes[selectedId];
       const children = allNodes.filter(n => n.parentId === selectedId);
       const nodeNexus = getNexusForNode(selectedId);
-      
+
       if (children.length >= 1) {
         glowNodes.next = children[0].id;
-        
+
         const parentNexus = nexuses.find(n => n.id === currentNode.parentId);
         if (parentNexus) {
           const l1Siblings = allNodes.filter(n => n.parentId === parentNexus.id);
@@ -940,20 +940,20 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
       } else {
         const siblings = allNodes.filter(n => n.parentId === currentNode.parentId);
         const currentIndex = siblings.findIndex(n => n.id === selectedId);
-        
+
         if (currentIndex >= 0 && currentIndex < siblings.length - 1) {
           glowNodes.next = siblings[currentIndex + 1].id;
         }
-        
+
         if (nodeNexus) {
           let l1Ancestor = currentNode;
           while (l1Ancestor.parentId !== nodeNexus.id && nodes[l1Ancestor.parentId]) {
             l1Ancestor = nodes[l1Ancestor.parentId];
           }
-          
+
           const l1Siblings = allNodes.filter(n => n.parentId === nodeNexus.id);
           const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
-          
+
           if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
             glowNodes.alternate = l1Siblings[l1Index + 1].id;
           } else if (l1Siblings.length > 0) {
@@ -962,16 +962,16 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
         }
       }
     }
-    
+
     return glowNodes;
   };
-  
+
   const glowNodes = getGlowNodes();
-  
+
   useFrame(() => {
     // No pulsing - halos and sparkles stay static
   });
-  
+
   return (
     <>
       <TrackedOrbitControls />
@@ -982,249 +982,249 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
         const nexusOpacity = 1;
 
         return (
-        <group key={nexus.id}>
-          <RotatingNexus
-            nexus={nexus}
-            opacity={nexusOpacity}
-            onClick={(e: any) => {
-              e.stopPropagation();
+          <group key={nexus.id}>
+            <RotatingNexus
+              nexus={nexus}
+              opacity={nexusOpacity}
+              onClick={(e: any) => {
+                e.stopPropagation();
 
-              // Check for double-click on nexus (creates meta-inspiration node)
-              const now = Date.now();
-              const lastClick = lastNexusClickRef.current;
-              const isDoubleClick =
-                lastClick.nexusId === nexus.id &&
-                (now - lastClick.timestamp) < 300;
+                // Check for double-click on nexus (creates meta-inspiration node)
+                const now = Date.now();
+                const lastClick = lastNexusClickRef.current;
+                const isDoubleClick =
+                  lastClick.nexusId === nexus.id &&
+                  (now - lastClick.timestamp) < 300;
 
-              if (isDoubleClick && !isHoldingShift && !connectionModeActive) {
-                console.log('🌌 DOUBLE-CLICK detected on nexus:', nexus.id);
-                const metaNodeId = createMetaInspirationNode(nexus.id);
-                console.log('✅ Meta-node created via double-click:', metaNodeId);
+                if (isDoubleClick && !isHoldingShift && !connectionModeActive) {
+                  console.log('🌌 DOUBLE-CLICK detected on nexus:', nexus.id);
+                  const metaNodeId = createMetaInspirationNode(nexus.id);
+                  console.log('✅ Meta-node created via double-click:', metaNodeId);
 
-                // Animate camera to new meta-node and open modal
-                setTimeout(() => {
-                  selectNode(metaNodeId, true);
-                }, 100);
+                  // Animate camera to new meta-node and open modal
+                  setTimeout(() => {
+                    selectNode(metaNodeId, true);
+                  }, 100);
 
-                // Reset click tracking after double-click
-                lastNexusClickRef.current = { nexusId: null, timestamp: 0 };
-                return;
-              }
-
-              // Update last click tracking
-              lastNexusClickRef.current = { nexusId: nexus.id, timestamp: now };
-
-              // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
-              // Old connection mode (connectionModeActive) kept for compatibility
-              if (connectionModeActive) {
-                if (!connectionModeNodeA) {
-                  console.log('🔗 Node A selected:', nexus.id);
-                  startConnectionMode(nexus.id);
-                } else if (connectionModeNodeA === nexus.id) {
-                  console.log('❌ Cancelled - same node clicked');
-                  clearConnectionMode();
-                } else {
-                  console.log('✅ Creating connection:', connectionModeNodeA, '→', nexus.id);
-                  createConnection(connectionModeNodeA, nexus.id);
-                  clearConnectionMode();
+                  // Reset click tracking after double-click
+                  lastNexusClickRef.current = { nexusId: null, timestamp: 0 };
+                  return;
                 }
-              } else {
-                selectNode(nexus.id);
-              }
-            }}
-            onPointerEnter={(e: any) => {
-              e.stopPropagation();
-              if (hoverTimeoutRef.current) {
-                clearTimeout(hoverTimeoutRef.current);
-              }
-              hoverTimeoutRef.current = setTimeout(() => {
-                setHoveredNode(nexus.id);
-              }, 200);
-            }}
-            onPointerLeave={(e: any) => {
-              e.stopPropagation();
-              if (hoverTimeoutRef.current) {
-                clearTimeout(hoverTimeoutRef.current);
-                hoverTimeoutRef.current = null;
-              }
-              setHoveredNode(null);
-            }}
-          />
 
-          {/* NEW: Golden glow for nexuses selected in multi-connection mode */}
-          {selectedNodesForConnection.includes(nexus.id) && (
-            <>
-              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial
-                  color="#FFD700"
-                  transparent
-                  opacity={0.9 * nexusOpacity}
-                />
-              </mesh>
+                // Update last click tracking
+                lastNexusClickRef.current = { nexusId: nexus.id, timestamp: now };
 
-              {Array.from({ length: 30 }).map((_, i) => {
-                const angle = (Math.random() * Math.PI * 2);
-                const sparkleRadius = 2.4 + Math.random() * 0.3;
-                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                const size = 0.04 + Math.random() * 0.06;
+                // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+                // Old connection mode (connectionModeActive) kept for compatibility
+                if (connectionModeActive) {
+                  if (!connectionModeNodeA) {
+                    console.log('🔗 Node A selected:', nexus.id);
+                    startConnectionMode(nexus.id);
+                  } else if (connectionModeNodeA === nexus.id) {
+                    console.log('❌ Cancelled - same node clicked');
+                    clearConnectionMode();
+                  } else {
+                    console.log('✅ Creating connection:', connectionModeNodeA, '→', nexus.id);
+                    createConnection(connectionModeNodeA, nexus.id);
+                    clearConnectionMode();
+                  }
+                } else {
+                  selectNode(nexus.id);
+                }
+              }}
+              onPointerEnter={(e: any) => {
+                e.stopPropagation();
+                if (hoverTimeoutRef.current) {
+                  clearTimeout(hoverTimeoutRef.current);
+                }
+                hoverTimeoutRef.current = setTimeout(() => {
+                  setHoveredNode(nexus.id);
+                }, 200);
+              }}
+              onPointerLeave={(e: any) => {
+                e.stopPropagation();
+                if (hoverTimeoutRef.current) {
+                  clearTimeout(hoverTimeoutRef.current);
+                  hoverTimeoutRef.current = null;
+                }
+                setHoveredNode(null);
+              }}
+            />
 
-                return (
-                  <mesh key={`sparkle-conn-${i}`} position={[x, y, z]}>
-                    <sphereGeometry args={[size, 6, 6]} />
-                    <meshBasicMaterial
-                      color="#FFD700"
-                      transparent
-                      opacity={0.9 * nexusOpacity}
-                    />
-                  </mesh>
-                );
-              })}
-            </>
-          )}
+            {/* NEW: Golden glow for nexuses selected in multi-connection mode */}
+            {selectedNodesForConnection.includes(nexus.id) && (
+              <>
+                <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
+                  <meshBasicMaterial
+                    color="#FFD700"
+                    transparent
+                    opacity={0.9 * nexusOpacity}
+                  />
+                </mesh>
 
-          {glowNodes.selected === nexus.id && (
-            <>
-              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial
-                  ref={(mat) => {
-                    if (mat) selectedMaterialsRef.current.set(nexus.id, mat);
-                  }}
-                  color="#FFFF00"
-                  transparent
-                  opacity={0.8 * nexusOpacity}
-                />
-              </mesh>
-              
-              {Array.from({ length: 30 }).map((_, i) => {
-                const angle = (Math.random() * Math.PI * 2);
-                const sparkleRadius = 2.4 + Math.random() * 0.3;
-                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                const size = 0.04 + Math.random() * 0.06;
-                
-                return (
-                  <mesh key={`sparkle-${i}`} position={[x, y, z]}>
-                    <sphereGeometry args={[size, 6, 6]} />
-                    <meshBasicMaterial 
-                      ref={(mat) => {
-                        if (mat) {
-                          if (!sparkleMaterialsRef.current.has(nexus.id)) {
-                            sparkleMaterialsRef.current.set(nexus.id, []);
+                {Array.from({ length: 30 }).map((_, i) => {
+                  const angle = (Math.random() * Math.PI * 2);
+                  const sparkleRadius = 2.4 + Math.random() * 0.3;
+                  const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
+                  const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                  const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                  const size = 0.04 + Math.random() * 0.06;
+
+                  return (
+                    <mesh key={`sparkle-conn-${i}`} position={[x, y, z]}>
+                      <sphereGeometry args={[size, 6, 6]} />
+                      <meshBasicMaterial
+                        color="#FFD700"
+                        transparent
+                        opacity={0.9 * nexusOpacity}
+                      />
+                    </mesh>
+                  );
+                })}
+              </>
+            )}
+
+            {glowNodes.selected === nexus.id && (
+              <>
+                <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
+                  <meshBasicMaterial
+                    ref={(mat) => {
+                      if (mat) selectedMaterialsRef.current.set(nexus.id, mat);
+                    }}
+                    color="#FFFF00"
+                    transparent
+                    opacity={0.8 * nexusOpacity}
+                  />
+                </mesh>
+
+                {Array.from({ length: 30 }).map((_, i) => {
+                  const angle = (Math.random() * Math.PI * 2);
+                  const sparkleRadius = 2.4 + Math.random() * 0.3;
+                  const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
+                  const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                  const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                  const size = 0.04 + Math.random() * 0.06;
+
+                  return (
+                    <mesh key={`sparkle-${i}`} position={[x, y, z]}>
+                      <sphereGeometry args={[size, 6, 6]} />
+                      <meshBasicMaterial
+                        ref={(mat) => {
+                          if (mat) {
+                            if (!sparkleMaterialsRef.current.has(nexus.id)) {
+                              sparkleMaterialsRef.current.set(nexus.id, []);
+                            }
+                            sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
                           }
-                          sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
-                        }
-                      }}
-                      color="#FFFF00"
-                      transparent
-                      opacity={0.8 * nexusOpacity}
-                    />
-                  </mesh>
-                );
-              })}
-            </>
-          )}
+                        }}
+                        color="#FFFF00"
+                        transparent
+                        opacity={0.8 * nexusOpacity}
+                      />
+                    </mesh>
+                  );
+                })}
+              </>
+            )}
 
-          {glowNodes.next === nexus.id && (
-            <>
-              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial
-                  ref={(mat) => {
-                    if (mat) nextMaterialsRef.current.set(nexus.id, mat);
-                  }}
-                  color="#00FFFF"
-                  transparent
-                  opacity={0.9 * nexusOpacity}
-                />
-              </mesh>
-              
-              {Array.from({ length: 30 }).map((_, i) => {
-                const angle = (Math.random() * Math.PI * 2);
-                const sparkleRadius = 2.4 + Math.random() * 0.3;
-                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                const size = 0.04 + Math.random() * 0.06;
-                
-                return (
-                  <mesh key={`sparkle-next-${i}`} position={[x, y, z]}>
-                    <sphereGeometry args={[size, 6, 6]} />
-                    <meshBasicMaterial 
-                      ref={(mat) => {
-                        if (mat) {
-                          if (!sparkleMaterialsRef.current.has(nexus.id)) {
-                            sparkleMaterialsRef.current.set(nexus.id, []);
+            {glowNodes.next === nexus.id && (
+              <>
+                <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
+                  <meshBasicMaterial
+                    ref={(mat) => {
+                      if (mat) nextMaterialsRef.current.set(nexus.id, mat);
+                    }}
+                    color="#00FFFF"
+                    transparent
+                    opacity={0.9 * nexusOpacity}
+                  />
+                </mesh>
+
+                {Array.from({ length: 30 }).map((_, i) => {
+                  const angle = (Math.random() * Math.PI * 2);
+                  const sparkleRadius = 2.4 + Math.random() * 0.3;
+                  const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
+                  const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                  const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                  const size = 0.04 + Math.random() * 0.06;
+
+                  return (
+                    <mesh key={`sparkle-next-${i}`} position={[x, y, z]}>
+                      <sphereGeometry args={[size, 6, 6]} />
+                      <meshBasicMaterial
+                        ref={(mat) => {
+                          if (mat) {
+                            if (!sparkleMaterialsRef.current.has(nexus.id)) {
+                              sparkleMaterialsRef.current.set(nexus.id, []);
+                            }
+                            sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
                           }
-                          sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
-                        }
-                      }}
-                      color="#00FFFF"
-                      transparent
-                      opacity={0.9 * nexusOpacity}
-                    />
-                  </mesh>
-                );
-              })}
-            </>
-          )}
-          
-          {glowNodes.alternate === nexus.id && (
-            <>
-              <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                <meshBasicMaterial
-                  ref={(mat) => {
-                    if (mat) alternateMaterialsRef.current.set(nexus.id, mat);
-                  }}
-                  color="#00FFFF"
-                  transparent
-                  opacity={0.8 * nexusOpacity}
-                />
-              </mesh>
-              
-              {Array.from({ length: 30 }).map((_, i) => {
-                const angle = (Math.random() * Math.PI * 2);
-                const sparkleRadius = 2.4 + Math.random() * 0.3;
-                const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                const size = 0.04 + Math.random() * 0.06;
-                
-                return (
-                  <mesh key={`sparkle-alt-${i}`} position={[x, y, z]}>
-                    <sphereGeometry args={[size, 6, 6]} />
-                    <meshBasicMaterial 
-                      ref={(mat) => {
-                        if (mat) {
-                          if (!sparkleMaterialsRef.current.has(nexus.id)) {
-                            sparkleMaterialsRef.current.set(nexus.id, []);
+                        }}
+                        color="#00FFFF"
+                        transparent
+                        opacity={0.9 * nexusOpacity}
+                      />
+                    </mesh>
+                  );
+                })}
+              </>
+            )}
+
+            {glowNodes.alternate === nexus.id && (
+              <>
+                <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
+                  <meshBasicMaterial
+                    ref={(mat) => {
+                      if (mat) alternateMaterialsRef.current.set(nexus.id, mat);
+                    }}
+                    color="#00FFFF"
+                    transparent
+                    opacity={0.8 * nexusOpacity}
+                  />
+                </mesh>
+
+                {Array.from({ length: 30 }).map((_, i) => {
+                  const angle = (Math.random() * Math.PI * 2);
+                  const sparkleRadius = 2.4 + Math.random() * 0.3;
+                  const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
+                  const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
+                  const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
+                  const size = 0.04 + Math.random() * 0.06;
+
+                  return (
+                    <mesh key={`sparkle-alt-${i}`} position={[x, y, z]}>
+                      <sphereGeometry args={[size, 6, 6]} />
+                      <meshBasicMaterial
+                        ref={(mat) => {
+                          if (mat) {
+                            if (!sparkleMaterialsRef.current.has(nexus.id)) {
+                              sparkleMaterialsRef.current.set(nexus.id, []);
+                            }
+                            sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
                           }
-                          sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
-                        }
-                      }}
-                      color="#00FFFF"
-                      transparent
-                      opacity={0.8 * nexusOpacity}
-                    />
-                  </mesh>
-                );
-              })}
-            </>
-          )}
-          
-          {nexus.videoUrl && (
-            <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} opacity={nexusOpacity} />
-          )}
-          <NexusTitle title={nexus.title} position={nexus.position} opacity={nexusOpacity} />
-        </group>
-      );
+                        }}
+                        color="#00FFFF"
+                        transparent
+                        opacity={0.8 * nexusOpacity}
+                      />
+                    </mesh>
+                  );
+                })}
+              </>
+            )}
+
+            {nexus.videoUrl && (
+              <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} opacity={nexusOpacity} />
+            )}
+            <NexusTitle title={nexus.title} position={nexus.position} opacity={nexusOpacity} />
+          </group>
+        );
       })}
-      
+
       {nodeArray.map((node) => {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
@@ -1241,8 +1241,8 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
 
         const displayNode = node;
 
-        let haloColor = null;
-        let haloType = null;
+        let haloColor: string | null = null;
+        let haloType: string | null = null;
 
         if (selectedNodesForConnection.includes(node.id)) {
           haloColor = "#B8860B"; // Dark vibrant gold
@@ -1257,263 +1257,263 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
           haloColor = "#00CCCC"; // Darker vibrant cyan
           haloType = 'alternate';
         }
-        
-       // Geometry selection based on nodeType (user-reply handled separately)
-let Geometry;
-let nodeColor = baseColor;
 
-// 🔒 Override color for locked nodes (grey) - course universes only
-if (isNodeLocked(node)) {
-  nodeColor = "#808080"; // Grey color for locked nodes
-}
+        // Geometry selection based on nodeType (user-reply handled separately)
+        let Geometry;
+        let nodeColor = baseColor;
 
-if (node.nodeType === 'synthesis') {
-  // Synthesis nodes: Gem-like icosahedron (cyan)
-  Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#00CCCC"; // Darker vibrant neon cyan
-} else if (node.nodeType === 'ai-response') {
-  // AI responses: Burnt orange sphere (wireframe)
-  Geometry = <sphereGeometry args={[size, 32, 32]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
-} else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
-  // Inspiration/Socratic questions: Dodecahedron star (gold)
-  Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#B8860B"; // Darker vibrant neon gold
-} else if (node.nodeType === 'doctrine') {
-  // 🎓 Doctrine nodes: Larger spheres (burnt orange)
-  Geometry = <sphereGeometry args={[size * 1.2, 32, 32]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
-} else if (node.nodeType === 'intuition-example') {
-  // 💡 Intuition example nodes: Purple diamond
-  Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
-} else if (node.nodeType === 'model-answer') {
-  // 📐 Model answer nodes: Purple diamond
-  Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
-} else if (node.nodeType === 'imitate') {
-  // 🎯 Imitate nodes: Purple diamond
-  Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
-} else if (node.nodeType === 'quiz-mc' || node.nodeType === 'quiz-short-answer') {
-  // 📝 Quiz nodes: Purple diamond
-  Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
-} else if (node.nodeType === 'application-scenario') {
-  // 🌍 Application scenario nodes: Purple diamond
-  Geometry = <octahedronGeometry args={[size, 0]} />;
-  nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
-}
-// Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
+        // 🔒 Override color for locked nodes (grey) - course universes only
+        if (isNodeLocked(node)) {
+          nodeColor = "#808080"; // Grey color for locked nodes
+        }
+
+        if (node.nodeType === 'synthesis') {
+          // Synthesis nodes: Gem-like icosahedron (cyan)
+          Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#00CCCC"; // Darker vibrant neon cyan
+        } else if (node.nodeType === 'ai-response') {
+          // AI responses: Burnt orange sphere (wireframe)
+          Geometry = <sphereGeometry args={[size, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
+        } else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
+          // Inspiration/Socratic questions: Dodecahedron star (gold)
+          Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#B8860B"; // Darker vibrant neon gold
+        } else if (node.nodeType === 'doctrine') {
+          // 🎓 Doctrine nodes: Larger spheres (burnt orange)
+          Geometry = <sphereGeometry args={[size * 1.2, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
+        } else if (node.nodeType === 'intuition-example') {
+          // 💡 Intuition example nodes: Purple diamond
+          Geometry = <octahedronGeometry args={[size, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+        } else if (node.nodeType === 'model-answer') {
+          // 📐 Model answer nodes: Purple diamond
+          Geometry = <octahedronGeometry args={[size, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+        } else if (node.nodeType === 'imitate') {
+          // 🎯 Imitate nodes: Purple diamond
+          Geometry = <octahedronGeometry args={[size, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+        } else if (node.nodeType === 'quiz-mc' || node.nodeType === 'quiz-short-answer') {
+          // 📝 Quiz nodes: Purple diamond
+          Geometry = <octahedronGeometry args={[size, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+        } else if (node.nodeType === 'application-scenario') {
+          // 🌍 Application scenario nodes: Purple diamond
+          Geometry = <octahedronGeometry args={[size, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+        }
+        // Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
 
         // Debug: Log what we're about to render
         console.log('🎨 RENDERING NODE:', node.id, 'type:', node.nodeType, 'isConnection:', node.isConnectionNode);
 
-       return (
-  <group key={node.id}>
-    {node.isConnectionNode ? (
-      // Render rotating golden star for connection nodes (1.5x larger for meta-inspiration nodes)
-      <RotatingConnectionNode
-        node={displayNode}
-        size={size}
-        baseColor={baseColor}
-        scale={node.id.startsWith('meta-inspiration') ? 1.5 : 1}
-        opacity={nodeOpacity}
-        onPointerDown={undefined}
-        onClick={(e: any) => {
-          e.stopPropagation();
+        return (
+          <group key={node.id}>
+            {node.isConnectionNode ? (
+              // Render rotating golden star for connection nodes (1.5x larger for meta-inspiration nodes)
+              <RotatingConnectionNode
+                node={displayNode}
+                size={size}
+                baseColor={baseColor}
+                scale={node.id.startsWith('meta-inspiration') ? 1.5 : 1}
+                opacity={nodeOpacity}
+                onPointerDown={undefined}
+                onClick={(e: any) => {
+                  e.stopPropagation();
 
-          // 🔒 Block locked nodes (course universes only)
-          if (isNodeLocked(node)) {
-            console.log('🔒 Node is locked:', node.id);
-            return;
-          }
+                  // 🔒 Block locked nodes (course universes only)
+                  if (isNodeLocked(node)) {
+                    console.log('🔒 Node is locked:', node.id);
+                    return;
+                  }
 
-          // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
-          if (connectionModeActive) {
-            if (!connectionModeNodeA) {
-              console.log('🔗 Node A selected:', node.id);
-              startConnectionMode(node.id);
-            } else if (connectionModeNodeA === node.id) {
-              console.log('❌ Cancelled - same node clicked');
-              clearConnectionMode();
-            } else {
-              console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
-              createConnection(connectionModeNodeA, node.id);
-              clearConnectionMode();
-            }
-          } else {
-            // Check if this is a connection node with content (Socratic question)
-            if (node.isConnectionNode && node.content?.trim()) {
-              console.log('💭 Opening Socratic exploration for connection node:', node.id);
-              selectNode(node.id);
-              setShowContentOverlay(true);
-            } else {
-              selectNode(node.id);
-              setShowContentOverlay(true);
-            }
-          }
-        }}
-        onPointerEnter={(e: any) => {
-          e.stopPropagation();
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-          }
-          hoverTimeoutRef.current = setTimeout(() => {
-            setHoveredNode(node.id);
-          }, 200);
-        }}
-        onPointerLeave={(e: any) => {
-          e.stopPropagation();
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-            hoverTimeoutRef.current = null;
-          }
-          setHoveredNode(null);
-        }}
-      />
-    ) : node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? (
-      // User reply nodes: Clean purple diamonds
-      <RotatingUserReplyNode
-        node={displayNode}
-        size={size}
-        opacity={nodeOpacity}
-        onPointerDown={undefined}
-        onClick={(e: any) => {
-          e.stopPropagation();
+                  // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+                  if (connectionModeActive) {
+                    if (!connectionModeNodeA) {
+                      console.log('🔗 Node A selected:', node.id);
+                      startConnectionMode(node.id);
+                    } else if (connectionModeNodeA === node.id) {
+                      console.log('❌ Cancelled - same node clicked');
+                      clearConnectionMode();
+                    } else {
+                      console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
+                      createConnection(connectionModeNodeA, node.id);
+                      clearConnectionMode();
+                    }
+                  } else {
+                    // Check if this is a connection node with content (Socratic question)
+                    if (node.isConnectionNode && node.content?.trim()) {
+                      console.log('💭 Opening Socratic exploration for connection node:', node.id);
+                      selectNode(node.id);
+                      setShowContentOverlay(true);
+                    } else {
+                      selectNode(node.id);
+                      setShowContentOverlay(true);
+                    }
+                  }
+                }}
+                onPointerEnter={(e: any) => {
+                  e.stopPropagation();
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                  }
+                  hoverTimeoutRef.current = setTimeout(() => {
+                    setHoveredNode(node.id);
+                  }, 200);
+                }}
+                onPointerLeave={(e: any) => {
+                  e.stopPropagation();
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                    hoverTimeoutRef.current = null;
+                  }
+                  setHoveredNode(null);
+                }}
+              />
+            ) : node.nodeType === 'user-reply' || node.nodeType === 'socratic-answer' ? (
+              // User reply nodes: Clean purple diamonds
+              <RotatingUserReplyNode
+                node={displayNode}
+                size={size}
+                opacity={nodeOpacity}
+                onPointerDown={undefined}
+                onClick={(e: any) => {
+                  e.stopPropagation();
 
-          // 🔒 Block locked nodes (course universes only)
-          if (isNodeLocked(node)) {
-            console.log('🔒 Node is locked:', node.id);
-            return;
-          }
+                  // 🔒 Block locked nodes (course universes only)
+                  if (isNodeLocked(node)) {
+                    console.log('🔒 Node is locked:', node.id);
+                    return;
+                  }
 
-          // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
-          if (connectionModeActive) {
-            if (!connectionModeNodeA) {
-              console.log('🔗 Node A selected:', node.id);
-              startConnectionMode(node.id);
-            } else if (connectionModeNodeA === node.id) {
-              console.log('❌ Cancelled - same node clicked');
-              clearConnectionMode();
-            } else {
-              console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
-              createConnection(connectionModeNodeA, node.id);
-              clearConnectionMode();
-            }
-          } else {
-            selectNode(node.id);
-            setShowContentOverlay(true);
-          }
-        }}
-        onPointerEnter={(e: any) => {
-          e.stopPropagation();
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-          }
-          hoverTimeoutRef.current = setTimeout(() => {
-            setHoveredNode(node.id);
-          }, 200);
-        }}
-        onPointerLeave={(e: any) => {
-          e.stopPropagation();
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-            hoverTimeoutRef.current = null;
-          }
-          setHoveredNode(null);
-        }}
-      />
-    ) : (
-      // All other nodes: AI responses, synthesis, inspiration
-      <RotatingNode
-        node={displayNode}
-        size={size}
-        geometry={Geometry}
-        color={nodeColor}
-        emissive={nodeColor}
-        isL2={level === 2}
-        emissiveIntensity={
-          node.nodeType === 'synthesis' ? 0.8 :
-          node.nodeType === 'doctrine' ? 0.7 :
-          node.nodeType === 'intuition-example' ? 0.7 :
-          node.nodeType === 'model-answer' ? 0.7 :
-          node.nodeType === 'imitate' ? 0.7 :
-          node.nodeType === 'quiz-mc' ? 0.7 :
-          node.nodeType === 'quiz-short-answer' ? 0.7 :
-          node.nodeType === 'application-scenario' ? 0.7 :
-          0.3
-        }
-        roughness={0.0}
-        opacity={nodeOpacity}
-        onPointerDown={undefined}
-        onClick={(e: any) => {
-          e.stopPropagation();
+                  // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+                  if (connectionModeActive) {
+                    if (!connectionModeNodeA) {
+                      console.log('🔗 Node A selected:', node.id);
+                      startConnectionMode(node.id);
+                    } else if (connectionModeNodeA === node.id) {
+                      console.log('❌ Cancelled - same node clicked');
+                      clearConnectionMode();
+                    } else {
+                      console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
+                      createConnection(connectionModeNodeA, node.id);
+                      clearConnectionMode();
+                    }
+                  } else {
+                    selectNode(node.id);
+                    setShowContentOverlay(true);
+                  }
+                }}
+                onPointerEnter={(e: any) => {
+                  e.stopPropagation();
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                  }
+                  hoverTimeoutRef.current = setTimeout(() => {
+                    setHoveredNode(node.id);
+                  }, 200);
+                }}
+                onPointerLeave={(e: any) => {
+                  e.stopPropagation();
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                    hoverTimeoutRef.current = null;
+                  }
+                  setHoveredNode(null);
+                }}
+              />
+            ) : (
+              // All other nodes: AI responses, synthesis, inspiration
+              <RotatingNode
+                node={displayNode}
+                size={size}
+                geometry={Geometry}
+                color={nodeColor}
+                emissive={nodeColor}
+                isL2={level === 2}
+                emissiveIntensity={
+                  node.nodeType === 'synthesis' ? 0.8 :
+                    node.nodeType === 'doctrine' ? 0.7 :
+                      node.nodeType === 'intuition-example' ? 0.7 :
+                        node.nodeType === 'model-answer' ? 0.7 :
+                          node.nodeType === 'imitate' ? 0.7 :
+                            node.nodeType === 'quiz-mc' ? 0.7 :
+                              node.nodeType === 'quiz-short-answer' ? 0.7 :
+                                node.nodeType === 'application-scenario' ? 0.7 :
+                                  0.3
+                }
+                roughness={0.0}
+                opacity={nodeOpacity}
+                onPointerDown={undefined}
+                onClick={(e: any) => {
+                  e.stopPropagation();
 
-          // 🔒 Block locked nodes (course universes only)
-          if (isNodeLocked(node)) {
-            console.log('🔒 Node is locked:', node.id);
-            return;
-          }
+                  // 🔒 Block locked nodes (course universes only)
+                  if (isNodeLocked(node)) {
+                    console.log('🔒 Node is locked:', node.id);
+                    return;
+                  }
 
-          // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
-          if (connectionModeActive) {
-            if (!connectionModeNodeA) {
-              console.log('🔗 Node A selected:', node.id);
-              startConnectionMode(node.id);
-            } else if (connectionModeNodeA === node.id) {
-              console.log('❌ Cancelled - same node clicked');
-              clearConnectionMode();
-            } else {
-              console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
-              createConnection(connectionModeNodeA, node.id);
-              clearConnectionMode();
-            }
-          } else {
-            selectNode(node.id);
-            setShowContentOverlay(true);
-          }
-        }}
-        onPointerEnter={(e: any) => {
-          e.stopPropagation();
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-          }
-          hoverTimeoutRef.current = setTimeout(() => {
-            setHoveredNode(node.id);
-          }, 200);
-        }}
-        onPointerLeave={(e: any) => {
-          e.stopPropagation();
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-            hoverTimeoutRef.current = null;
-          }
-          setHoveredNode(null);
-        }}
-      />
-    )}
-                {haloColor && (
-  <>
-  <mesh position={displayNode.position} rotation={[Math.PI / 2, 0, 0]}>
-  <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
-  <meshBasicMaterial
-    ref={(mat) => {
-      if (mat && haloType) {
-        if (haloType === 'selected') {
-          selectedMaterialsRef.current.set(node.id, mat);
-        } else if (haloType === 'next') {
-          nextMaterialsRef.current.set(node.id, mat);
-        } else if (haloType === 'alternate') {
-          alternateMaterialsRef.current.set(node.id, mat);
-        }
-      }
-    }}
-    color={haloColor}
-    transparent
-    opacity={(haloType === 'selected' ? 0.8 : 0.9) * nodeOpacity}
-  />
-</mesh>
+                  // 🔗 SHIFT+CLICK CONNECTION MODE DISABLED - Now handled by SectionNavigator
+                  if (connectionModeActive) {
+                    if (!connectionModeNodeA) {
+                      console.log('🔗 Node A selected:', node.id);
+                      startConnectionMode(node.id);
+                    } else if (connectionModeNodeA === node.id) {
+                      console.log('❌ Cancelled - same node clicked');
+                      clearConnectionMode();
+                    } else {
+                      console.log('✅ Creating connection:', connectionModeNodeA, '→', node.id);
+                      createConnection(connectionModeNodeA, node.id);
+                      clearConnectionMode();
+                    }
+                  } else {
+                    selectNode(node.id);
+                    setShowContentOverlay(true);
+                  }
+                }}
+                onPointerEnter={(e: any) => {
+                  e.stopPropagation();
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                  }
+                  hoverTimeoutRef.current = setTimeout(() => {
+                    setHoveredNode(node.id);
+                  }, 200);
+                }}
+                onPointerLeave={(e: any) => {
+                  e.stopPropagation();
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                    hoverTimeoutRef.current = null;
+                  }
+                  setHoveredNode(null);
+                }}
+              />
+            )}
+            {haloColor && (
+              <>
+                <mesh position={displayNode.position} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
+                  <meshBasicMaterial
+                    ref={(mat) => {
+                      if (mat && haloType) {
+                        if (haloType === 'selected') {
+                          selectedMaterialsRef.current.set(node.id, mat);
+                        } else if (haloType === 'next') {
+                          nextMaterialsRef.current.set(node.id, mat);
+                        } else if (haloType === 'alternate') {
+                          alternateMaterialsRef.current.set(node.id, mat);
+                        }
+                      }
+                    }}
+                    color={haloColor}
+                    transparent
+                    opacity={(haloType === 'selected' ? 0.8 : 0.9) * nodeOpacity}
+                  />
+                </mesh>
                 {Array.from({ length: 20 }).map((_, i) => {
                   const angle = (Math.random() * Math.PI * 2);
                   const sparkleRadius = size * 1.4 + Math.random() * 0.2;
@@ -1521,7 +1521,7 @@ if (node.nodeType === 'synthesis') {
                   const z = displayNode.position[2] + Math.sin(angle) * sparkleRadius;
                   const y = displayNode.position[1] + (Math.random() - 0.5) * 0.05;
                   const sparkSize = 0.02 + Math.random() * 0.04;
-                  
+
                   return (
                     <mesh key={`sparkle-node-${i}`} position={[x, y, z]}>
                       <sphereGeometry args={[sparkSize, 6, 6]} />

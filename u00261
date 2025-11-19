@@ -1,0 +1,20 @@
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/michaeldiskint/package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /Users/michaeldiskint/aurora-v2/package-lock.json
+
+Failed to compile.
+
+./components/CanvasScene.tsx:153:9
+Type error: Argument of type 'number' is not assignable to parameter of type 'never'.
+
+[0m [90m 151 |[39m       [36mconst[39m radius [33m=[39m [35m1.3[39m[33m;[39m [90m// Just outside the node[39m
+ [90m 152 |[39m       temp[33m.[39mpush(
+[31m[1m>[22m[39m[90m 153 |[39m         [33mMath[39m[33m.[39mcos(angle) [33m*[39m radius[33m,[39m
+ [90m     |[39m         [31m[1m^[22m[39m
+ [90m 154 |[39m         [33mMath[39m[33m.[39msin(angle) [33m*[39m radius[33m,[39m
+ [90m 155 |[39m         ([33mMath[39m[33m.[39mrandom() [33m-[39m [35m0.5[39m) [33m*[39m [35m0.3[39m
+ [90m 156 |[39m       )[33m;[39m[0m
+Next.js build worker exited with code: 1 and signal: null

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
-import { MCQ, ShortAnswer, ApplicationEssay } from '@/lib/types';
+import { MCQ, ShortAnswer, ApplicationEssay, NodeType } from '@/lib/types';
 
 interface SectionQuestions {
   mcqs: MCQ[];
@@ -684,7 +684,7 @@ export default function CourseBuilderPage() {
               childContent,
               doctrineNodeId, // Parent is the doctrine node
               undefined,
-              nodeType,
+              nodeType as NodeType,
               undefined
             );
 
@@ -793,12 +793,12 @@ export default function CourseBuilderPage() {
         const hasTimestamps = courseData.timestamps.trim() !== '';
         const sectionCount = courseData.timestamps.split(',').filter(t => t.trim()).length;
         const allSectionsHaveContent = courseData.sectionContents.length === sectionCount &&
-                                       courseData.sectionContents.every(content => content.trim() !== '');
+          courseData.sectionContents.every(content => content.trim() !== '');
 
         return courseData.fullTextContent.trim() !== '' &&
-               courseData.videoUrl.trim() !== '' &&
-               hasTimestamps &&
-               allSectionsHaveContent;
+          courseData.videoUrl.trim() !== '' &&
+          hasTimestamps &&
+          allSectionsHaveContent;
       case 3:
         return true; // Settings are optional
       case 4:
@@ -829,13 +829,12 @@ export default function CourseBuilderPage() {
             <div key={step} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
-                    step < currentStep
-                      ? 'bg-green-500 text-white'
-                      : step === currentStep
+                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${step < currentStep
+                    ? 'bg-green-500 text-white'
+                    : step === currentStep
                       ? 'bg-cyan-500 text-white'
                       : 'bg-slate-700 text-gray-400'
-                  }`}
+                    }`}
                 >
                   {step < currentStep ? '✓' : step}
                 </div>
