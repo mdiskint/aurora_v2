@@ -90,8 +90,8 @@ export default function CourseBuilderPage() {
     atomizationBlueprint: null,
   });
 
-  // Pedagogy choice: 'leopold' or 'traditional'
-  const [pedagogyChoice, setPedagogyChoice] = useState<'leopold' | 'traditional'>('traditional');
+  // Pedagogy is now always traditional for course builder
+  // (Leopold teaching doctrine is only available in chat)
 
   // Parse timestamp string into chunks
   const parseTimestamps = (timestampStr: string): Array<{ start: number; end: number }> => {
@@ -911,84 +911,6 @@ export default function CourseBuilderPage() {
                 />
               </div>
 
-              {/* AI Atomization Button */}
-              {courseData.fullTextContent.trim() && !courseData.atomizationBlueprint && (
-                <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-lg p-4">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="text-2xl">🧠</div>
-                    <div className="flex-1">
-                      <div className="font-bold text-purple-300">AI-Powered Content Atomization</div>
-                      <div className="text-sm text-purple-200/80 mt-1">
-                        Use Leopold Teaching Doctrines to automatically chunk your content into structured learning units with intuition examples, model answers, quizzes, and application scenarios.
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleAtomizeContent}
-                    disabled={isAtomizing}
-                    className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-bold disabled:cursor-not-allowed"
-                  >
-                    {isAtomizing ? '🧠 Atomizing Content...' : '✨ Atomize Content with AI'}
-                  </button>
-                </div>
-              )}
-
-              {/* Atomization Blueprint Display */}
-              {courseData.atomizationBlueprint && (
-                <div className="bg-slate-900/50 rounded-lg p-6 border border-purple-500/20">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-purple-300">📚 Atomization Blueprint</h3>
-                    <button
-                      onClick={() => setCourseData({ ...courseData, atomizationBlueprint: null })}
-                      className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-gray-300 rounded text-sm"
-                    >
-                      Clear Blueprint
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="bg-purple-900/20 border border-purple-500/30 rounded p-3">
-                      <div className="text-sm font-semibold text-purple-300">Topic</div>
-                      <div className="text-gray-200 mt-1">{courseData.atomizationBlueprint.topic}</div>
-                    </div>
-
-                    <div className="bg-purple-900/20 border border-purple-500/30 rounded p-3">
-                      <div className="text-sm font-semibold text-purple-300 mb-2">
-                        Doctrines ({courseData.atomizationBlueprint.doctrines.length} learning units)
-                      </div>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {courseData.atomizationBlueprint.doctrines.map((doctrine, idx) => (
-                          <div key={doctrine.id} className="bg-slate-800/50 rounded p-2">
-                            <div className="text-sm font-medium text-cyan-300">
-                              {idx + 1}. {doctrine.title}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-1">
-                              {doctrine.summary}
-                            </div>
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {doctrine.children.map(child => (
-                                <span
-                                  key={child.id}
-                                  className="text-xs px-2 py-0.5 bg-purple-600/30 text-purple-200 rounded"
-                                >
-                                  {child.role}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
-                      <div className="text-sm font-semibold text-green-300">✨ Ready to Use</div>
-                      <div className="text-xs text-green-200/80 mt-1">
-                        This blueprint will be used to automatically structure your course content and generate targeted questions for each doctrine.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -1076,57 +998,6 @@ export default function CourseBuilderPage() {
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-cyan-300 mb-4">Course Settings</h2>
 
-              {/* Pedagogy Choice */}
-              <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border-2 border-purple-500/50 rounded-lg p-6">
-                <h3 className="text-lg font-bold text-purple-300 mb-3">📚 Choose Teaching Method</h3>
-                <p className="text-sm text-purple-200/80 mb-4">
-                  Select how you want to structure practice and assessment for each doctrine or section.
-                </p>
-
-                <div className="space-y-3">
-                  {/* Leopold Option */}
-                  <label className="flex items-start gap-4 p-4 bg-slate-900/50 rounded-lg border-2 border-purple-500/30 hover:border-purple-400/50 cursor-pointer transition-all">
-                    <input
-                      type="radio"
-                      name="pedagogy"
-                      value="leopold"
-                      checked={pedagogyChoice === 'leopold'}
-                      onChange={(e) => setPedagogyChoice(e.target.value as 'leopold' | 'traditional')}
-                      className="mt-1 w-5 h-5 text-purple-500 focus:ring-purple-500"
-                    />
-                    <div className="flex-1">
-                      <div className="font-bold text-purple-300">Leopold Teaching Doctrine (Guided Practice)</div>
-                      <div className="text-sm text-purple-200/80 mt-1">
-                        5-step progressive learning: Intuition → Model → Imitate → Quiz → Synthesis
-                      </div>
-                      <div className="text-xs text-purple-300/60 mt-2">
-                        ✨ Creates interactive purple diamond nodes that students complete sequentially
-                      </div>
-                    </div>
-                  </label>
-
-                  {/* Traditional Option */}
-                  <label className="flex items-start gap-4 p-4 bg-slate-900/50 rounded-lg border-2 border-cyan-500/30 hover:border-cyan-400/50 cursor-pointer transition-all">
-                    <input
-                      type="radio"
-                      name="pedagogy"
-                      value="traditional"
-                      checked={pedagogyChoice === 'traditional'}
-                      onChange={(e) => setPedagogyChoice(e.target.value as 'leopold' | 'traditional')}
-                      className="mt-1 w-5 h-5 text-cyan-500 focus:ring-cyan-500"
-                    />
-                    <div className="flex-1">
-                      <div className="font-bold text-cyan-300">Traditional Assessment (MCQ + Short Answer)</div>
-                      <div className="text-sm text-cyan-200/80 mt-1">
-                        Customizable number of multiple choice and short answer questions per section
-                      </div>
-                      <div className="text-xs text-cyan-300/60 mt-2">
-                        📝 Generate 3-5 MCQs and 1-3 short answer questions for each section
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
 
               <div className="bg-slate-900/50 rounded-lg p-4 border border-cyan-500/20">
                 <label className="flex items-start gap-3 cursor-pointer">
@@ -1146,49 +1017,35 @@ export default function CourseBuilderPage() {
                 </label>
               </div>
 
-              {/* Only show MCQ/Short Answer settings for Traditional pedagogy */}
-              {pedagogyChoice === 'traditional' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Multiple Choice Questions per Section
-                    </label>
-                    <select
-                      value={courseData.mcqCount}
-                      onChange={(e) => setCourseData({ ...courseData, mcqCount: parseInt(e.target.value) })}
-                      className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-                    >
-                      <option value={3}>3 questions</option>
-                      <option value={4}>4 questions</option>
-                      <option value={5}>5 questions</option>
-                    </select>
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Multiple Choice Questions per Section
+                </label>
+                <select
+                  value={courseData.mcqCount}
+                  onChange={(e) => setCourseData({ ...courseData, mcqCount: parseInt(e.target.value) })}
+                  className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value={3}>3 questions</option>
+                  <option value={4}>4 questions</option>
+                  <option value={5}>5 questions</option>
+                </select>
+              </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Short Answer Questions per Section
-                    </label>
-                    <select
-                      value={courseData.shortAnswerCount}
-                      onChange={(e) => setCourseData({ ...courseData, shortAnswerCount: parseInt(e.target.value) })}
-                      className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-                    >
-                      <option value={1}>1 question</option>
-                      <option value={2}>2 questions</option>
-                      <option value={3}>3 questions</option>
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {/* Info box for Leopold choice */}
-              {pedagogyChoice === 'leopold' && (
-                <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                  <p className="text-sm text-purple-200">
-                    💡 <strong>Leopold Mode:</strong> The atomization blueprint you created will be used to generate guided practice for each doctrine. MCQ/Short Answer settings are not needed.
-                  </p>
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Short Answer Questions per Section
+                </label>
+                <select
+                  value={courseData.shortAnswerCount}
+                  onChange={(e) => setCourseData({ ...courseData, shortAnswerCount: parseInt(e.target.value) })}
+                  className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value={1}>1 question</option>
+                  <option value={2}>2 questions</option>
+                  <option value={3}>3 questions</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -1236,41 +1093,18 @@ export default function CourseBuilderPage() {
                 </div>
               </div>
 
-              {/* Show pedagogy in review */}
-              <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                <div className="text-sm text-gray-400">Teaching Method</div>
-                <div className="text-lg font-bold text-purple-300 mt-1">
-                  {pedagogyChoice === 'leopold' ? '🎓 Leopold Teaching Doctrine' : '📝 Traditional Assessment'}
+              <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <div className="text-2xl">✨</div>
+                  <div>
+                    <div className="font-bold text-cyan-300">Next: Generate Questions</div>
+                    <div className="text-sm text-cyan-200/80 mt-1">
+                      Click "Generate Questions" to create {courseData.mcqCount} MCQs and {courseData.shortAnswerCount} short answer questions for each section using AI.
+                      You'll be able to review and edit all questions before finalizing the course.
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {pedagogyChoice === 'traditional' ? (
-                <div className="bg-cyan-900/20 border border-cyan-500/30 rounded-lg p-4">
-                  <div className="flex gap-3">
-                    <div className="text-2xl">✨</div>
-                    <div>
-                      <div className="font-bold text-cyan-300">Next: Generate Questions</div>
-                      <div className="text-sm text-cyan-200/80 mt-1">
-                        Click "Generate Questions" to create {courseData.mcqCount} MCQs and {courseData.shortAnswerCount} short answer questions for each section using AI.
-                        You'll be able to review and edit all questions before finalizing the course.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                  <div className="flex gap-3">
-                    <div className="text-2xl">🎓</div>
-                    <div>
-                      <div className="font-bold text-purple-300">Next: Application Essay</div>
-                      <div className="text-sm text-purple-200/80 mt-1">
-                        Leopold mode uses the atomization blueprint you created earlier.
-                        Click "Next" to proceed to the application essay step.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -1522,24 +1356,13 @@ export default function CourseBuilderPage() {
                 Next
               </button>
             ) : currentStep === 4 ? (
-              // Leopold mode skips to essay, Traditional goes to question generation
-              pedagogyChoice === 'leopold' ? (
-                <button
-                  onClick={() => setCurrentStep(6)} // Skip to essay step
-                  disabled={!courseData.atomizationBlueprint}
-                  className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                >
-                  {!courseData.atomizationBlueprint ? 'Atomization Required' : 'Next: Application Essay →'}
-                </button>
-              ) : (
-                <button
-                  onClick={handleGenerateQuestions}
-                  disabled={isGeneratingQuestions}
-                  className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-bold disabled:cursor-not-allowed"
-                >
-                  {isGeneratingQuestions ? `Generating... (${questionGenerationProgress.current}/${questionGenerationProgress.total})` : '✨ Generate Questions'}
-                </button>
-              )
+              <button
+                onClick={handleGenerateQuestions}
+                disabled={isGeneratingQuestions}
+                className="px-8 py-3 bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-gray-600 text-white rounded-lg transition-all font-bold disabled:cursor-not-allowed"
+              >
+                {isGeneratingQuestions ? `Generating... (${questionGenerationProgress.current}/${questionGenerationProgress.total})` : '✨ Generate Questions'}
+              </button>
             ) : currentStep === 5 ? (
               <button
                 onClick={nextStep}

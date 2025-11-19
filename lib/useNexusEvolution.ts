@@ -54,7 +54,8 @@ export function useNexusEvolution() {
         console.log(`🌱 [useNexusEvolution] Sending ${nexusNodes.length} nodes to API for summarization`);
 
         // Call API to generate mastery summary
-        const response = await fetch('/api/chat', {
+        const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
+        const response = await fetch(`${serverUrl}/api/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

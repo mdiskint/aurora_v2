@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx lib/__tests__/studyGuideGenerator.test.ts && npx tsx lib/__tests__/universeRunLifecycle.test.ts",
+    "test:guide": "npx tsx lib/__tests__/studyGuideGenerator.test.ts",
+    "test:lifecycle": "npx tsx lib/__tests__/universeRunLifecycle.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.0",

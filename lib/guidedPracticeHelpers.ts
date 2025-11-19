@@ -208,11 +208,15 @@ export function buildDoctrinePracticeBundle(
 /**
  * Get available practice steps based on what's in the bundle
  * Note: Synthesis is excluded from L1 guided practice - it's only for application labs
+ * ALWAYS starts with intuition (using doctrine content if no specific intuition node exists)
  */
 export function getAvailablePracticeSteps(bundle: DoctrinePracticeBundle): PracticeStepId[] {
   const steps: PracticeStepId[] = [];
 
-  if (bundle.intuitionExampleNode) steps.push('intuition');
+  // Always include intuition as the first step - it's the foundation
+  // If there's no specific intuition-example node, we'll use the doctrine node's content
+  steps.push('intuition');
+
   if (bundle.modelAnswerNode) steps.push('model');
   if (bundle.imitateNode) steps.push('imitate');
   if (bundle.quizMcNode || bundle.quizShortAnswerNode) steps.push('quiz');

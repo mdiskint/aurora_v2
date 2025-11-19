@@ -8,10 +8,16 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
 const server = http.createServer(app);
+// Support multiple origins for development and production
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',')
+  : ['http://localhost:3000'];
+
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"]
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
@@ -52,7 +58,7 @@ io.on('connection', (socket) => {
 app.post('/api/portals', (req, res) => {
   const { name, participants } = req.body;
   const portalId = Date.now().toString();
-  
+
   portals[portalId] = {
     id: portalId,
     name,
@@ -60,7 +66,7 @@ app.post('/api/portals', (req, res) => {
     nexuses: [],
     nodes: []
   };
-  
+
   res.json({ portalId, portal: portals[portalId] });
 });
 
@@ -77,17 +83,17 @@ app.get('/api/portals/:id', (req, res) => {
 app.post('/api/conversations', (req, res) => {
   const { messages, portalNodes } = req.body;
   const conversationId = Date.now().toString();
-  
+
   conversations[conversationId] = {
     id: conversationId,
     messages,
     portalNodes,
     timestamp: new Date().toISOString()
   };
-  
-  res.json({ 
-    conversationId, 
-    conversation: conversations[conversationId] 
+
+  res.json({
+    conversationId,
+    conversation: conversations[conversationId]
   });
 });
 
@@ -98,7 +104,7 @@ app.get('/api/conversations', (req, res) => {
     timestamp: conv.timestamp,
     preview: conv.messages[0]?.content.substring(0, 100) + '...' || 'Empty conversation'
   }));
-  
+
   res.json(conversationList);
 });
 
@@ -115,7 +121,7 @@ app.get('/api/conversations/:id', (req, res) => {
 // DELETE conversation - NEW ENDPOINT
 app.delete('/api/conversations/:id', (req, res) => {
   const conversationId = req.params.id;
-  
+
   if (conversations[conversationId]) {
     delete conversations[conversationId];
     console.log(`Deleted conversation ${conversationId}`);
@@ -131,7 +137,7 @@ app.post('/api/chat', async (req, res) => {
     const { messages, portalNodes, activeMemories } = req.body;
 
     let systemPrompt = "You are a helpful assistant in Aurora Portal, a 3D collaborative decision-making space. ";
-    
+
     if (portalNodes && portalNodes.length > 0) {
       systemPrompt += "\n\nCurrent nodes and nexuses in the portal:\n";
       portalNodes.forEach(node => {
@@ -162,15 +168,15 @@ app.post('/api/chat', async (req, res) => {
       messages: messages
     });
 
-    res.json({ 
-      response: response.content[0].text 
+    res.json({
+      response: response.content[0].text
     });
 
   } catch (error) {
     console.error('Error calling Anthropic API:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to get AI response',
-      details: error.message 
+      details: error.message
     });
   }
 });

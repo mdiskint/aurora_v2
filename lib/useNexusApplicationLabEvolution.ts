@@ -55,7 +55,8 @@ export function useNexusApplicationLabEvolution() {
         console.log(`🎓 [useNexusApplicationLabEvolution] Sending ${nexusNodes.length} nodes to API for Application Lab generation`);
 
         // Call API to generate Application Lab
-        const response = await fetch('/api/chat', {
+        const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
+        const response = await fetch(`${serverUrl}/api/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

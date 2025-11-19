@@ -993,27 +993,38 @@ Format your feedback in clear, structured paragraphs with headers. Be constructi
 
       const userContent = userMessage;
 
-      const essayPrompt = `Based on this analyzed material, create ONE thoughtful essay question that:
+      const essayPrompt = `Based on this analyzed material, create ONE realistic law school exam-style essay question:
 
 ${userContent}
 
+CRITICAL: This MUST be a law school exam-style question with a detailed fact pattern, NOT an academic essay asking students to explain or apply rules in the abstract.
+
 Requirements:
-1. **Comprehensive**: Requires the student to synthesize multiple topics, cases, and doctrines
-2. **Application-focused**: Asks student to apply principles to a novel scenario or analyze relationships between concepts
-3. **Clear and specific**: Has a defined scope and clear expectations
-4. **Realistic**: Resembles actual law school exam questions or bar exam essay questions
-5. **Appropriate length**: Should take 30-45 minutes to answer thoroughly
+1. **Realistic Fact Pattern**: Create a 2-3 paragraph hypothetical scenario with specific facts that raise legal issues related to the analyzed material
+2. **Multiple Interrelated Issues**: The facts should implicate 2-4 different doctrines/concepts from the material in realistic ways
+3. **Issue Spotting Required**: Don't explicitly state what legal issues are raised - the student must identify them from the facts
+4. **Ambiguity**: Include facts that could support different outcomes or require weighing competing considerations
+5. **Law School Exam Style**: Should resemble actual law school exam questions where students must: (a) identify legal issues, (b) state relevant rules, (c) apply rules to facts, (d) reach conclusions
 
-Format your response as:
-- A clear, specific question (2-4 sentences)
-- If helpful, include a brief fact pattern or hypothetical scenario as part of the question
+Format:
+- Present the fact pattern (2-3 paragraphs describing a realistic situation)
+- End with: "Please analyze [Party Name]'s potential claims/defenses." OR "What is the likely outcome?" OR similar call question
 
-DO NOT include answer guidance or rubrics - just the question itself.`;
+EXAMPLES OF WHAT TO DO:
+✓ "Alice and Bob entered into a contract for the sale of Alice's home. The contract included a clause stating... Three weeks before closing, Alice discovered... Bob now claims... Analyze the parties' rights and obligations."
+✓ "XYZ Corp filed a lawsuit challenging a federal regulation. The regulation was promulgated by... The agency's enabling statute states... XYZ argues... Evaluate XYZ's chances of success."
+
+EXAMPLES OF WHAT NOT TO DO:
+✗ "Discuss the doctrine of [X] and how it applies to cases involving [Y]."
+✗ "Explain the test for [Z] and provide examples of how courts have applied it."
+✗ "Compare and contrast the approaches taken in [Case A] and [Case B]."
+
+DO NOT include answer guidance, rubrics, or discussion of issues - ONLY the fact pattern and question.`;
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2048,
-        system: 'You are a law professor creating thoughtful, comprehensive essay questions that test deep understanding and application of legal principles.',
+        system: 'You are an experienced law professor who writes realistic law school exam questions. Your questions always include detailed fact patterns with specific scenarios that require students to spot issues, apply legal rules to facts, and analyze outcomes - NOT academic essays asking students to explain doctrines in the abstract.',
         messages: [{ role: 'user', content: essayPrompt }],
       });
 
@@ -1021,6 +1032,74 @@ DO NOT include answer guidance or rubrics - just the question itself.`;
       console.log('📝 Essay question generated');
 
       return NextResponse.json({ response: rawResponse });
+    }
+
+    // 💡 INTUITION-QUESTION MODE: Generate engaging intuition question for guided practice
+    if (mode === 'intuition-question') {
+      console.log('💡 INTUITION-QUESTION MODE: Generating engaging intuition question');
+
+      const doctrineContent = userMessage;
+
+      const intuitionPrompt = `Based on this legal doctrine/concept, create an engaging intuition-building question that helps students connect emotionally and morally with the material:
+
+${doctrineContent}
+
+Create a question that:
+1. **Engages feelings** - Taps into moral compass, sense of justice/injustice, fairness, power dynamics
+2. **Varies tone** - Mix of provocative, exploratory, and personal approaches
+3. **Goes beyond binary** - More interesting than just "right/wrong" or "fair/unfair"
+4. **Connects to lived experience** - Helps students find personal relevance
+
+Format your response as JSON:
+{
+  "question": "The main provocative/thoughtful question (1-2 sentences)",
+  "options": [
+    "Option 1 - a specific perspective or reaction (10-20 words)",
+    "Option 2 - a different angle or viewpoint (10-20 words)",
+    "Option 3 - another distinct perspective (10-20 words)",
+    "Option 4 - a contrarian or nuanced view (10-20 words)"
+  ]
+}
+
+Examples of good question styles:
+- "Who benefits most when this doctrine is applied strictly? Who loses?"
+- "If you were the losing party, what would feel most unjust about this outcome?"
+- "What tension is this rule trying to balance, and which side do you instinctively favor?"
+- "When might following this rule lead to an outcome that feels deeply wrong?"
+- "What kind of person would have written this rule, and what were they afraid of?"
+
+Make the options represent genuinely different perspectives, not just variations of the same idea. Include one option that challenges conventional thinking.
+
+Return ONLY valid JSON, no other text.`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: 'You are a thoughtful legal educator who creates engaging questions that help students connect emotionally and morally with legal doctrines. Your questions should provoke genuine reflection about justice, fairness, and values. Return only valid JSON.',
+        messages: [{ role: 'user', content: intuitionPrompt }],
+      });
+
+      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('💡 Intuition question generated');
+
+      // Parse JSON from response
+      try {
+        const parsed = JSON.parse(rawResponse);
+        return NextResponse.json({ response: parsed });
+      } catch {
+        console.error('Failed to parse intuition question JSON:', rawResponse);
+        return NextResponse.json({
+          response: {
+            question: "What's your gut reaction to this doctrine? Does it feel fair or problematic?",
+            options: [
+              "This seems like a reasonable balance of interests",
+              "This feels like it protects the powerful at the expense of the vulnerable",
+              "This creates necessary but uncomfortable tradeoffs",
+              "The real-world effects probably differ from the stated purpose"
+            ]
+          }
+        });
+      }
     }
 
     // 🌱 NEXUS-SUMMARIZE MODE: Generate mastery summary for completed nexus

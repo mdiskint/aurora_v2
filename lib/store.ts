@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Node, NodeType, ApplicationEssay } from './types';
+import { Node, NodeType, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup } from './db';
 
@@ -374,6 +374,11 @@ interface UniverseData {
     mcqCount: number;
     shortAnswerCount: number;
   };
+
+  // 🎓 UNIVERSE RUNS & STUDY GUIDES
+  runs?: UniverseRun[];                    // All practice runs for this universe
+  currentRunId?: string;                    // Active run ID (if in progress)
+  writeUps?: StudyGuideWriteUp[];          // Generated study guides from completed runs
 }
 
 interface UniverseSnapshot {
@@ -453,6 +458,18 @@ interface CanvasStore {
   // 🎯 QUIZ COMPLETION & UNLOCK SYSTEM
   markNodeCompleted: (nodeId: string) => boolean; // Mark node as completed and unlock next
   unlockNextNode: (currentNodeId: string) => string | null; // Unlock next L1 sibling, return unlocked node ID or null
+
+  // 🎓 UNIVERSE RUNS & STUDY GUIDES
+  startUniverseRun: (universeId?: string) => string; // Start a new practice run, returns run ID
+  getCurrentRun: (universeId?: string) => UniverseRun | null; // Get current in-progress run
+  addIntuitionResponse: (runId: string, response: import('./types').IntuitionResponse) => void;
+  addImitationAttempt: (runId: string, attempt: import('./types').ImitationAttempt) => void;
+  addQuizResult: (runId: string, result: import('./types').QuizResult) => void;
+  addSynthesisAnalysis: (runId: string, analysis: import('./types').SynthesisAnalysis) => void;
+  completeUniverseRun: (runId: string) => void; // Mark run as completed and calculate metrics
+  saveStudyGuideWriteUp: (writeUp: StudyGuideWriteUp) => void; // Save generated write-up
+  getUniverseWriteUps: (universeId?: string) => StudyGuideWriteUp[]; // Get all write-ups for a universe
+  resetUniverseForPractice: (universeId?: string) => string | undefined; // Clear progress for a fresh run, returns new run ID
 
   // 📸 SNAPSHOT SYSTEM
   createSnapshot: (universeId: string) => void;
@@ -3229,6 +3246,352 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       console.log('🔓 ==========================================');
       return null;
     }
+  },
+
+  // 🎓 START A NEW UNIVERSE RUN
+  startUniverseRun: (universeId?: string) => {
+    const state = get();
+    const targetUniverseId = universeId || state.activeUniverseIds[0];
+
+    if (!targetUniverseId || !state.universeLibrary[targetUniverseId]) {
+      console.error('❌ Cannot start run: Universe not found');
+      return '';
+    }
+
+    const runId = `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const newRun: UniverseRun = {
+      id: runId,
+      universeId: targetUniverseId,
+      startedAt: Date.now(),
+      status: 'in_progress',
+      intuitionResponses: [],
+      imitationAttempts: [],
+      quizResults: [],
+      synthesisAnalyses: [],
+    };
+
+    set((state) => ({
+      universeLibrary: {
+        ...state.universeLibrary,
+        [targetUniverseId]: {
+          ...state.universeLibrary[targetUniverseId],
+          runs: [...(state.universeLibrary[targetUniverseId].runs || []), newRun],
+          currentRunId: runId,
+        },
+      },
+    }));
+
+    get().saveToLocalStorage();
+    console.log('🎓 Started new universe run:', runId);
+    return runId;
+  },
+
+  // 🎓 GET CURRENT IN-PROGRESS RUN
+  getCurrentRun: (universeId?: string) => {
+    const state = get();
+    const targetUniverseId = universeId || state.activeUniverseIds[0];
+
+    if (!targetUniverseId || !state.universeLibrary[targetUniverseId]) {
+      return null;
+    }
+
+    const universe = state.universeLibrary[targetUniverseId];
+    if (!universe.currentRunId || !universe.runs) {
+      return null;
+    }
+
+    return universe.runs.find(r => r.id === universe.currentRunId && r.status === 'in_progress') || null;
+  },
+
+  // 🎓 ADD INTUITION RESPONSE TO RUN
+  addIntuitionResponse: (runId: string, response: import('./types').IntuitionResponse) => {
+    const state = get();
+
+    // Find which universe contains this run
+    for (const [universeId, universe] of Object.entries(state.universeLibrary)) {
+      const runIndex = universe.runs?.findIndex(r => r.id === runId);
+      if (runIndex !== undefined && runIndex !== -1 && universe.runs) {
+        const updatedRuns = [...universe.runs];
+        updatedRuns[runIndex] = {
+          ...updatedRuns[runIndex],
+          intuitionResponses: [...updatedRuns[runIndex].intuitionResponses, response],
+        };
+
+        set((state) => ({
+          universeLibrary: {
+            ...state.universeLibrary,
+            [universeId]: {
+              ...state.universeLibrary[universeId],
+              runs: updatedRuns,
+            },
+          },
+        }));
+
+        get().saveToLocalStorage();
+        console.log('🎓 Added intuition response to run:', runId);
+        return;
+      }
+    }
+  },
+
+  // 🎓 ADD IMITATION ATTEMPT TO RUN
+  addImitationAttempt: (runId: string, attempt: import('./types').ImitationAttempt) => {
+    const state = get();
+
+    for (const [universeId, universe] of Object.entries(state.universeLibrary)) {
+      const runIndex = universe.runs?.findIndex(r => r.id === runId);
+      if (runIndex !== undefined && runIndex !== -1 && universe.runs) {
+        const updatedRuns = [...universe.runs];
+        updatedRuns[runIndex] = {
+          ...updatedRuns[runIndex],
+          imitationAttempts: [...updatedRuns[runIndex].imitationAttempts, attempt],
+        };
+
+        set((state) => ({
+          universeLibrary: {
+            ...state.universeLibrary,
+            [universeId]: {
+              ...state.universeLibrary[universeId],
+              runs: updatedRuns,
+            },
+          },
+        }));
+
+        get().saveToLocalStorage();
+        console.log('🎓 Added imitation attempt to run:', runId);
+        return;
+      }
+    }
+  },
+
+  // 🎓 ADD QUIZ RESULT TO RUN
+  addQuizResult: (runId: string, result: import('./types').QuizResult) => {
+    const state = get();
+
+    for (const [universeId, universe] of Object.entries(state.universeLibrary)) {
+      const runIndex = universe.runs?.findIndex(r => r.id === runId);
+      if (runIndex !== undefined && runIndex !== -1 && universe.runs) {
+        const updatedRuns = [...universe.runs];
+        updatedRuns[runIndex] = {
+          ...updatedRuns[runIndex],
+          quizResults: [...updatedRuns[runIndex].quizResults, result],
+        };
+
+        set((state) => ({
+          universeLibrary: {
+            ...state.universeLibrary,
+            [universeId]: {
+              ...state.universeLibrary[universeId],
+              runs: updatedRuns,
+            },
+          },
+        }));
+
+        get().saveToLocalStorage();
+        console.log('🎓 Added quiz result to run:', runId);
+        return;
+      }
+    }
+  },
+
+  // 🎓 ADD SYNTHESIS ANALYSIS TO RUN
+  addSynthesisAnalysis: (runId: string, analysis: import('./types').SynthesisAnalysis) => {
+    const state = get();
+
+    for (const [universeId, universe] of Object.entries(state.universeLibrary)) {
+      const runIndex = universe.runs?.findIndex(r => r.id === runId);
+      if (runIndex !== undefined && runIndex !== -1 && universe.runs) {
+        const updatedRuns = [...universe.runs];
+        updatedRuns[runIndex] = {
+          ...updatedRuns[runIndex],
+          synthesisAnalyses: [...updatedRuns[runIndex].synthesisAnalyses, analysis],
+        };
+
+        set((state) => ({
+          universeLibrary: {
+            ...state.universeLibrary,
+            [universeId]: {
+              ...state.universeLibrary[universeId],
+              runs: updatedRuns,
+            },
+          },
+        }));
+
+        get().saveToLocalStorage();
+        console.log('🎓 Added synthesis analysis to run:', runId);
+        return;
+      }
+    }
+  },
+
+  // 🎓 COMPLETE UNIVERSE RUN
+  completeUniverseRun: (runId: string) => {
+    const state = get();
+
+    for (const [universeId, universe] of Object.entries(state.universeLibrary)) {
+      const runIndex = universe.runs?.findIndex(r => r.id === runId);
+      if (runIndex !== undefined && runIndex !== -1 && universe.runs) {
+        const run = universe.runs[runIndex];
+
+        // Calculate metrics
+        const totalQuestions = run.quizResults.length;
+        const correctAnswers = run.quizResults.filter(r => r.wasCorrect).length;
+
+        // Count unique doctrines completed
+        const doctrineIds = new Set([
+          ...run.intuitionResponses.map(r => r.nodeId),
+          ...run.quizResults.map(r => r.nodeId),
+        ]);
+
+        const updatedRuns = [...universe.runs];
+        updatedRuns[runIndex] = {
+          ...run,
+          status: 'completed',
+          completedAt: Date.now(),
+          metrics: {
+            totalQuestions,
+            correctAnswers,
+            totalTimeSeconds: run.startedAt ? Math.round((Date.now() - run.startedAt) / 1000) : undefined,
+            doctrinesCompleted: doctrineIds.size,
+            totalDoctrines: Object.values(state.nodes).filter(n => n.parentId === universe.nexuses[0]?.id).length,
+          },
+        };
+
+        set((state) => ({
+          universeLibrary: {
+            ...state.universeLibrary,
+            [universeId]: {
+              ...state.universeLibrary[universeId],
+              runs: updatedRuns,
+              currentRunId: undefined, // Clear current run
+            },
+          },
+        }));
+
+        get().saveToLocalStorage();
+        console.log('🎓 Completed universe run:', runId);
+        return;
+      }
+    }
+  },
+
+  // 🎓 SAVE STUDY GUIDE WRITE-UP
+  saveStudyGuideWriteUp: (writeUp: StudyGuideWriteUp) => {
+    const state = get();
+    const universeId = writeUp.universeId;
+
+    if (!state.universeLibrary[universeId]) {
+      console.error('❌ Cannot save write-up: Universe not found');
+      return;
+    }
+
+    set((state) => ({
+      universeLibrary: {
+        ...state.universeLibrary,
+        [universeId]: {
+          ...state.universeLibrary[universeId],
+          writeUps: [...(state.universeLibrary[universeId].writeUps || []), writeUp],
+        },
+      },
+    }));
+
+    get().saveToLocalStorage();
+    console.log('🎓 Saved study guide write-up:', writeUp.id);
+  },
+
+  // 🎓 GET ALL WRITE-UPS FOR A UNIVERSE
+  getUniverseWriteUps: (universeId?: string) => {
+    const state = get();
+    const targetUniverseId = universeId || state.activeUniverseIds[0];
+
+    if (!targetUniverseId || !state.universeLibrary[targetUniverseId]) {
+      return [];
+    }
+
+    return state.universeLibrary[targetUniverseId].writeUps || [];
+  },
+
+  // 🎓 RESET UNIVERSE FOR FRESH PRACTICE RUN
+  resetUniverseForPractice: (universeId?: string) => {
+    const state = get();
+    const targetUniverseId = universeId || state.activeUniverseIds[0];
+
+    if (!targetUniverseId || !state.universeLibrary[targetUniverseId]) {
+      console.error('❌ Cannot reset: Universe not found');
+      return;
+    }
+
+    console.log('🎓 Resetting universe for practice:', targetUniverseId);
+
+    // Get all nodes for this universe
+    const universe = state.universeLibrary[targetUniverseId];
+    const nexusIds = new Set(universe.nexuses.map(n => n.id));
+
+    // Find nodes to keep (doctrine nodes) vs nodes to remove (user responses)
+    const nodesToRemove: string[] = [];
+    const updatedNodes: { [id: string]: Node } = {};
+
+    for (const [nodeId, node] of Object.entries(universe.nodes)) {
+      // Remove practice child nodes (user responses)
+      const practiceNodeTypes = ['intuition-example', 'imitate', 'synthesis', 'user-reply', 'ai-response'];
+      if (node.nodeType && practiceNodeTypes.includes(node.nodeType) && !nexusIds.has(node.parentId)) {
+        nodesToRemove.push(nodeId);
+        continue;
+      }
+
+      // Reset progress on remaining nodes
+      updatedNodes[nodeId] = {
+        ...node,
+        isCompleted: false,
+        quizProgress: undefined,
+        // Keep first node unlocked, lock the rest
+        isLocked: !nexusIds.has(node.parentId) ? undefined : node.isLocked,
+      };
+    }
+
+    // Update children arrays to remove deleted nodes
+    for (const nodeId of Object.keys(updatedNodes)) {
+      updatedNodes[nodeId] = {
+        ...updatedNodes[nodeId],
+        children: updatedNodes[nodeId].children.filter(id => !nodesToRemove.includes(id)),
+      };
+    }
+
+    // Lock all L1 nodes except the first one
+    const l1Nodes = Object.values(updatedNodes)
+      .filter(n => nexusIds.has(n.parentId))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    l1Nodes.forEach((node, index) => {
+      updatedNodes[node.id] = {
+        ...updatedNodes[node.id],
+        isLocked: index > 0, // First node unlocked, rest locked
+        isCompleted: false,
+      };
+    });
+
+    set((state) => ({
+      universeLibrary: {
+        ...state.universeLibrary,
+        [targetUniverseId]: {
+          ...state.universeLibrary[targetUniverseId],
+          nodes: updatedNodes,
+          currentRunId: undefined,
+        },
+      },
+      // Also update current canvas if this universe is active
+      ...(state.activeUniverseIds.includes(targetUniverseId) ? { nodes: updatedNodes } : {}),
+    }));
+
+    get().saveToLocalStorage();
+    console.log('🎓 Universe reset complete. Removed', nodesToRemove.length, 'practice nodes');
+
+    // Start a new practice run
+    const newRunId = get().startUniverseRun(targetUniverseId);
+    console.log('🎓 Started new practice run:', newRunId);
+
+    return newRunId;
   },
 
   // 📸 CREATE SNAPSHOT - Store original state for true revert

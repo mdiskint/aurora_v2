@@ -80,3 +80,140 @@ export interface Node {
     explanation?: string;
   }>;
 }
+
+// ============================================
+// UNIVERSE RUN & STUDY GUIDE TYPES
+// ============================================
+
+export type UniverseRunStatus = 'in_progress' | 'completed';
+
+// Individual learning artifact captured during a run
+export interface IntuitionResponse {
+  nodeId: string;
+  doctrineTitle: string;
+  question: string;
+  selectedOption?: string;
+  elaboration: string;
+  aiFeedback: string;
+  timestamp: number;
+}
+
+export interface ImitationAttempt {
+  nodeId: string;
+  doctrineTitle: string;
+  prompt: string;
+  userAnswer: string;
+  aiFeedback: string;
+  timestamp: number;
+}
+
+export interface QuizResult {
+  nodeId: string;
+  doctrineTitle: string;
+  questionType: 'mcq' | 'short-answer';
+  question: string;
+  userAnswer: string;
+  correctAnswer?: string;
+  wasCorrect: boolean;
+  explanation: string;
+  timestamp: number;
+}
+
+export interface SynthesisAnalysis {
+  nodeId: string;
+  doctrineTitle: string;
+  scenario: string;
+  userAnalysis: string;
+  aiFeedback?: string;
+  timestamp: number;
+}
+
+// A specific playthrough of a universe
+export interface UniverseRun {
+  id: string;
+  universeId: string;
+  startedAt: number;
+  completedAt?: number;
+  status: UniverseRunStatus;
+
+  // Learning artifacts captured during this run
+  intuitionResponses: IntuitionResponse[];
+  imitationAttempts: ImitationAttempt[];
+  quizResults: QuizResult[];
+  synthesisAnalyses: SynthesisAnalysis[];
+
+  // Summary metrics (calculated on completion)
+  metrics?: {
+    totalQuestions: number;
+    correctAnswers: number;
+    totalTimeSeconds?: number;
+    doctrinesCompleted: number;
+    totalDoctrines: number;
+  };
+}
+
+// Structured sections of a study guide
+export interface DoctrineSummary {
+  title: string;
+  keyPoints: string[];
+  userStrengths: string[];
+  areasToImprove: string[];
+}
+
+export interface ModelPattern {
+  name: string;
+  description: string;
+  example: string;
+}
+
+export interface MistakeProfile {
+  pattern: string;
+  frequency: number;
+  correction: string;
+  examples: string[];
+}
+
+export interface PracticeScenario {
+  scenario: string;
+  focusArea: string;
+  suggestedApproach: string;
+}
+
+export interface QuizSnapshot {
+  totalQuestions: number;
+  correctAnswers: number;
+  accuracyPercentage: number;
+  strongTopics: string[];
+  weakTopics: string[];
+}
+
+export interface SynthesisSummary {
+  overallTheme: string;
+  keyInsights: string[];
+  applicationStrength: string;
+  nextSteps: string[];
+}
+
+// The generated study guide write-up
+export interface StudyGuideWriteUp {
+  id: string;
+  universeId: string;
+  universeRunId: string;
+  createdAt: number;
+
+  // Main content (markdown)
+  content: string;
+
+  // Structured sections (optional, for rich rendering)
+  doctrineSummaries?: DoctrineSummary[];
+  modelPatterns?: ModelPattern[];
+  mistakeProfile?: MistakeProfile[];
+  practiceScenarios?: PracticeScenario[];
+  quizSnapshot?: QuizSnapshot;
+  synthesisSummary?: SynthesisSummary;
+
+  // Metadata
+  universeTitle: string;
+  completionDate: number;
+  totalTimeSpent?: number;
+}

@@ -13,15 +13,16 @@ export function useWebSocket(portalId: string | null) {
     }
 
     console.log('🔌 Connecting to WebSocket for portal:', portalId);
-    
-    // Connect to server
-    const socket = io('http://localhost:3001');
+
+    // Connect to server using environment variable
+    const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
+    const socket = io(serverUrl);
     socketRef.current = socket;
 
     // On connection
     socket.on('connect', () => {
       console.log('✅ Connected to WebSocket:', socket.id);
-      
+
       // Join the portal room
       socket.emit('join_portal', portalId);
     });
@@ -35,7 +36,7 @@ export function useWebSocket(portalId: string | null) {
     // When a node is created (by anyone, including us)
     socket.on('node_created', (data) => {
       console.log('🆕 Node created event received:', data);
-      
+
       // Add node to local state via store
       useCanvasStore.getState().addNodeFromWebSocket(data);
     });
@@ -65,8 +66,8 @@ export function useWebSocket(portalId: string | null) {
     }
   };
 
-  return { 
+  return {
     createNode,
-    isConnected: socketRef.current?.connected || false 
+    isConnected: socketRef.current?.connected || false
   };
 }

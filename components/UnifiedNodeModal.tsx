@@ -12,6 +12,8 @@ import {
   type DoctrinePracticeBundle,
   type PracticeStepId,
 } from '@/lib/guidedPracticeHelpers';
+import { generateUniverseStudyGuide, UniverseDefinition } from '@/lib/studyGuideGenerator';
+import { StudyGuideWriteUp } from '@/lib/types';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -334,6 +336,20 @@ export default function UnifiedNodeModal() {
   // Track progress for each L1 node separately
   const [l1NodeProgress, setL1NodeProgress] = useState<Record<string, PracticeStepId>>({});
   const [currentL1NodeId, setCurrentL1NodeId] = useState<string | null>(null);
+
+  // Intuition question state
+  const [intuitionQuestion, setIntuitionQuestion] = useState<{
+    question: string;
+    options: string[];
+  } | null>(null);
+  const [selectedIntuitionOption, setSelectedIntuitionOption] = useState<string | null>(null);
+  const [isLoadingIntuitionQuestion, setIsLoadingIntuitionQuestion] = useState(false);
+  const [intuitionQuestionNodeId, setIntuitionQuestionNodeId] = useState<string | null>(null);
+
+  // 🎓 COMPLETION MODAL - Show study guide on universe completion
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [completedStudyGuide, setCompletedStudyGuide] = useState<StudyGuideWriteUp | null>(null);
+  const [showStudyGuideViewer, setShowStudyGuideViewer] = useState(false);
 
   // CRITICAL: Use a ref to immediately track Socratic mode (prevents race conditions with async state)
   const isSocraticModeActive = useRef(false);
@@ -978,6 +994,49 @@ export default function UnifiedNodeModal() {
     }
   };
 
+  // 💡 GENERATE INTUITION QUESTION - AI generates engaging question for doctrine
+  const generateIntuitionQuestion = async (doctrineContent: string, nodeId: string) => {
+    if (intuitionQuestionNodeId === nodeId && intuitionQuestion) {
+      // Already have a question for this node
+      return;
+    }
+
+    setIsLoadingIntuitionQuestion(true);
+    setIntuitionQuestion(null);
+    setSelectedIntuitionOption(null);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: doctrineContent }],
+          mode: 'intuition-question'
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to generate intuition question');
+
+      const data = await response.json();
+      setIntuitionQuestion(data.response);
+      setIntuitionQuestionNodeId(nodeId);
+    } catch (error) {
+      console.error('❌ Failed to generate intuition question:', error);
+      // Use fallback question
+      setIntuitionQuestion({
+        question: "What's your gut reaction to this doctrine? Does it feel fair or problematic?",
+        options: [
+          "This seems like a reasonable balance of interests",
+          "This feels like it protects the powerful at the expense of the vulnerable",
+          "This creates necessary but uncomfortable tradeoffs",
+          "The real-world effects probably differ from the stated purpose"
+        ]
+      });
+    } finally {
+      setIsLoadingIntuitionQuestion(false);
+    }
+  };
+
   // 🎓 GRADE PRACTICE STEP - AI grades user's practice attempt
   const handleGradePracticeStep = async (stepType: string, userAnswer: string, referenceContent: string) => {
     if (!userAnswer.trim()) return;
@@ -1052,6 +1111,10 @@ Format your response EXACTLY like this:
 Be conversational and human, not formulaic.`;
       }
 
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1059,7 +1122,10 @@ Be conversational and human, not formulaic.`;
           messages: [{ role: 'user', content: gradingPrompt }],
           mode: 'standard',
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) throw new Error('Failed to get AI feedback');
 
@@ -1096,9 +1162,13 @@ Be conversational and human, not formulaic.`;
       // Step 2: Animate camera to the new node and open its modal
       // User will interact with this modal, then click button to continue
       selectNode(newNodeId, true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to grade practice step:', error);
-      setPracticeStepFeedback('Sorry, could not get feedback at this time. Please try again.');
+      if (error.name === 'AbortError') {
+        setPracticeStepFeedback('Request timed out. The AI is taking too long to respond. Please try again.');
+      } else {
+        setPracticeStepFeedback('Sorry, could not get feedback at this time. Please try again.');
+      }
       setIsGradingPractice(false);
     }
   };
@@ -1680,6 +1750,39 @@ Be conversational and human, not formulaic.`;
       updateNode(node.id, { quizProgress: updatedProgress });
       console.log('✅ MCQ progress saved:', updatedProgress.questionsAsked.length, 'questions');
 
+      // 🎓 TRACK QUIZ RESULTS TO UNIVERSE RUN
+      const { activeUniverseIds, getCurrentRun, addQuizResult, startUniverseRun } = useCanvasStore.getState();
+      const activeUniverseId = activeUniverseIds[0];
+      if (activeUniverseId) {
+        let currentRun = getCurrentRun(activeUniverseId);
+
+        // Start a run if one doesn't exist
+        if (!currentRun) {
+          const runId = startUniverseRun(activeUniverseId);
+          currentRun = getCurrentRun(activeUniverseId);
+          console.log('🎓 Started new universe run:', runId);
+        }
+
+        if (currentRun) {
+          // Track each quiz result
+          mcResults.forEach(result => {
+            const mcQuestion = mcQuestions.find(q => q.question === result.question);
+            addQuizResult(currentRun!.id, {
+              nodeId: node.id,
+              doctrineTitle: node.title,
+              questionType: 'mcq',
+              question: result.question,
+              userAnswer: result.selectedAnswer,
+              correctAnswer: result.correctAnswer,
+              wasCorrect: result.isCorrect,
+              explanation: mcQuestion?.explanation || '',
+              timestamp: Date.now(),
+            });
+          });
+          console.log('🎓 Tracked', mcResults.length, 'quiz results to run:', currentRun.id);
+        }
+      }
+
       // 🎯 MARK NODE AS COMPLETED AND UNLOCK NEXT
       const { markNodeCompleted } = useCanvasStore.getState();
       const wasUnlocked = markNodeCompleted(node.id);
@@ -1699,15 +1802,104 @@ Be conversational and human, not formulaic.`;
     setMcAnswered(false);
     setMcResults([]);
 
-    // Return to guided practice panel at quiz step (keep modal open)
+    // Navigate to next node in conversation after quiz completion
     if (node?.parentId) {
-      console.log('🔙 Returning to guided practice panel');
-      selectNode(node.parentId, true);
+      // Get all sibling nodes (nodes with same parent)
+      const siblings = Object.values(nodes)
+        .filter(n => n.parentId === node.parentId)
+        .sort((a, b) => a.id.localeCompare(b.id));
 
-      setTimeout(() => {
-        setShowGuidedPractice(true);
-        setActivePracticeStep('quiz');
-      }, 300);
+      const currentIndex = siblings.findIndex(n => n.id === node.id);
+
+      if (currentIndex !== -1 && currentIndex < siblings.length - 1) {
+        // There's a next sibling - navigate to it
+        const nextSibling = siblings[currentIndex + 1];
+        console.log('➡️ Moving to next node:', nextSibling.id);
+        selectNode(nextSibling.id, true);
+        setShowContentOverlay(true);
+
+        // Show toast notification
+        showToastNotification('✨ Moving to next section');
+      } else {
+        // No next sibling - return to the nexus
+        // Find the nexus by traversing up the tree
+        let currentId: string | undefined = node.parentId;
+        let foundNexus = null;
+
+        while (currentId) {
+          foundNexus = nexuses.find(n => n.id === currentId);
+          if (foundNexus) break;
+
+          const parentNode: { parentId?: string } | undefined = nodes[currentId];
+          currentId = parentNode?.parentId;
+        }
+
+        if (foundNexus) {
+          console.log('🏠 Returning to nexus:', foundNexus.id);
+          selectNode(foundNexus.id, true);
+          setShowContentOverlay(true);
+
+          // 🎓 UNIVERSE COMPLETION - Generate study guide
+          const {
+            activeUniverseIds,
+            universeLibrary,
+            getCurrentRun,
+            completeUniverseRun,
+            saveStudyGuideWriteUp,
+          } = useCanvasStore.getState();
+
+          const activeUniverseId = activeUniverseIds[0];
+          if (activeUniverseId && universeLibrary[activeUniverseId]) {
+            const universe = universeLibrary[activeUniverseId];
+            const currentRun = getCurrentRun(activeUniverseId);
+
+            if (currentRun) {
+              console.log('🎓 Completing universe run:', currentRun.id);
+
+              // Complete the run
+              completeUniverseRun(currentRun.id);
+
+              // Build universe definition for generator
+              const universeDefinition: UniverseDefinition = {
+                id: activeUniverseId,
+                title: universe.nexuses[0]?.title || 'Universe',
+                nexuses: universe.nexuses.map(n => ({
+                  id: n.id,
+                  title: n.title,
+                  content: n.content,
+                })),
+                nodes: universe.nodes,
+              };
+
+              // Get the completed run (with metrics) from updated store state
+              const updatedUniverse = useCanvasStore.getState().universeLibrary[activeUniverseId];
+              const completedRun = updatedUniverse?.runs?.find(r => r.id === currentRun.id);
+
+              if (completedRun) {
+                // Generate study guide
+                const studyGuide = generateUniverseStudyGuide(completedRun, universeDefinition);
+
+                // Save to store
+                saveStudyGuideWriteUp(studyGuide);
+
+                console.log('🎓 Study guide generated:', studyGuide.id);
+
+                // Show completion modal
+                setCompletedStudyGuide(studyGuide);
+                setShowCompletionModal(true);
+              }
+            } else {
+              // No run was started, just show completion toast
+              showToastNotification('🎉 All sections complete! Returned to nexus');
+            }
+          } else {
+            showToastNotification('🎉 All sections complete! Returned to nexus');
+          }
+        } else {
+          // Fallback: close modal if no nexus found
+          selectNode(selectedId, false);
+        }
+      }
     } else {
       // Fallback: close modal if no parent
       selectNode(selectedId, false);
@@ -2592,6 +2784,88 @@ Be conversational and human, not formulaic.`;
                   </button>
                 )}
 
+                {/* 🎓 PRACTICE RUN CONTROLS - Only for nexuses with universe data */}
+                {nexus && (() => {
+                  const { activeUniverseIds, universeLibrary, getCurrentRun, getUniverseWriteUps, resetUniverseForPractice } = useCanvasStore.getState();
+                  const activeUniverseId = activeUniverseIds[0];
+                  if (!activeUniverseId || !universeLibrary[activeUniverseId]) return null;
+
+                  const universe = universeLibrary[activeUniverseId];
+                  const currentRun = getCurrentRun(activeUniverseId);
+                  const completedRuns = universe.runs?.filter(r => r.status === 'completed') || [];
+                  const writeUps = getUniverseWriteUps(activeUniverseId);
+                  const totalRuns = universe.runs?.length || 0;
+
+                  return (
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                      {/* Current Run Indicator */}
+                      {currentRun && (
+                        <div className="mb-3 p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <span className="text-emerald-400 text-sm font-medium">
+                              Practice Run #{totalRuns}
+                            </span>
+                            <span className="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded">
+                              In Progress
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Completed Runs Summary */}
+                      {completedRuns.length > 0 && !currentRun && (
+                        <div className="mb-3 p-3 bg-slate-800/50 border border-slate-600/30 rounded-lg">
+                          <div className="text-sm text-gray-400">
+                            {completedRuns.length} completed run{completedRuns.length !== 1 ? 's' : ''}
+                            {writeUps.length > 0 && (
+                              <span className="ml-2 text-emerald-400">
+                                • {writeUps.length} study guide{writeUps.length !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Practice Again Button */}
+                      {(completedRuns.length > 0 || !currentRun) && (
+                        <button
+                          onClick={() => {
+                            const newRunId = resetUniverseForPractice(activeUniverseId);
+                            if (newRunId) {
+                              showToastNotification(`🎓 Started new practice run #${(universe.runs?.length || 0) + 1}`);
+                            }
+                          }}
+                          className="w-full px-4 py-3 bg-gradient-to-r from-emerald-600/20 to-teal-600/20
+                                   hover:from-emerald-600/30 hover:to-teal-600/30
+                                   border-2 border-emerald-500/50 text-emerald-300 rounded-lg transition-all
+                                   flex items-center justify-center gap-2 font-medium
+                                   shadow-lg shadow-emerald-500/10"
+                        >
+                          {currentRun ? '🔄 Restart Practice' : '🎓 Start New Practice Run'}
+                        </button>
+                      )}
+
+                      {/* View Past Study Guides */}
+                      {writeUps.length > 0 && (
+                        <button
+                          onClick={() => {
+                            // Show most recent study guide
+                            const latestWriteUp = writeUps[writeUps.length - 1];
+                            setCompletedStudyGuide(latestWriteUp);
+                            setShowStudyGuideViewer(true);
+                          }}
+                          className="w-full mt-2 px-4 py-2 bg-slate-800/50
+                                   hover:bg-slate-700/50
+                                   border border-slate-600/50 text-gray-400 rounded-lg transition-all
+                                   flex items-center justify-center gap-2 text-sm"
+                        >
+                          📚 View Study Guides ({writeUps.length})
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Keyboard Navigation Hint */}
                 {node && !showDeleteConfirm && (
                   <div
@@ -2989,47 +3263,111 @@ Be conversational and human, not formulaic.`;
 
               {/* Step Content */}
               <div className="min-h-[300px] mb-6">
-                {/* Intuition Step */}
-                {activePracticeStep === 'intuition' && practiceBundle.intuitionExampleNode && (
+                {/* Intuition Step - always available, uses doctrine content if no specific intuition node */}
+                {activePracticeStep === 'intuition' && (
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-cyan-300">💡 Build Your Intuition</h3>
 
-                    {/* Show intuition example content */}
+                    {/* Show intuition example content (or doctrine content as fallback) */}
                     <div className="bg-slate-800/50 rounded-lg p-4 border border-cyan-500/30">
                       <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                        {practiceBundle.intuitionExampleNode.content}
+                        {practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || ''}
                       </p>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        What's your gut reaction? Where does this information sit in your current world model?
-                      </label>
-                      <textarea
-                        value={practiceStepInput}
-                        onChange={(e) => setPracticeStepInput(e.target.value)}
-                        placeholder="Share your initial intuition and how this fits with what you already know..."
-                        rows={4}
-                        className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
-                      />
-                    </div>
+                    {/* Generate question when this step becomes active */}
+                    {(() => {
+                      const contentToUse = practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '';
+                      const nodeId = practiceBundle.conceptNode?.id || '';
+                      if (contentToUse && nodeId && !isLoadingIntuitionQuestion && intuitionQuestionNodeId !== nodeId) {
+                        // Trigger question generation (using setTimeout to avoid render loop)
+                        setTimeout(() => generateIntuitionQuestion(contentToUse, nodeId), 0);
+                      }
+                      return null;
+                    })()}
+
+                    {/* Loading state */}
+                    {isLoadingIntuitionQuestion && (
+                      <div className="flex items-center justify-center py-6">
+                        <div className="text-cyan-300 flex items-center gap-2">
+                          <span className="animate-spin">⏳</span>
+                          <span>Generating your reflection question...</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Question with options */}
+                    {intuitionQuestion && !isLoadingIntuitionQuestion && (
+                      <div className="space-y-4">
+                        <div className="bg-gradient-to-r from-cyan-900/30 to-purple-900/30 rounded-lg p-4 border border-cyan-500/50">
+                          <p className="text-lg font-medium text-white leading-relaxed">
+                            {intuitionQuestion.question}
+                          </p>
+                        </div>
+
+                        {/* Clickable options */}
+                        <div className="grid grid-cols-1 gap-2">
+                          {intuitionQuestion.options.map((option, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setSelectedIntuitionOption(option)}
+                              className={`text-left px-4 py-3 rounded-lg transition-all ${
+                                selectedIntuitionOption === option
+                                  ? 'bg-cyan-600/40 border-2 border-cyan-400 text-white'
+                                  : 'bg-slate-700/50 border border-slate-600 text-gray-300 hover:bg-slate-600/50 hover:border-slate-500'
+                              }`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Free-form elaboration */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            {selectedIntuitionOption
+                              ? "Elaborate on your choice - what experiences or reasoning led you there?"
+                              : "Or share your own perspective..."}
+                          </label>
+                          <textarea
+                            value={practiceStepInput}
+                            onChange={(e) => setPracticeStepInput(e.target.value)}
+                            placeholder={selectedIntuitionOption
+                              ? "Explain your thinking, connect to personal experience, or add nuance..."
+                              : "Share your own take on this doctrine..."}
+                            rows={4}
+                            className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex gap-3">
                       <button
                         onClick={() => {
-                          if (practiceStepInput.trim() && practiceBundle.intuitionExampleNode) {
-                            handleGradePracticeStep('intuition', practiceStepInput, practiceBundle.intuitionExampleNode.content);
+                          const contentToUse = practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '';
+                          const fullResponse = selectedIntuitionOption
+                            ? `Selected: "${selectedIntuitionOption}"\n\nElaboration: ${practiceStepInput}`
+                            : practiceStepInput;
+                          if ((selectedIntuitionOption || practiceStepInput.trim()) && contentToUse) {
+                            handleGradePracticeStep('intuition', fullResponse, contentToUse);
                             setPracticeStepInput('');
+                            setSelectedIntuitionOption(null);
                           }
                         }}
-                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        disabled={(!selectedIntuitionOption && !practiceStepInput.trim()) || isGradingPractice}
                         className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
                       >
                         {isGradingPractice ? '⏳ Getting Response...' : '💬 Continue'}
                       </button>
                       <button
-                        onClick={() => handleSavePracticeStepOnly('intuition', practiceStepInput, practiceBundle.intuitionExampleNode?.content || '')}
-                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        onClick={() => {
+                          const fullResponse = selectedIntuitionOption
+                            ? `Selected: "${selectedIntuitionOption}"\n\nElaboration: ${practiceStepInput}`
+                            : practiceStepInput;
+                          handleSavePracticeStepOnly('intuition', fullResponse, practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '');
+                        }}
+                        disabled={(!selectedIntuitionOption && !practiceStepInput.trim()) || isGradingPractice}
                         className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
                       >
                         💾 Save Only
@@ -3314,6 +3652,186 @@ Be conversational and human, not formulaic.`;
             </div>
           </div>
         </>
+      )}
+
+      {/* 🎓 COMPLETION MODAL - Universe Completion Summary */}
+      {showCompletionModal && completedStudyGuide && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10002,
+          }}
+          onClick={() => setShowCompletionModal(false)}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '500px',
+              width: '90%',
+              border: '2px solid #10b981',
+              boxShadow: '0 20px 60px rgba(16, 185, 129, 0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎓</div>
+              <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981', margin: '0 0 8px 0' }}>
+                Universe Complete!
+              </h2>
+              <p style={{ color: '#94a3b8', margin: 0 }}>
+                {completedStudyGuide.universeTitle}
+              </p>
+            </div>
+
+            {/* Quiz Score Summary */}
+            {completedStudyGuide.quizSnapshot && (
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  marginBottom: '24px',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ color: '#94a3b8' }}>Quiz Score</span>
+                  <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                    {completedStudyGuide.quizSnapshot.correctAnswers}/{completedStudyGuide.quizSnapshot.totalQuestions}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Accuracy</span>
+                  <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                    {completedStudyGuide.quizSnapshot.accuracyPercentage}%
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                onClick={() => {
+                  setShowCompletionModal(false);
+                  setShowStudyGuideViewer(true);
+                }}
+                style={{
+                  padding: '14px 24px',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                View Study Guide
+              </button>
+
+              <button
+                onClick={() => setShowCompletionModal(false)}
+                style={{
+                  padding: '12px 24px',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  border: '1px solid #334155',
+                  borderRadius: '10px',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🎓 STUDY GUIDE VIEWER - Full Study Guide Content */}
+      {showStudyGuideViewer && completedStudyGuide && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10003,
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid #334155',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: '#0f172a',
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#10b981' }}>
+                Study Guide
+              </h2>
+              <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#64748b' }}>
+                {completedStudyGuide.universeTitle}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowStudyGuideViewer(false)}
+              style={{
+                padding: '8px 16px',
+                background: '#334155',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          </div>
+
+          {/* Content */}
+          <div
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              padding: '24px',
+              maxWidth: '900px',
+              margin: '0 auto',
+              width: '100%',
+            }}
+          >
+            <div
+              style={{
+                background: '#1e293b',
+                borderRadius: '12px',
+                padding: '32px',
+                color: '#e2e8f0',
+                fontSize: '15px',
+                lineHeight: '1.7',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {completedStudyGuide.content}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast Notification */}
