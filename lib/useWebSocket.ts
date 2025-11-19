@@ -54,7 +54,7 @@ export function useWebSocket(portalId: string | null) {
   }, [portalId]);
 
   // Function to emit node creation
-  const createNode = (nodeData: any) => {
+  const createNode = (nodeData: Record<string, unknown>) => {
     if (socketRef.current && socketRef.current.connected) {
       console.log('📤 Emitting create_node:', nodeData);
       socketRef.current.emit('create_node', {

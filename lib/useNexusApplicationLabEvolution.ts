@@ -136,7 +136,12 @@ IMPORTANT: Return ONLY valid JSON, no additional text before or after.`
         }
 
         // Ensure scenario IDs are unique
-        applicationLabConfig.scenarios = applicationLabConfig.scenarios.map((scenario: any, index: number) => ({
+        interface ScenarioType {
+          id?: string;
+          prompt: string;
+          guidance?: string;
+        }
+        applicationLabConfig.scenarios = applicationLabConfig.scenarios.map((scenario: ScenarioType, index: number) => ({
           ...scenario,
           id: scenario.id || `scenario-${index + 1}`
         }));
