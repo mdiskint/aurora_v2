@@ -312,9 +312,10 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
       <meshStandardMaterial
         color="#6D28D9"
         emissive="#6D28D9"
-        emissiveIntensity={1.5 * opacity}
-        metalness={0.0}
-        roughness={1.0}
+        emissiveIntensity={0.7 * opacity}
+        metalness={1.0}
+        roughness={0.0}
+        envMapIntensity={1.2}
         transparent={opacity < 1}
         opacity={opacity}
       />
