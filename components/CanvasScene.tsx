@@ -443,13 +443,18 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
     }
   });
 
+  // Glow color - gold for seed nexuses, matches core for others
+  const glowColor = !isApplicationLab && !isGrowing
+    ? new THREE.Color(0xFFD700) // Gold glow for seed nexuses
+    : baseColor; // Match core color for others
+
   return (
     <group>
       {/* Outer glow aura */}
       <mesh ref={glowMeshRef} position={nexus.position}>
         <sphereGeometry args={[2.8, 32, 32]} />
         <meshBasicMaterial
-          color={baseColor}
+          color={glowColor}
           transparent={true}
           opacity={0.2 * opacity}
           side={THREE.BackSide}
