@@ -319,6 +319,7 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
 function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
   const innerCoreRef = useRef<THREE.Mesh>(null);
+  const solidCoreRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
 
   // 🌱 EVOLVING NEXUS - Check evolution state
@@ -408,10 +409,16 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       }
     }
 
-    // Animate inner core
+    // Animate inner wireframe core
     if (innerCoreRef.current) {
       innerCoreRef.current.rotation.y -= 0.01;
       innerCoreRef.current.rotation.z += 0.005;
+    }
+
+    // Animate solid inner core
+    if (solidCoreRef.current) {
+      solidCoreRef.current.rotation.y += 0.0067;
+      solidCoreRef.current.rotation.x += 0.0033;
     }
   });
 
@@ -444,7 +451,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       </mesh>
 
       {/* Solid inner core - same shape as wireframe with metallic flare */}
-      <mesh position={nexus.position}>
+      <mesh ref={solidCoreRef} position={nexus.position}>
         <icosahedronGeometry args={[1.2, 1]} />
         <meshStandardMaterial
           color={baseColor}
