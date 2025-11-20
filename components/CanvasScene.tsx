@@ -333,10 +333,10 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
 
   // Color based on evolution state
   const baseColor = isApplicationLab
-    ? new THREE.Color(0xB8860B) // Gold for Application Lab
+    ? new THREE.Color(0xFFD700) // Bright gold for Application Lab
     : isGrowing
-      ? new THREE.Color(0x008B8B) // Cyan for growing
-      : new THREE.Color(0x00695C); // Emerald for seed
+      ? new THREE.Color(0x00FFFF) // Bright cyan for growing
+      : new THREE.Color(0x00FF88); // Bright vibrant emerald for seed
 
   // Create custom holographic shader material
   const holographicMaterial = useMemo(() => {
