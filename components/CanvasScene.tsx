@@ -442,6 +442,20 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
           depthWrite={false}
         />
       </mesh>
+
+      {/* Solid inner core sphere */}
+      <mesh position={nexus.position}>
+        <sphereGeometry args={[1.2, 32, 32]} />
+        <meshStandardMaterial
+          color={baseColor}
+          metalness={0.8}
+          roughness={0.2}
+          emissive={baseColor}
+          emissiveIntensity={0.5 * opacity}
+          transparent={opacity < 1}
+          opacity={opacity}
+        />
+      </mesh>
     </group>
   );
 }
