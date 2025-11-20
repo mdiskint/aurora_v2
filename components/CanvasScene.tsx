@@ -453,18 +453,6 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
           depthWrite={false}
         />
       </mesh>
-
-      {/* Particle ring for extra flair */}
-      <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[2.64, 0.15, 16, 100]} />
-        <meshBasicMaterial
-          color={baseColor}
-          transparent={true}
-          opacity={0.6 * opacity}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </mesh>
     </group>
   );
 }
