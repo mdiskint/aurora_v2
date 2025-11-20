@@ -446,10 +446,8 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       {/* Solid inner core - same shape as wireframe */}
       <mesh position={nexus.position}>
         <icosahedronGeometry args={[1.2, 1]} />
-        <meshStandardMaterial
+        <meshBasicMaterial
           color={baseColor}
-          metalness={0.9}
-          roughness={0.1}
           transparent={opacity < 1}
           opacity={opacity}
         />
