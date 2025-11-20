@@ -325,65 +325,175 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
 function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
   const glowMeshRef = useRef<THREE.Mesh>(null);
+  const innerCoreRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
 
   // 🌱 EVOLVING NEXUS - Check evolution state
   const isApplicationLab = nexus.evolutionState === 'application-lab';
   const isGrowing = nexus.evolutionState === 'growing';
 
-  // Rotate and pulse the mesh every frame
-  useFrame(({ clock }) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
-      meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
+  // Color based on evolution state
+  const baseColor = isApplicationLab
+    ? new THREE.Color(0xB8860B) // Gold for Application Lab
+    : isGrowing
+      ? new THREE.Color(0x008B8B) // Cyan for growing
+      : new THREE.Color(0x00695C); // Emerald for seed
 
-      // 🎓 Pulsing animation for Application Lab nexuses
+  // Create custom holographic shader material
+  const holographicMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        color: { value: baseColor },
+        opacity: { value: opacity },
+        cameraPosition: { value: camera.position }
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec2 vUv;
+        
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vPosition = position;
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform vec3 color;
+        uniform float opacity;
+        uniform vec3 cameraPosition;
+        
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec2 vUv;
+        
+        void main() {
+          // Fresnel effect - edges glow more
+          vec3 viewDirection = normalize(cameraPosition - vPosition);
+          float fresnel = pow(1.0 - abs(dot(viewDirection, vNormal)), 2.5);
+          
+          // Animated scan lines
+          float scanLine = sin(vUv.y * 30.0 + time * 2.0) * 0.5 + 0.5;
+          scanLine = pow(scanLine, 3.0) * 0.3;
+          
+          // Vertical energy waves
+          float wave = sin(vUv.y * 5.0 - time * 1.5) * 0.5 + 0.5;
+          wave *= sin(vUv.x * 5.0 + time * 1.2) * 0.5 + 0.5;
+          
+          // Combine effects
+          vec3 finalColor = color * (1.0 + fresnel * 1.5);
+          finalColor += vec3(scanLine) * color * 0.8;
+          finalColor += vec3(wave * 0.3) * color;
+          
+          // Pulsing brightness
+          float pulse = sin(time * 1.5) * 0.2 + 0.8;
+          finalColor *= pulse;
+          
+          // Edge highlighting
+          float edgeGlow = smoothstep(0.3, 1.0, fresnel);
+          float alpha = (0.6 + edgeGlow * 0.4) * opacity;
+          
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+  }, [baseColor, opacity, camera.position]);
+
+  // Rotate and animate
+  useFrame(({ clock }) => {
+    const time = clock.getElapsedTime();
+
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.0067;
+      meshRef.current.rotation.x += 0.0033;
+
+      // Update shader time
+      if (meshRef.current.material && 'uniforms' in meshRef.current.material) {
+        (meshRef.current.material as THREE.ShaderMaterial).uniforms.time.value = time;
+      }
+
+      // Pulsing for Application Lab
       if (isApplicationLab) {
-        const time = clock.getElapsedTime();
-        const pulse = Math.sin(time * 1.5) * 0.05 + 1.0; // Oscillate between 0.95 and 1.05
+        const pulse = Math.sin(time * 1.5) * 0.05 + 1.0;
         meshRef.current.scale.setScalar(pulse);
       }
     }
 
-    // Pulse the glow for Application Lab nexuses
-    if (glowMeshRef.current && isApplicationLab) {
-      const time = clock.getElapsedTime();
-      const glowPulse = Math.sin(time * 2) * 0.15 + 0.85; // Oscillate opacity
-      (glowMeshRef.current.material as THREE.MeshBasicMaterial).opacity = glowPulse * 0.3;
+    // Animate inner core
+    if (innerCoreRef.current) {
+      innerCoreRef.current.rotation.y -= 0.01;
+      innerCoreRef.current.rotation.z += 0.005;
+
+      // Pulsing glow
+      const corePulse = Math.sin(time * 2.0) * 0.3 + 0.7;
+      (innerCoreRef.current.material as THREE.MeshBasicMaterial).opacity = corePulse * 0.4 * opacity;
+    }
+
+    // Animate outer glow
+    if (glowMeshRef.current) {
+      const glowPulse = Math.sin(time * 1.8) * 0.15 + 0.85;
+      (glowMeshRef.current.material as THREE.MeshBasicMaterial).opacity = glowPulse * 0.2 * opacity;
     }
   });
 
-  // Color based on evolution state - darker but more vibrant/neon
-  const color = isApplicationLab
-    ? "#B8860B" // Dark vibrant gold for Application Lab
-    : isGrowing
-      ? "#008B8B" // Dark vibrant cyan for growing
-      : "#00695C"; // Dark emerald brilliance for seed
-
   return (
     <group>
-      {/* Main mesh */}
-      <mesh ref={meshRef} position={nexus.position} onClick={onClick} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-        <sphereGeometry args={[2, 32, 32]} />
+      {/* Outer glow aura */}
+      <mesh ref={glowMeshRef} position={nexus.position}>
+        <sphereGeometry args={[2.8, 32, 32]} />
         <meshBasicMaterial
-          color={color}
-          wireframe={true}
+          color={baseColor}
           transparent={true}
-          opacity={opacity}
+          opacity={0.2 * opacity}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
         />
       </mesh>
 
-      {/* 🎓 Glow effect for Application Lab nexuses */}
-      {isApplicationLab && (
-        <mesh ref={glowMeshRef} position={nexus.position}>
-          <sphereGeometry args={[2.5, 32, 32]} />
-          <meshBasicMaterial
-            color="#B8860B"
-            transparent={true}
-            opacity={0.3}
-            side={THREE.BackSide}
-          />
-        </mesh>
-      )}
+      {/* Main holographic sphere */}
+      <mesh
+        ref={meshRef}
+        position={nexus.position}
+        onClick={onClick}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        material={holographicMaterial}
+      >
+        <sphereGeometry args={[2, 64, 64]} />
+      </mesh>
+
+      {/* Inner energy core */}
+      <mesh ref={innerCoreRef} position={nexus.position}>
+        <icosahedronGeometry args={[1.2, 1]} />
+        <meshBasicMaterial
+          color={baseColor}
+          transparent={true}
+          opacity={0.4 * opacity}
+          wireframe={true}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Particle ring for extra flair */}
+      <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[2.2, 0.05, 16, 100]} />
+        <meshBasicMaterial
+          color={baseColor}
+          transparent={true}
+          opacity={0.6 * opacity}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
     </group>
   );
 }
