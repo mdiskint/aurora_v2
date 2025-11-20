@@ -417,22 +417,12 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       if (meshRef.current.material && 'uniforms' in meshRef.current.material) {
         (meshRef.current.material as THREE.ShaderMaterial).uniforms.time.value = time;
       }
-
-      // Pulsing for Application Lab
-      if (isApplicationLab) {
-        const pulse = Math.sin(time * 3.0) * 0.05 + 1.0;
-        meshRef.current.scale.setScalar(pulse);
-      }
     }
 
     // Animate inner core
     if (innerCoreRef.current) {
       innerCoreRef.current.rotation.y -= 0.01;
       innerCoreRef.current.rotation.z += 0.005;
-
-      // Pulsing glow
-      const corePulse = Math.sin(time * 4.0) * 0.3 + 0.7;
-      (innerCoreRef.current.material as THREE.MeshBasicMaterial).opacity = corePulse * 0.4 * opacity;
     }
   });
 
