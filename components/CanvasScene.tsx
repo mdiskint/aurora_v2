@@ -378,17 +378,17 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
           float wave = sin(vUv.y * 5.0 - time * 1.5) * 0.5 + 0.5;
           wave *= sin(vUv.x * 5.0 + time * 1.2) * 0.5 + 0.5;
           
-          // Combine effects without Fresnel
-          vec3 finalColor = color;
-          finalColor += vec3(scanLine) * color * 0.8;
-          finalColor += vec3(wave * 0.3) * color;
+          // Combine effects with brightness boost
+          vec3 finalColor = color * 1.5;
+          finalColor += vec3(scanLine) * color * 1.2;
+          finalColor += vec3(wave * 0.5) * color;
           
           // Pulsing brightness
           float pulse = sin(time * 1.5) * 0.2 + 0.8;
           finalColor *= pulse;
           
-          // Uniform opacity without edge glow
-          float alpha = 0.7 * opacity;
+          // Higher opacity for brighter appearance
+          float alpha = 0.9 * opacity;
           
           gl_FragColor = vec4(finalColor, alpha);
         }
@@ -442,7 +442,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
         <meshBasicMaterial
           color={baseColor}
           transparent={true}
-          opacity={0.4 * opacity}
+          opacity={0.8 * opacity}
           wireframe={true}
           blending={THREE.NormalBlending}
           depthWrite={false}
