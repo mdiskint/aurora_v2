@@ -10,7 +10,7 @@ export default function Home() {
     // loadFromLocalStorage(); // ← Removed: Canvas should start EMPTY
   }, []);
 
-  const handleChat = () => {
+  const handleExplore = () => {
     window.location.href = '/chat';
   };
 
@@ -243,7 +243,7 @@ export default function Home() {
             width: '320px',
             cursor: 'pointer'
           }}
-          onClick={handleChat}
+            onClick={handleExplore}
           >
             <div style={{
               fontSize: '48px',
@@ -254,7 +254,7 @@ export default function Home() {
               color: '#3B82F6',
               marginBottom: '12px',
               fontWeight: '700'
-            }}>Chat</h3>
+            }}>Explore</h3>
             <p style={{
               color: 'rgba(255, 255, 255, 0.7)',
               fontSize: '16px',
@@ -277,7 +277,7 @@ export default function Home() {
                 cursor: 'pointer'
               }}
             >
-              Start Chatting
+              Start Exploring
             </button>
           </div>
 
@@ -290,7 +290,7 @@ export default function Home() {
             width: '320px',
             cursor: 'pointer'
           }}
-          onClick={handleCreateCourse}
+            onClick={handleCreateCourse}
           >
             <div style={{
               fontSize: '48px',
