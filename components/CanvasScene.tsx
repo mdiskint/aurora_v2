@@ -249,22 +249,15 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
             transparent={true}
             opacity={opacity}
           />
-        ) : isAtomizationNode ? (
-          // Other atomization nodes: Use basic material like nexus for vibrant colors
-          <meshBasicMaterial
-            color={color}
-            transparent={opacity < 1}
-            opacity={opacity}
-          />
         ) : (
-          // All other nodes: Standard material with metallic flair
+          // All artifact nodes: Reflective metallic material for shiny facets
           <meshStandardMaterial
             color={color}
-            metalness={0.6}  // Metallic flair for shiny facets
-            roughness={0.2}  // Low roughness for reflective surfaces
+            metalness={1.0}  // Full metallic for maximum reflections
+            roughness={0.0}  // Zero roughness for mirror-like reflections
             emissive={emissive}
             emissiveIntensity={emissiveIntensity * opacity}
-            envMapIntensity={1.2}  // Increased for better reflections
+            envMapIntensity={1.2}  // Enhanced reflections
             flatShading={false}
             transparent={opacity < 1}
             opacity={opacity}
