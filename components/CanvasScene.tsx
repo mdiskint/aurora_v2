@@ -450,8 +450,6 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
           color={baseColor}
           metalness={0.9}
           roughness={0.1}
-          emissive={baseColor}
-          emissiveIntensity={0.2 * opacity}
           transparent={opacity < 1}
           opacity={opacity}
         />
