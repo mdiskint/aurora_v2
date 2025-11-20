@@ -395,7 +395,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       `,
       transparent: true,
       side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       depthWrite: false
     });
   }, [baseColor, opacity, camera.position]);
