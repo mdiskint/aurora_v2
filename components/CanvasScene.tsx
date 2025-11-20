@@ -454,12 +454,13 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       <mesh ref={solidCoreRef} position={nexus.position}>
         <icosahedronGeometry args={[1.2, 1]} />
         <meshStandardMaterial
-          color={baseColor}
+          color={new THREE.Color(0x00AA66)}
           metalness={1.0}
           roughness={0.0}
           emissive={baseColor}
-          emissiveIntensity={0.1 * opacity}
+          emissiveIntensity={0.15 * opacity}
           envMapIntensity={0.8}
+          flatShading={true}
           transparent={opacity < 1}
           opacity={opacity}
         />
