@@ -433,18 +433,18 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
         onPointerLeave={onPointerLeave}
         material={holographicMaterial}
       >
-        <sphereGeometry args={[2.4, 64, 64]} />
+        <sphereGeometry args={[2.88, 64, 64]} />
       </mesh>
 
       {/* Inner energy core */}
       <mesh ref={innerCoreRef} position={nexus.position}>
-        <icosahedronGeometry args={[1.44, 1]} />
+        <icosahedronGeometry args={[1.73, 1]} />
         <meshBasicMaterial
           color={baseColor}
           transparent={true}
           opacity={0.4 * opacity}
           wireframe={true}
-          blending={THREE.AdditiveBlending}
+          blending={THREE.NormalBlending}
           depthWrite={false}
         />
       </mesh>
