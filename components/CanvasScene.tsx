@@ -448,12 +448,12 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
         onPointerLeave={onPointerLeave}
         material={holographicMaterial}
       >
-        <sphereGeometry args={[2, 64, 64]} />
+        <sphereGeometry args={[2.4, 64, 64]} />
       </mesh>
 
       {/* Inner energy core */}
       <mesh ref={innerCoreRef} position={nexus.position}>
-        <icosahedronGeometry args={[1.2, 1]} />
+        <icosahedronGeometry args={[1.44, 1]} />
         <meshBasicMaterial
           color={baseColor}
           transparent={true}
@@ -466,7 +466,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
 
       {/* Particle ring for extra flair */}
       <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[2.2, 0.05, 16, 100]} />
+        <torusGeometry args={[2.64, 0.06, 16, 100]} />
         <meshBasicMaterial
           color={baseColor}
           transparent={true}
