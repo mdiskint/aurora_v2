@@ -370,10 +370,6 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
         varying vec2 vUv;
         
         void main() {
-          // Fresnel effect - edges glow more
-          vec3 viewDirection = normalize(cameraPosition - vPosition);
-          float fresnel = pow(1.0 - abs(dot(viewDirection, vNormal)), 2.5);
-          
           // Animated scan lines
           float scanLine = sin(vUv.y * 30.0 + time * 2.0) * 0.5 + 0.5;
           scanLine = pow(scanLine, 3.0) * 0.3;
@@ -382,8 +378,8 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
           float wave = sin(vUv.y * 5.0 - time * 1.5) * 0.5 + 0.5;
           wave *= sin(vUv.x * 5.0 + time * 1.2) * 0.5 + 0.5;
           
-          // Combine effects
-          vec3 finalColor = color * (1.0 + fresnel * 1.5);
+          // Combine effects without Fresnel
+          vec3 finalColor = color;
           finalColor += vec3(scanLine) * color * 0.8;
           finalColor += vec3(wave * 0.3) * color;
           
@@ -391,9 +387,8 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
           float pulse = sin(time * 1.5) * 0.2 + 0.8;
           finalColor *= pulse;
           
-          // Edge highlighting
-          float edgeGlow = smoothstep(0.3, 1.0, fresnel);
-          float alpha = (0.6 + edgeGlow * 0.4) * opacity;
+          // Uniform opacity without edge glow
+          float alpha = 0.7 * opacity;
           
           gl_FragColor = vec4(finalColor, alpha);
         }
