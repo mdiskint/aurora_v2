@@ -324,7 +324,6 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
 
 function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const glowMeshRef = useRef<THREE.Mesh>(null);
   const innerCoreRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
 
@@ -435,34 +434,11 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       const corePulse = Math.sin(time * 2.0) * 0.3 + 0.7;
       (innerCoreRef.current.material as THREE.MeshBasicMaterial).opacity = corePulse * 0.4 * opacity;
     }
-
-    // Animate outer glow
-    if (glowMeshRef.current) {
-      const glowPulse = Math.sin(time * 1.8) * 0.15 + 0.85;
-      (glowMeshRef.current.material as THREE.MeshBasicMaterial).opacity = glowPulse * 0.2 * opacity;
-    }
   });
 
-  // Glow color - gold for seed nexuses, matches core for others
-  const glowColor = !isApplicationLab && !isGrowing
-    ? new THREE.Color(0xFFD700) // Gold glow for seed nexuses
-    : baseColor; // Match core color for others
 
   return (
     <group>
-      {/* Outer glow aura */}
-      <mesh ref={glowMeshRef} position={nexus.position}>
-        <sphereGeometry args={[2.8, 32, 32]} />
-        <meshBasicMaterial
-          color={glowColor}
-          transparent={true}
-          opacity={0.2 * opacity}
-          side={THREE.BackSide}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </mesh>
-
       {/* Main holographic sphere */}
       <mesh
         ref={meshRef}
