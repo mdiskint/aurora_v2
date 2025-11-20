@@ -420,7 +420,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
 
       // Pulsing for Application Lab
       if (isApplicationLab) {
-        const pulse = Math.sin(time * 1.5) * 0.05 + 1.0;
+        const pulse = Math.sin(time * 3.0) * 0.05 + 1.0;
         meshRef.current.scale.setScalar(pulse);
       }
     }
@@ -431,7 +431,7 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
       innerCoreRef.current.rotation.z += 0.005;
 
       // Pulsing glow
-      const corePulse = Math.sin(time * 2.0) * 0.3 + 0.7;
+      const corePulse = Math.sin(time * 4.0) * 0.3 + 0.7;
       (innerCoreRef.current.material as THREE.MeshBasicMaterial).opacity = corePulse * 0.4 * opacity;
     }
   });
