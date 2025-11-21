@@ -183,6 +183,7 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
             ref={videoRef}
             src={videoUrl}
             controls
+            muted={false}
             className="absolute top-0 left-0 w-full h-full rounded-lg border-2 border-cyan-500/30"
           />
         </div>
