@@ -43,6 +43,22 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
     // Set start time when video loads
     const handleLoadedMetadata = () => {
       setVideoDuration(video.duration);
+      
+      // Debug: Check for audio tracks
+      const audioTracks = video.audioTracks;
+      const hasAudio = audioTracks && audioTracks.length > 0;
+      console.log('🎵 Video audio debug:', {
+        hasAudioTracks: hasAudio,
+        audioTrackCount: audioTracks?.length || 0,
+        muted: video.muted,
+        volume: video.volume,
+        videoSrc: videoUrl.substring(0, 50) + '...'
+      });
+      
+      if (!hasAudio) {
+        console.warn('⚠️ No audio tracks detected in video!');
+      }
+      
       if (startTime && startTime > 0) {
         video.currentTime = startTime;
       }
