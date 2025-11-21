@@ -1577,7 +1577,7 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
             {haloColor && (
               <>
                 <mesh position={displayNode.position} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[size * 1.65, 0.15, 8, 20]} />
+                  <torusGeometry args={[size * 1.65, 0.135, 8, 20]} />
                   <meshStandardMaterial
                     ref={(mat) => {
                       if (mat && haloType) {
