@@ -203,7 +203,7 @@ export default function Home() {
           textShadow: '0 0 80px rgba(96, 239, 255, 0.3)',
           lineHeight: '1.1'
         }}>
-          Aurora
+          Astryon
         </div>
 
         {/* Tagline */}
