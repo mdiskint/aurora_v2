@@ -74,6 +74,8 @@ export default function CourseBuilderPage() {
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
   const [isAtomizing, setIsAtomizing] = useState(false);
   const [questionGenerationProgress, setQuestionGenerationProgress] = useState({ current: 0, total: 0 });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isAnalyzingVideo, setIsAnalyzingVideo] = useState(false);
 
   const [courseData, setCourseData] = useState<CourseData>({
     title: '',
@@ -205,6 +207,54 @@ export default function CourseBuilderPage() {
       alert(`Failed to atomize content: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsAtomizing(false);
+    }
+  };
+
+  // Handle video upload and analysis
+  const handleVideoUpload = async () => {
+    if (!selectedFile) {
+      alert('Please select a video file first.');
+      return;
+    }
+
+    setIsAnalyzingVideo(true);
+    console.log('🎥 Uploading video for analysis:', selectedFile.name);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const response = await fetch('/api/analyze-video', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Video analysis complete:', data);
+
+      // Update course data with AI-generated content
+      setCourseData(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        description: data.description || prev.description,
+        fullTextContent: data.fullTextContent || prev.fullTextContent,
+        timestamps: data.timestamps || prev.timestamps,
+        sectionContents: data.sectionContents || prev.sectionContents,
+        // If timestamps are provided, we can infer sections
+        // sectionContents will be populated by the API
+      }));
+
+      alert('✨ Video analysis complete! Course content has been generated.');
+    } catch (error) {
+      console.error('❌ Error analyzing video:', error);
+      alert(`Failed to analyze video: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsAnalyzingVideo(false);
     }
   };
 
@@ -859,6 +909,62 @@ export default function CourseBuilderPage() {
           {/* Step 1: Basic Info */}
           {currentStep === 1 && (
             <div className="space-y-6">
+              {/* 🎥 AI Video Import */}
+              <div className="bg-slate-800/50 p-6 rounded-xl border border-cyan-500/30 mb-8">
+                <h3 className="text-lg font-bold text-cyan-300 mb-2 flex items-center gap-2">
+                  <span>🎥</span> AI Video Import (Gemini 2.0 Flash)
+                </h3>
+                <p className="text-sm text-gray-400 mb-4">
+                  Upload a video file (max 20MB) and let Gemini automatically generate the course title, description, content, and structure for you.
+                </p>
+
+                <div className="flex items-end gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Select Video File
+                    </label>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
+                      className="block w-full text-sm text-gray-400
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-cyan-500/10 file:text-cyan-300
+                        hover:file:bg-cyan-500/20
+                        cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleVideoUpload}
+                    disabled={!selectedFile || isAnalyzingVideo}
+                    className={`px-6 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${!selectedFile || isAnalyzingVideo
+                        ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:shadow-lg hover:shadow-cyan-500/20'
+                      }`}
+                  >
+                    {isAnalyzingVideo ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <span>✨</span> Analyze Video
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative flex items-center py-4">
+                <div className="flex-grow border-t border-gray-700"></div>
+                <span className="flex-shrink-0 mx-4 text-gray-500 text-sm">OR Enter Manually</span>
+                <div className="flex-grow border-t border-gray-700"></div>
+              </div>
+
               <h2 className="text-xl font-bold text-cyan-300 mb-4">Basic Information</h2>
 
               <div>
