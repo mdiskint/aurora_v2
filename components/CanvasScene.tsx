@@ -1577,8 +1577,8 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
             {haloColor && (
               <>
                 <mesh position={displayNode.position} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[size * 1.5, 0.08, 16, 32]} />
-                  <meshBasicMaterial
+                  <torusGeometry args={[size * 1.5, 0.15, 8, 20]} />
+                  <meshStandardMaterial
                     ref={(mat) => {
                       if (mat && haloType) {
                         if (haloType === 'selected') {
@@ -1591,6 +1591,11 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
                       }
                     }}
                     color={haloColor}
+                    metalness={1.0}
+                    roughness={0.0}
+                    emissive={haloColor}
+                    emissiveIntensity={0.3}
+                    flatShading={true}
                     transparent
                     opacity={(haloType === 'selected' ? 0.8 : 0.9) * nodeOpacity}
                   />
