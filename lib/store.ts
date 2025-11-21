@@ -268,7 +268,7 @@ if (typeof window !== 'undefined') {
   const originalRemoveItem = localStorage.removeItem.bind(localStorage);
   const originalClear = localStorage.clear.bind(localStorage);
 
-  localStorage.setItem = function(key: string, value: string) {
+  localStorage.setItem = function (key: string, value: string) {
     if (key === 'aurora-portal-data') {
       const stack = new Error().stack || '';
       const caller = stack.split('\n')[2]?.trim() || 'unknown';
@@ -283,7 +283,7 @@ if (typeof window !== 'undefined') {
     return originalSetItem(key, value);
   };
 
-  localStorage.removeItem = function(key: string) {
+  localStorage.removeItem = function (key: string) {
     if (key === 'aurora-portal-data') {
       const stack = new Error().stack || '';
       const caller = stack.split('\n')[2]?.trim() || 'unknown';
@@ -298,7 +298,7 @@ if (typeof window !== 'undefined') {
     return originalRemoveItem(key);
   };
 
-  localStorage.clear = function() {
+  localStorage.clear = function () {
     const stack = new Error().stack || '';
     const caller = stack.split('\n')[2]?.trim() || 'unknown';
     console.log('🔥 ==========================================');
@@ -410,6 +410,9 @@ interface CanvasStore {
   hoveredNodeId: string | null;
   connectionModeNodeA: string | null;
   connectionModeActive: boolean;
+
+  // 🤖 AI PROVIDER
+  aiProvider: 'anthropic' | 'gemini';
   selectedNodesForConnection: string[];
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
@@ -430,8 +433,9 @@ interface CanvasStore {
   setShowReplyModal: (show: boolean) => void;
   setQuotedText: (text: string | null) => void;
   setHoveredNode: (id: string | null) => void;
-   startConnectionMode: (nodeId: string) => void;
+  startConnectionMode: (nodeId: string) => void;
   clearConnectionMode: () => void;
+  setAiProvider: (provider: 'anthropic' | 'gemini') => void;
   createConnection: (nodeAId: string, nodeBId: string) => void;
   addNodeToConnection: (nodeId: string) => void;
   createMultiConnection: (nodeIds: string[]) => void;
@@ -510,7 +514,7 @@ interface CanvasStore {
   atomizeUniverse: (
     universeId: string,
     onProgress?: (current: number, total: number, status: string, errors: string[]) => void
-  ) => Promise<{success: boolean; newUniverseIds: string[]; error?: string; errors: string[]}>;
+  ) => Promise<{ success: boolean; newUniverseIds: string[]; error?: string; errors: string[] }>;
 
   // 🧠 UNIVERSE ACTIVATION (for GAP Mode cross-universe analysis)
   activatedUniverseIds: string[];
@@ -537,9 +541,9 @@ interface CanvasStore {
   enableApplicationLabMode: () => void;
   disableApplicationLabMode: () => void;
   applicationLabAnalysis: {
-    topics: Array<{id: string; name: string; description: string; nodeIds: string[]}>;
-    cases: Array<{id: string; name: string; summary: string; nodeIds: string[]}>;
-    doctrines: Array<{id: string; name: string; explanation: string; nodeIds: string[]}>;
+    topics: Array<{ id: string; name: string; description: string; nodeIds: string[] }>;
+    cases: Array<{ id: string; name: string; summary: string; nodeIds: string[] }>;
+    doctrines: Array<{ id: string; name: string; explanation: string; nodeIds: string[] }>;
     analyzedAt: number | null;
   } | null;
   isAnalyzingUniverse: boolean;
@@ -598,6 +602,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   connectionModeNodeA: null,
   connectionModeActive: false,
   selectedNodesForConnection: [],
+
+  // 🤖 AI PROVIDER SELECTION
+  aiProvider: 'anthropic' as 'anthropic' | 'gemini',
 
   // 💾 SAVE TO LOCALSTORAGE + INDEXEDDB
   saveToLocalStorage: async () => {
@@ -1100,20 +1107,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         };
 
         const newNodes: { [id: string]: Node } = {};
-        
+
         data.nodes.forEach((jsonNode: any, index: number) => {
           const baseRadius = 6;
           const radiusIncrement = 0.4;
           const radius = baseRadius + (index * radiusIncrement);
-          
+
           const nodesPerRing = 6;
           const ringIndex = Math.floor(index / nodesPerRing);
           const positionInRing = index % nodesPerRing;
-          
+
           const goldenAngle = Math.PI * (3 - Math.sqrt(5));
           const ringRotationOffset = ringIndex * goldenAngle;
           const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-          
+
           let y = 0;
           if (ringIndex > 0) {
             const step = Math.ceil(ringIndex / 2);
@@ -1123,7 +1130,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
           const x = -radius * Math.cos(angle); // Flipped: first node on left
           const z = radius * Math.sin(angle);
-          
+
           newNodes[jsonNode.id] = {
             id: jsonNode.id,
             position: [x, y, z],
@@ -1133,16 +1140,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             children: []
           };
         });
-        
+
         set({
           nexuses: [nexus],
           nodes: newNodes,
           selectedId: null
         });
-        
+
         // 💾 SAVE TO LOCALSTORAGE
         get().saveToLocalStorage();
-        
+
         console.log(`📚 Loaded academic paper: ${data.nodes.length} sections`);
       })
       .catch(error => {
@@ -1182,19 +1189,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     data.sections.forEach((section: any, index: number) => {
       const nodeId = `node-${index}`;
-      
+
       const baseRadius = 6;
       const radiusIncrement = 0.4;
       const radius = baseRadius + (index * radiusIncrement);
-      
+
       const nodesPerRing = 6;
       const ringIndex = Math.floor(index / nodesPerRing);
       const positionInRing = index % nodesPerRing;
-      
+
       const goldenAngle = Math.PI * (3 - Math.sqrt(5));
       const ringRotationOffset = ringIndex * goldenAngle;
       const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-      
+
       let y = 0;
       if (ringIndex > 0) {
         const step = Math.ceil(ringIndex / 2);
@@ -1267,7 +1274,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
       return { nodes: updatedNodes };
     });
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
   },
@@ -1331,7 +1338,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   exportToWordDoc: async () => {
     const state = get();
     const { nodes, nexuses } = state;
-    
+
     const nexus = nexuses[0];
     if (!nexus) {
       alert('No paper loaded to export!');
@@ -1367,7 +1374,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           spacing: { before: 200, after: 200 }
         })
       );
-      
+
       const abstractParagraphs = nexus.content.split('\n\n');
       abstractParagraphs.forEach(para => {
         if (para.trim()) {
@@ -1427,7 +1434,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       alert('Failed to export document. See console for details.');
     }
   },
-  
+
   addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => {
     let newNodeId = '';
     let isConnectionNodeParent = false;
@@ -1474,101 +1481,101 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         const parentNexus = state.nexuses.find(n => n.id === parentId);
 
         if (parentNexus) {
-        const nexusPos = parentNexus.position;
-        const baseRadius = 6;
-        const radiusIncrement = 0.4;
-        const radius = baseRadius + (siblingIndex * radiusIncrement);
-        
-        const nodesPerRing = 6;
-        const ringIndex = Math.floor(siblingIndex / nodesPerRing);
-        const positionInRing = siblingIndex % nodesPerRing;
-        
-        const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-        const ringRotationOffset = ringIndex * goldenAngle;
-        const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-        
-        let y = 0;
-        if (ringIndex > 0) {
-          const step = Math.ceil(ringIndex / 2);
-          const direction = ringIndex % 2 === 1 ? 1 : -1;
-          y = step * 2.5 * direction;
-        }
+          const nexusPos = parentNexus.position;
+          const baseRadius = 6;
+          const radiusIncrement = 0.4;
+          const radius = baseRadius + (siblingIndex * radiusIncrement);
 
-        const x = nexusPos[0] - radius * Math.cos(angle); // Flipped: first node on left
-        const z = nexusPos[2] + radius * Math.sin(angle);
+          const nodesPerRing = 6;
+          const ringIndex = Math.floor(siblingIndex / nodesPerRing);
+          const positionInRing = siblingIndex % nodesPerRing;
 
-        position = [x, y, z];
-        console.log(`➕ L1 Node: Ring ${ringIndex}, Position ${positionInRing}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
-      } else {
-        const parentNode = state.nodes[parentId];
-        if (!parentNode) return state;
+          const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+          const ringRotationOffset = ringIndex * goldenAngle;
+          const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
 
-        const nexus = get().getNexusForNode(parentId);
-        if (!nexus) return state;
-
-        const nexusPos = nexus.position;
-        const directionX = parentNode.position[0] - nexusPos[0];
-        const directionY = parentNode.position[1] - nexusPos[1];
-        const directionZ = parentNode.position[2] - nexusPos[2];
-
-        const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-
-        // Guard against zero-length direction vector
-        if (dirLength < 0.001) {
-          console.warn('⚠️ addNode: Parent at same position as nexus, using simple offset');
-          position = [
-            parentNode.position[0] + 2,
-            parentNode.position[1] + 1,
-            parentNode.position[2] + 2
-          ];
-        } else {
-          const normDirX = directionX / dirLength;
-          const normDirY = directionY / dirLength;
-          const normDirZ = directionZ / dirLength;
-
-          const baseDistance = 3;
-          const distanceIncrement = 0.8;
-          const distance = baseDistance + (siblingIndex * distanceIncrement);
-
-          const turnsPerNode = 0.3;
-          const helixRadius = 1.5;
-          const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-
-          const upX = 0, upY = 1, upZ = 0;
-
-          let rightX = normDirY * upZ - normDirZ * upY;
-          let rightY = normDirZ * upX - normDirX * upZ;
-          let rightZ = normDirX * upY - normDirY * upX;
-          const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-
-          // Guard against zero-length right vector (happens with vertical directions)
-          if (rightLength < 0.001) {
-            console.warn('⚠️ addNode: Right vector is zero-length, using alternative axis');
-            rightX = 1;
-            rightY = 0;
-            rightZ = 0;
-          } else {
-            rightX /= rightLength;
-            rightY /= rightLength;
-            rightZ /= rightLength;
+          let y = 0;
+          if (ringIndex > 0) {
+            const step = Math.ceil(ringIndex / 2);
+            const direction = ringIndex % 2 === 1 ? 1 : -1;
+            y = step * 2.5 * direction;
           }
 
-          const upPerpX = normDirY * rightZ - normDirZ * rightY;
-          const upPerpY = normDirZ * rightX - normDirX * rightZ;
-          const upPerpZ = normDirX * rightY - normDirY * rightX;
-
-          const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-          const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-          const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-
-          const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-          const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-          const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+          const x = nexusPos[0] - radius * Math.cos(angle); // Flipped: first node on left
+          const z = nexusPos[2] + radius * Math.sin(angle);
 
           position = [x, y, z];
-          console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+          console.log(`➕ L1 Node: Ring ${ringIndex}, Position ${positionInRing}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+        } else {
+          const parentNode = state.nodes[parentId];
+          if (!parentNode) return state;
+
+          const nexus = get().getNexusForNode(parentId);
+          if (!nexus) return state;
+
+          const nexusPos = nexus.position;
+          const directionX = parentNode.position[0] - nexusPos[0];
+          const directionY = parentNode.position[1] - nexusPos[1];
+          const directionZ = parentNode.position[2] - nexusPos[2];
+
+          const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
+
+          // Guard against zero-length direction vector
+          if (dirLength < 0.001) {
+            console.warn('⚠️ addNode: Parent at same position as nexus, using simple offset');
+            position = [
+              parentNode.position[0] + 2,
+              parentNode.position[1] + 1,
+              parentNode.position[2] + 2
+            ];
+          } else {
+            const normDirX = directionX / dirLength;
+            const normDirY = directionY / dirLength;
+            const normDirZ = directionZ / dirLength;
+
+            const baseDistance = 3;
+            const distanceIncrement = 0.8;
+            const distance = baseDistance + (siblingIndex * distanceIncrement);
+
+            const turnsPerNode = 0.3;
+            const helixRadius = 1.5;
+            const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
+
+            const upX = 0, upY = 1, upZ = 0;
+
+            let rightX = normDirY * upZ - normDirZ * upY;
+            let rightY = normDirZ * upX - normDirX * upZ;
+            let rightZ = normDirX * upY - normDirY * upX;
+            const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
+
+            // Guard against zero-length right vector (happens with vertical directions)
+            if (rightLength < 0.001) {
+              console.warn('⚠️ addNode: Right vector is zero-length, using alternative axis');
+              rightX = 1;
+              rightY = 0;
+              rightZ = 0;
+            } else {
+              rightX /= rightLength;
+              rightY /= rightLength;
+              rightZ /= rightLength;
+            }
+
+            const upPerpX = normDirY * rightZ - normDirZ * rightY;
+            const upPerpY = normDirZ * rightX - normDirX * rightZ;
+            const upPerpZ = normDirX * rightY - normDirY * rightX;
+
+            const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
+            const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
+            const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
+
+            const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
+            const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
+            const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+
+            position = [x, y, z];
+            console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+          }
         }
-      }
       }
 
       // CRITICAL: Validate position for NaN values before creating node
@@ -1605,16 +1612,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         children: [],
         nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'), // Default based on context
       };
-      
+
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
-      
+
       if (state.nodes[parentId]) {
         updatedNodes[parentId] = {
           ...state.nodes[parentId],
           children: [...state.nodes[parentId].children, newNodeId],
         };
       }
-      
+
       return { nodes: updatedNodes };
     });
 
@@ -1730,7 +1737,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // This prevents saving incomplete universes (nexus without nodes)
     console.log('ℹ️ Universe will be saved by ChatInterface after nodes are added');
     console.log('═══════════════════════════════════');
-    
+
     // Broadcast nexus creation to WebSocket
     if (newNexus) {
       console.log('🔍 Checking for socket...', typeof window !== 'undefined' ? (window as any).socket : 'window is undefined');
@@ -1750,31 +1757,31 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   addUserMessage: (content: string, parentId: string) => {
     let newNodeId = '';
-    
+
     set((state) => {
       newNodeId = `user-${Date.now()}`;
-      
+
       const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
       const siblingIndex = siblings.length;
-      
+
       let position: [number, number, number];
-      
+
       const parentNexus = state.nexuses.find(n => n.id === parentId);
-      
+
       if (parentNexus) {
         const nexusPos = parentNexus.position;
         const baseRadius = 6;
         const radiusIncrement = 0.4;
         const radius = baseRadius + (siblingIndex * radiusIncrement);
-        
+
         const nodesPerRing = 6;
         const ringIndex = Math.floor(siblingIndex / nodesPerRing);
         const positionInRing = siblingIndex % nodesPerRing;
-        
+
         const goldenAngle = Math.PI * (3 - Math.sqrt(5));
         const ringRotationOffset = ringIndex * goldenAngle;
         const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-        
+
         let y = 0;
         if (ringIndex > 0) {
           const step = Math.ceil(ringIndex / 2);
@@ -1789,30 +1796,30 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       } else {
         const parentNode = state.nodes[parentId];
         if (!parentNode) return state;
-        
+
         const nexus = get().getNexusForNode(parentId);
         if (!nexus) return state;
-        
+
         const nexusPos = nexus.position;
         const directionX = parentNode.position[0] - nexusPos[0];
         const directionY = parentNode.position[1] - nexusPos[1];
         const directionZ = parentNode.position[2] - nexusPos[2];
-        
+
         const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
         const normDirX = directionX / dirLength;
         const normDirY = directionY / dirLength;
         const normDirZ = directionZ / dirLength;
-        
+
         const baseDistance = 3;
         const distanceIncrement = 0.8;
         const distance = baseDistance + (siblingIndex * distanceIncrement);
-        
+
         const turnsPerNode = 0.3;
         const helixRadius = 1.5;
         const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-        
+
         const upX = 0, upY = 1, upZ = 0;
-        
+
         let rightX = normDirY * upZ - normDirZ * upY;
         let rightY = normDirZ * upX - normDirX * upZ;
         let rightZ = normDirX * upY - normDirY * upX;
@@ -1820,22 +1827,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         rightX /= rightLength;
         rightY /= rightLength;
         rightZ /= rightLength;
-        
+
         const upPerpX = normDirY * rightZ - normDirZ * rightY;
         const upPerpY = normDirZ * rightX - normDirX * rightZ;
         const upPerpZ = normDirX * rightY - normDirY * rightX;
-        
+
         const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
         const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
         const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-        
+
         const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
         const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
         const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-        
+
         position = [x, y, z];
       }
-      
+
       const newNode: Node = {
         id: newNodeId,
         position,
@@ -1845,24 +1852,24 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         children: [],
         isAI: false,
       };
-      
+
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
-      
+
       if (state.nodes[parentId]) {
         updatedNodes[parentId] = {
           ...state.nodes[parentId],
           children: [...state.nodes[parentId].children, newNodeId],
         };
       }
-      
+
       console.log(`💜 User message node created: ${newNodeId}`);
-      
+
       return { nodes: updatedNodes, selectedId: newNodeId };
     });
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
-    
+
     return newNodeId;
   },
 
@@ -1881,30 +1888,30 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       // Check if parent is a connection node (Socratic mode)
       isConnectionNodeParent = parentNode.isConnectionNode || false;
-      
+
       const nexus = get().getNexusForNode(parentId);
       if (!nexus) return state;
-      
+
       const nexusPos = nexus.position;
       const directionX = parentNode.position[0] - nexusPos[0];
       const directionY = parentNode.position[1] - nexusPos[1];
       const directionZ = parentNode.position[2] - nexusPos[2];
-      
+
       const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
       const normDirX = directionX / dirLength;
       const normDirY = directionY / dirLength;
       const normDirZ = directionZ / dirLength;
-      
+
       const baseDistance = 3;
       const distanceIncrement = 0.8;
       const distance = baseDistance + (siblingIndex * distanceIncrement);
-      
+
       const turnsPerNode = 0.3;
       const helixRadius = 1.5;
       const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-      
+
       const upX = 0, upY = 1, upZ = 0;
-      
+
       let rightX = normDirY * upZ - normDirZ * upY;
       let rightY = normDirZ * upX - normDirX * upZ;
       let rightZ = normDirX * upY - normDirY * upX;
@@ -1912,21 +1919,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       rightX /= rightLength;
       rightY /= rightLength;
       rightZ /= rightLength;
-      
+
       const upPerpX = normDirY * rightZ - normDirZ * rightY;
       const upPerpY = normDirZ * rightX - normDirX * rightZ;
       const upPerpZ = normDirX * rightY - normDirY * rightX;
-      
+
       const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
       const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
       const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-      
+
       const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
       const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
       const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-      
+
       const position: [number, number, number] = [x, y, z];
-      
+
       const newNode: Node = {
         id: newNodeId,
         position,
@@ -1937,21 +1944,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         isAI: true,
         nodeType: 'ai-response',
       };
-      
+
       const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
-      
+
       if (state.nodes[parentId]) {
         updatedNodes[parentId] = {
           ...state.nodes[parentId],
           children: [...state.nodes[parentId].children, newNodeId],
         };
       }
-      
+
       console.log(`🟠 AI response node created: ${newNodeId}`);
-      
+
       return { nodes: updatedNodes };
     });
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
 
@@ -2169,9 +2176,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   startConnectionMode: (nodeId: string) => {
     console.log('🔗 Connection mode started with node:', nodeId);
-    set({ 
+    set({
       connectionModeActive: true,
-      connectionModeNodeA: nodeId 
+      connectionModeNodeA: nodeId
     });
   },
 
@@ -2182,6 +2189,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       connectionModeNodeA: null,
       selectedNodesForConnection: []
     });
+  },
+
+  // 🤖 SET AI PROVIDER
+  setAiProvider: (provider: 'anthropic' | 'gemini') => {
+    console.log('🤖 Switching AI provider to:', provider);
+    set({ aiProvider: provider });
   },
 
   addNodeToConnection: (nodeId: string) => {
@@ -2203,82 +2216,82 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
-createConnection: (nodeAId: string, nodeBId: string) => {
-  console.log('🔗 Creating connection node between', nodeAId, 'and', nodeBId);
-  
-  let newConnectionNodeId = '';
-  
-  set((state) => {
-    const nodeA = state.nodes[nodeAId];
-    const nodeB = state.nodes[nodeBId];
-    
-    if (!nodeA || !nodeB) {
-      console.error('❌ One or both nodes not found:', nodeAId, nodeBId);
-      return state;
-    }
-    
-    // Generate new node ID
-    newConnectionNodeId = `connection-${Date.now()}`;
-    
-    // Calculate position: midpoint between A and B, raised up
-    const midX = (nodeA.position[0] + nodeB.position[0]) / 2;
-    const midY = (nodeA.position[1] + nodeB.position[1]) / 2;
-    const midZ = (nodeA.position[2] + nodeB.position[2]) / 2;
-    
-    // Add upward curve to avoid other nodes
-    const upwardOffset = 4; // Height above midpoint
-    const position: [number, number, number] = [midX, midY + upwardOffset, midZ];
-    
-    console.log(`✨ Connection node position: [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
-    
-    // Create the new connection node
-    const newNode: Node = {
-      id: newConnectionNodeId,
-      position,
-      title: `Connection ${new Date().toLocaleTimeString()}`,
-      content: '', // Empty - user will fill it in
-      parentId: nodeA.parentId, // Use Node A's parent
-      children: [],
-      isConnectionNode: true,
-      connectionNodes: [nodeAId, nodeBId], // Store both inspiration nodes
-      nodeType: 'socratic-question', // Connection nodes are Socratic questions (golden stars)
-    };
-    
-    const updatedNodes = { ...state.nodes, [newConnectionNodeId]: newNode };
-    
-    console.log('✅ Connection node created:', newConnectionNodeId);
-    
-    return { 
-      nodes: updatedNodes,
-      selectedId: newConnectionNodeId, // Select the new node
-    };
-  });
-  
-  // Save to localStorage
-  get().saveToLocalStorage();
+  createConnection: (nodeAId: string, nodeBId: string) => {
+    console.log('🔗 Creating connection node between', nodeAId, 'and', nodeBId);
 
-  // Open the unified modal for the user to interact with the connection
-  setTimeout(() => {
-    get().setShowContentOverlay(true);
-  }, 100);
-  
-  // Emit to backend via WebSocket
-  const socket = (window as any).socket;
-  if (socket) {
-    const newNode = get().nodes[newConnectionNodeId];
-    socket.emit('create_node', {
-      portalId: 'default-portal',
-      id: newNode.id,
-      position: newNode.position,
-      title: newNode.title,
-      content: newNode.content,
-      parentId: newNode.parentId,
-      isConnectionNode: true,
-      connectionNodes: [nodeAId, nodeBId],
+    let newConnectionNodeId = '';
+
+    set((state) => {
+      const nodeA = state.nodes[nodeAId];
+      const nodeB = state.nodes[nodeBId];
+
+      if (!nodeA || !nodeB) {
+        console.error('❌ One or both nodes not found:', nodeAId, nodeBId);
+        return state;
+      }
+
+      // Generate new node ID
+      newConnectionNodeId = `connection-${Date.now()}`;
+
+      // Calculate position: midpoint between A and B, raised up
+      const midX = (nodeA.position[0] + nodeB.position[0]) / 2;
+      const midY = (nodeA.position[1] + nodeB.position[1]) / 2;
+      const midZ = (nodeA.position[2] + nodeB.position[2]) / 2;
+
+      // Add upward curve to avoid other nodes
+      const upwardOffset = 4; // Height above midpoint
+      const position: [number, number, number] = [midX, midY + upwardOffset, midZ];
+
+      console.log(`✨ Connection node position: [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
+
+      // Create the new connection node
+      const newNode: Node = {
+        id: newConnectionNodeId,
+        position,
+        title: `Connection ${new Date().toLocaleTimeString()}`,
+        content: '', // Empty - user will fill it in
+        parentId: nodeA.parentId, // Use Node A's parent
+        children: [],
+        isConnectionNode: true,
+        connectionNodes: [nodeAId, nodeBId], // Store both inspiration nodes
+        nodeType: 'socratic-question', // Connection nodes are Socratic questions (golden stars)
+      };
+
+      const updatedNodes = { ...state.nodes, [newConnectionNodeId]: newNode };
+
+      console.log('✅ Connection node created:', newConnectionNodeId);
+
+      return {
+        nodes: updatedNodes,
+        selectedId: newConnectionNodeId, // Select the new node
+      };
     });
-    console.log('📤 Broadcasting connection node to backend');
-  }
-},
+
+    // Save to localStorage
+    get().saveToLocalStorage();
+
+    // Open the unified modal for the user to interact with the connection
+    setTimeout(() => {
+      get().setShowContentOverlay(true);
+    }, 100);
+
+    // Emit to backend via WebSocket
+    const socket = (window as any).socket;
+    if (socket) {
+      const newNode = get().nodes[newConnectionNodeId];
+      socket.emit('create_node', {
+        portalId: 'default-portal',
+        id: newNode.id,
+        position: newNode.position,
+        title: newNode.title,
+        content: newNode.content,
+        parentId: newNode.parentId,
+        isConnectionNode: true,
+        connectionNodes: [nodeAId, nodeBId],
+      });
+      console.log('📤 Broadcasting connection node to backend');
+    }
+  },
 
   createMultiConnection: (nodeIds: string[]) => {
     console.log('🔗 Creating multi-connection node for', nodeIds.length, 'nodes');
@@ -2500,22 +2513,22 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     const state = get();
     const node = state.nodes[nodeId];
     if (!node) return 0;
-    
+
     let level = 1;
     let currentNode = node;
-    
+
     while (currentNode.parentId) {
       const isNexus = state.nexuses.some(n => n.id === currentNode.parentId);
       if (isNexus) break;
-      
+
       level++;
       currentNode = state.nodes[currentNode.parentId];
       if (!currentNode) break;
     }
-    
+
     return level;
   },
-  
+
   getNexusForNode: (nodeId: string) => {
     const state = get();
     const node = state.nodes[nodeId];
@@ -2619,12 +2632,12 @@ createConnection: (nodeAId: string, nodeBId: string) => {
           nexuses: updatedLibrary[nexusId].nexuses.map((n: Nexus) =>
             n.id === nexusId
               ? {
-                  ...n,
-                  evolutionState: 'application-lab' as NexusEvolutionState,
-                  applicationLabConfig: config,
-                  content: config.doctrineSummary,
-                  needsApplicationLab: false
-                }
+                ...n,
+                evolutionState: 'application-lab' as NexusEvolutionState,
+                applicationLabConfig: config,
+                content: config.doctrineSummary,
+                needsApplicationLab: false
+              }
               : n
           )
         };
@@ -2639,14 +2652,14 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
   addNodeFromWebSocket: (data: any) => {
     const state = get();
-    
+
     if (state.nodes[data.id]) {
       console.log('⏭️ Node already exists, skipping:', data.id);
       return;
     }
 
     console.log('➕ Adding node from WebSocket:', data.id);
-    
+
     const newNode: Node = {
       id: data.id,
       position: data.position,
@@ -2659,23 +2672,23 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     set((state) => ({
       nodes: { ...state.nodes, [newNode.id]: newNode }
     }));
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
-    
+
     console.log('✅ Node added from WebSocket');
   },
 
   addNexusFromWebSocket: (data: any) => {
     const state = get();
-    
+
     if (state.nexuses.find(n => n.id === data.id)) {
       console.log('⏭️ Nexus already exists, skipping:', data.id);
       return;
     }
 
     console.log('➕ Adding nexus from WebSocket:', data.id);
-    
+
     const newNexus: Nexus = {
       id: data.id,
       position: data.position,
@@ -2689,17 +2702,17 @@ createConnection: (nodeAId: string, nodeBId: string) => {
     set((state) => ({
       nexuses: [...state.nexuses, newNexus]
     }));
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
-    
+
     console.log('✅ Nexus added from WebSocket');
   },
 
   toggleActivateConversation: (nexusId: string) => {
     set((state) => {
       const isActivated = state.activatedConversations.includes(nexusId);
-      
+
       if (isActivated) {
         return {
           activatedConversations: state.activatedConversations.filter(id => id !== nexusId)
@@ -2710,11 +2723,11 @@ createConnection: (nodeAId: string, nodeBId: string) => {
         };
       }
     });
-    
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
   },
-  
+
   getActivatedConversations: () => {
     const state = get();
     return state.nexuses.filter(n => state.activatedConversations.includes(n.id));
@@ -2796,7 +2809,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
         // Clear selection if we're deleting the selected nexus or any of its descendants
         const isSelectedDeleted = state.selectedId === nexusId ||
-                                  (state.selectedId && descendantIds.includes(state.selectedId));
+          (state.selectedId && descendantIds.includes(state.selectedId));
         const updatedSelectedId = isSelectedDeleted ? null : state.selectedId;
 
         // Clear activeUniverseId if we're deleting the active universe
@@ -3014,7 +3027,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
 
       // Clear selection if we're deleting the selected node or any of its descendants
       const isSelectedDeleted = state.selectedId === nodeId ||
-                                (state.selectedId && descendantIds.includes(state.selectedId));
+        (state.selectedId && descendantIds.includes(state.selectedId));
       const updatedSelectedId = isSelectedDeleted ? null : state.selectedId;
 
       console.log(`✅ Deleted node ${nodeId} and ${descendantIds.length} descendants`);
@@ -4691,8 +4704,8 @@ createConnection: (nodeAId: string, nodeBId: string) => {
       try {
         // Try to extract JSON from markdown code blocks
         const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/) ||
-                         analysisText.match(/```\n([\s\S]*?)\n```/) ||
-                         [null, analysisText];
+          analysisText.match(/```\n([\s\S]*?)\n```/) ||
+          [null, analysisText];
         const jsonStr = jsonMatch[1] || analysisText;
         analysisData = JSON.parse(jsonStr);
       } catch (e) {
@@ -4722,7 +4735,7 @@ createConnection: (nodeAId: string, nodeBId: string) => {
   atomizeUniverse: async (
     universeId: string,
     onProgress?: (current: number, total: number, status: string, errors: string[]) => void
-  ): Promise<{success: boolean; newUniverseIds: string[]; error?: string; errors: string[]}> => {
+  ): Promise<{ success: boolean; newUniverseIds: string[]; error?: string; errors: string[] }> => {
     const state = get();
     const universe = state.universeLibrary[universeId];
 
