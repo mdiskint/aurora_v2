@@ -14,6 +14,7 @@ import {
 } from '@/lib/guidedPracticeHelpers';
 import { generateUniverseStudyGuide, UniverseDefinition } from '@/lib/studyGuideGenerator';
 import { StudyGuideWriteUp } from '@/lib/types';
+import { loadVideoFile } from '@/lib/db';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -24,12 +25,50 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
   endTime?: number | null;
 }) {
   const playerRef = useRef<any>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [playerId] = useState(`youtube-player-${Math.random().toString(36).substr(2, 9)}`);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
 
+  // Check if this is a blob URL (uploaded video)
+  const isBlobUrl = videoUrl.startsWith('blob:');
+
+  // For blob URLs, use HTML5 video player
   useEffect(() => {
+    if (!isBlobUrl || !videoRef.current) return;
+
+    const video = videoRef.current;
+
+    // Set start time when video loads
+    const handleLoadedMetadata = () => {
+      setVideoDuration(video.duration);
+      if (startTime && startTime > 0) {
+        video.currentTime = startTime;
+      }
+    };
+
+    // Monitor playback and enforce end time
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+      if (endTime && video.currentTime >= endTime) {
+        video.pause();
+      }
+    };
+
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('timeupdate', handleTimeUpdate);
+
+    return () => {
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+    };
+  }, [isBlobUrl, videoUrl, startTime, endTime]);
+
+  // For YouTube URLs, use existing YouTube API logic
+  useEffect(() => {
+    if (isBlobUrl) return; // Skip YouTube logic for blob URLs
+
     const parsedVideo = parseVideoUrl(videoUrl, startTime, endTime);
     if (!parsedVideo || parsedVideo.provider !== 'youtube') {
       return; // Only handle YouTube for now
@@ -102,7 +141,7 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
 
       // Clear interval when video is paused or ended
       if (event.data === (window as any).YT.PlayerState.PAUSED ||
-          event.data === (window as any).YT.PlayerState.ENDED) {
+        event.data === (window as any).YT.PlayerState.ENDED) {
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
@@ -118,21 +157,7 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
         playerRef.current.destroy();
       }
     };
-  }, [videoUrl, startTime, endTime, playerId]);
-
-  const parsedVideo = parseVideoUrl(videoUrl, startTime, endTime);
-
-  console.log('🎬 VideoPlayer rendering:', {
-    videoUrl,
-    startTime,
-    endTime,
-    parsedVideo,
-  });
-
-  if (!parsedVideo) {
-    console.error('❌ Failed to parse video URL:', videoUrl);
-    return null;
-  }
+  }, [videoUrl, startTime, endTime, playerId, isBlobUrl]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {
@@ -148,6 +173,98 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
 
   const segmentLeftPercent = totalDuration > 0 ? (segmentStart / totalDuration) * 100 : 0;
   const segmentWidthPercent = totalDuration > 0 ? ((segmentEnd - segmentStart) / totalDuration) * 100 : 100;
+
+  // For uploaded videos (blob URLs), use HTML5 video player
+  if (isBlobUrl) {
+    return (
+      <div className="w-full mx-auto" style={{ maxWidth: '1000px' }}>
+        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            controls
+            className="absolute top-0 left-0 w-full h-full rounded-lg border-2 border-cyan-500/30"
+          />
+        </div>
+
+        {/* Timeline Indicator */}
+        {videoDuration && (
+          <div className="mt-4 px-2">
+            <div className="flex justify-between items-center mb-2 text-xs text-gray-400">
+              <span>Section: {formatTime(segmentStart)} - {formatTime(segmentEnd)}</span>
+              <span>Total: {formatTime(totalDuration)}</span>
+            </div>
+
+            {/* Timeline bar */}
+            <div className="relative h-8 bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+              {/* Grayed out left section */}
+              {segmentStart > 0 && (
+                <div
+                  className="absolute top-0 left-0 h-full bg-gray-900/50"
+                  style={{ width: `${segmentLeftPercent}%` }}
+                />
+              )}
+
+              {/* Active playable segment */}
+              <div
+                className="absolute top-0 h-full bg-gradient-to-r from-cyan-500/30 to-blue-500/30 border-x-2 border-cyan-400"
+                style={{
+                  left: `${segmentLeftPercent}%`,
+                  width: `${segmentWidthPercent}%`
+                }}
+              >
+                <div className="h-full flex items-center justify-center">
+                  <span className="text-xs font-bold text-cyan-300 drop-shadow-lg">
+                    {formatTime(segmentEnd - segmentStart)} segment
+                  </span>
+                </div>
+              </div>
+
+              {/* Grayed out right section */}
+              {segmentEnd < totalDuration && (
+                <div
+                  className="absolute top-0 right-0 h-full bg-gray-900/50"
+                  style={{ width: `${100 - (segmentLeftPercent + segmentWidthPercent)}%` }}
+                />
+              )}
+
+              {/* Current playback position indicator */}
+              {currentTime > 0 && currentTime >= segmentStart && currentTime <= segmentEnd && (
+                <div
+                  className="absolute top-0 h-full w-1 bg-red-500 transition-all duration-100"
+                  style={{
+                    left: `${(currentTime / totalDuration) * 100}%`
+                  }}
+                >
+                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full shadow-lg" />
+                </div>
+              )}
+            </div>
+
+            {/* Time labels */}
+            <div className="flex justify-between mt-1 text-xs text-gray-500">
+              <span>0:00</span>
+              <span>{formatTime(totalDuration)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const parsedVideo = parseVideoUrl(videoUrl, startTime, endTime);
+
+  console.log('🎬 VideoPlayer rendering:', {
+    videoUrl,
+    startTime,
+    endTime,
+    parsedVideo,
+  });
+
+  if (!parsedVideo) {
+    console.error('❌ Failed to parse video URL:', videoUrl);
+    return null;
+  }
 
   // For YouTube, use the div that will be replaced by the player
   if (parsedVideo.provider === 'youtube') {
@@ -285,6 +402,9 @@ export default function UnifiedNodeModal() {
   const [isVisible, setIsVisible] = useState(false);
   const [showAnchorFeedback, setShowAnchorFeedback] = useState(false);
 
+  // Loaded video URL from IndexedDB
+  const [loadedVideoUrl, setLoadedVideoUrl] = useState<string | null>(null);
+
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -356,6 +476,38 @@ export default function UnifiedNodeModal() {
 
   // Find selected node or nexus
   const node = selectedId ? nodes[selectedId] : null;
+
+  // Load uploaded video file from IndexedDB if needed
+  useEffect(() => {
+    const loadVideo = async () => {
+      if (!node || node.videoUrl !== 'uploaded-video') {
+        setLoadedVideoUrl(null);
+        return;
+      }
+
+      // Find the universe ID (parent nexus)
+      let currentId = node.parentId;
+      while (currentId) {
+        const foundNexus = nexuses.find(n => n.id === currentId);
+        if (foundNexus) {
+          // Load video from IndexedDB
+          const videoUrl = await loadVideoFile(foundNexus.id);
+          setLoadedVideoUrl(videoUrl);
+          console.log('✅ Loaded video file from IndexedDB for universe:', foundNexus.id);
+          return;
+        }
+
+        const parentNode = nodes[currentId];
+        if (parentNode) {
+          currentId = parentNode.parentId;
+        } else {
+          break;
+        }
+      }
+    };
+
+    loadVideo();
+  }, [node, nodes, nexuses]);
 
   // 🔄 MANAGE GUIDED PRACTICE PROGRESS when switching between L1 nodes
   useEffect(() => {
@@ -667,8 +819,8 @@ export default function UnifiedNodeModal() {
       // Don't trigger if user is typing in input/textarea
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable) {
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable) {
         return;
       }
 
@@ -1312,11 +1464,10 @@ Be conversational and human, not formulaic.`;
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: `Previous question: "${socraticQuestion}"\nUser's answer: "${userAnswerText}"\n\n${
-              isQuizMode
-                ? 'Grade this answer and provide feedback.'
-                : 'Engage with their thinking and ask the next question.'
-            }`
+            content: `Previous question: "${socraticQuestion}"\nUser's answer: "${userAnswerText}"\n\n${isQuizMode
+              ? 'Grade this answer and provide feedback.'
+              : 'Engage with their thinking and ask the next question.'
+              }`
           }],
           mode: isQuizMode ? 'quiz' : explorationMode === 'deep-thinking' ? 'deep-thinking' : 'socratic',
           explorationMode,
@@ -2059,17 +2210,15 @@ Be conversational and human, not formulaic.`;
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] transition-opacity duration-200 ${
-          isVisible ? 'opacity-100' : 'opacity-0'
-        }`}
+        className={`fixed inset-0 bg-black/70 backdrop-blur-sm z-[2000] transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'
+          }`}
         onClick={handleClose}
       />
 
       {/* Modal */}
       <div
-        className={`fixed z-[2001] transition-opacity duration-200 ${
-          isVisible ? 'opacity-100' : 'opacity-0'
-        }`}
+        className={`fixed z-[2001] transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'
+          }`}
         style={{
           top: '50%',
           left: '50%',
@@ -2184,7 +2333,7 @@ Be conversational and human, not formulaic.`;
             {node?.videoUrl && (
               <div className="px-6 pt-6 pb-3 flex-shrink-0">
                 <VideoPlayer
-                  videoUrl={node.videoUrl}
+                  videoUrl={loadedVideoUrl || node.videoUrl}
                   startTime={node.videoStart}
                   endTime={node.videoEnd}
                 />
@@ -2310,63 +2459,63 @@ Be conversational and human, not formulaic.`;
 
               {/* 🎓 L2 PRACTICE NODE ANSWER SECTION - Only show for incomplete nodes */}
               {node && ['intuition-example', 'imitate', 'application-scenario'].includes(node.nodeType || '') &&
-               !node.content.includes('**Your Response:**') && ( // Only show if not yet answered
-                <div className="mt-6 p-4 bg-gradient-to-r from-purple-900/20 to-indigo-900/20 border-2 border-purple-500/30 rounded-lg">
-                  <h3 className="text-lg font-semibold text-purple-300 mb-3">
-                    {node.nodeType === 'intuition-example' && '💡 Share Your Thoughts'}
-                    {node.nodeType === 'imitate' && '🎯 Your Answer'}
-                    {node.nodeType === 'application-scenario' && '🌍 Your Analysis'}
-                  </h3>
+                !node.content.includes('**Your Response:**') && ( // Only show if not yet answered
+                  <div className="mt-6 p-4 bg-gradient-to-r from-purple-900/20 to-indigo-900/20 border-2 border-purple-500/30 rounded-lg">
+                    <h3 className="text-lg font-semibold text-purple-300 mb-3">
+                      {node.nodeType === 'intuition-example' && '💡 Share Your Thoughts'}
+                      {node.nodeType === 'imitate' && '🎯 Your Answer'}
+                      {node.nodeType === 'application-scenario' && '🌍 Your Analysis'}
+                    </h3>
 
-                  <textarea
-                    value={practiceStepInput}
-                    onChange={(e) => setPracticeStepInput(e.target.value)}
-                    placeholder={
-                      node.nodeType === 'intuition-example' ? 'What are your initial thoughts?' :
-                      node.nodeType === 'imitate' ? 'Apply the reasoning pattern here...' :
-                      'How would you analyze this scenario?'
-                    }
-                    rows={node.nodeType === 'application-scenario' ? 8 : 5}
-                    className="w-full px-4 py-3 bg-slate-900 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none mb-3"
-                  />
+                    <textarea
+                      value={practiceStepInput}
+                      onChange={(e) => setPracticeStepInput(e.target.value)}
+                      placeholder={
+                        node.nodeType === 'intuition-example' ? 'What are your initial thoughts?' :
+                          node.nodeType === 'imitate' ? 'Apply the reasoning pattern here...' :
+                            'How would you analyze this scenario?'
+                      }
+                      rows={node.nodeType === 'application-scenario' ? 8 : 5}
+                      className="w-full px-4 py-3 bg-slate-900 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none mb-3"
+                    />
 
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => {
-                        if (practiceStepInput.trim()) {
-                          const stepType = node.nodeType === 'intuition-example' ? 'intuition' :
-                                          node.nodeType === 'imitate' ? 'imitate' : 'scenario';
-                          handleGradePracticeStep(stepType, practiceStepInput, node.content);
-                          setPracticeStepInput('');
-                        }
-                      }}
-                      disabled={!practiceStepInput.trim() || isGradingPractice}
-                      className="flex-1 px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                    >
-                      {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Get AI Feedback'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        const stepType = node.nodeType === 'intuition-example' ? 'intuition'
-                          : node.nodeType === 'imitate' ? 'imitate'
-                          : 'scenario';
-                        handleSavePracticeStepOnly(stepType, practiceStepInput, node.content);
-                      }}
-                      disabled={!practiceStepInput.trim() || isGradingPractice}
-                      className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                    >
-                      💾 Save Only
-                    </button>
-                  </div>
-
-                  {practiceStepFeedback && (
-                    <div className="mt-4 bg-purple-900/20 border border-purple-500/50 rounded-lg p-4">
-                      <p className="text-sm font-semibold text-purple-300 mb-2">✨ AI Feedback:</p>
-                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (practiceStepInput.trim()) {
+                            const stepType = node.nodeType === 'intuition-example' ? 'intuition' :
+                              node.nodeType === 'imitate' ? 'imitate' : 'scenario';
+                            handleGradePracticeStep(stepType, practiceStepInput, node.content);
+                            setPracticeStepInput('');
+                          }
+                        }}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="flex-1 px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Get AI Feedback'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const stepType = node.nodeType === 'intuition-example' ? 'intuition'
+                            : node.nodeType === 'imitate' ? 'imitate'
+                              : 'scenario';
+                          handleSavePracticeStepOnly(stepType, practiceStepInput, node.content);
+                        }}
+                        disabled={!practiceStepInput.trim() || isGradingPractice}
+                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                      >
+                        💾 Save Only
+                      </button>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {practiceStepFeedback && (
+                      <div className="mt-4 bg-purple-900/20 border border-purple-500/50 rounded-lg p-4">
+                        <p className="text-sm font-semibold text-purple-300 mb-2">✨ AI Feedback:</p>
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
 
@@ -2374,16 +2523,14 @@ Be conversational and human, not formulaic.`;
           <div className="border-t border-cyan-500/30 flex-shrink-0">
             {/* Socratic Question / Quiz Display */}
             {socraticQuestion && (
-              <div className={`p-4 ${
-                explorationMode === 'quiz'
-                  ? 'bg-gradient-to-r from-purple-900/30 to-purple-800/30 border-b border-purple-500/20'
-                  : 'bg-gradient-to-r from-cyan-900/30 to-purple-900/30 border-b border-cyan-500/20'
-              }`}>
+              <div className={`p-4 ${explorationMode === 'quiz'
+                ? 'bg-gradient-to-r from-purple-900/30 to-purple-800/30 border-b border-purple-500/20'
+                : 'bg-gradient-to-r from-cyan-900/30 to-purple-900/30 border-b border-cyan-500/20'
+                }`}>
                 {/* Header with progress indicator */}
                 <div className="flex justify-between items-center mb-2">
-                  <div className={`text-sm font-semibold ${
-                    explorationMode === 'quiz' ? 'text-purple-300' : 'text-cyan-300'
-                  }`}>
+                  <div className={`text-sm font-semibold ${explorationMode === 'quiz' ? 'text-purple-300' : 'text-cyan-300'
+                    }`}>
                     {explorationMode === 'quiz' ? '📝 Quiz Question' : '💭 Socratic Question'}
                   </div>
                   {explorationMode === 'quiz' && (
@@ -2409,11 +2556,10 @@ Be conversational and human, not formulaic.`;
 
                 {/* Show quiz feedback if available */}
                 {quizFeedback && explorationMode === 'quiz' && (
-                  <div className={`mb-3 p-4 rounded-lg ${
-                    quizFeedback.includes('🎉') || quizFeedback.toLowerCase().includes('excellent work')
-                      ? 'bg-gradient-to-br from-purple-900/40 to-pink-900/40 border-2 border-purple-400/50'
-                      : 'bg-purple-950/30 border border-purple-500/30'
-                  }`}>
+                  <div className={`mb-3 p-4 rounded-lg ${quizFeedback.includes('🎉') || quizFeedback.toLowerCase().includes('excellent work')
+                    ? 'bg-gradient-to-br from-purple-900/40 to-pink-900/40 border-2 border-purple-400/50'
+                    : 'bg-purple-950/30 border border-purple-500/30'
+                    }`}>
                     {(quizFeedback.includes('🎉') || quizFeedback.toLowerCase().includes('excellent work')) && (
                       <div className="text-purple-300 text-xs font-semibold mb-2 uppercase tracking-wide flex items-center gap-2">
                         🎉 Quiz Complete!
@@ -2461,9 +2607,8 @@ Be conversational and human, not formulaic.`;
                     placeholder={explorationMode === 'quiz' ? 'Type your answer...' : 'Share your thoughts...'}
                     disabled={isLoadingAI}
                     className={`w-full bg-slate-950/50 text-gray-200 border rounded-lg p-3
-                             focus:outline-none focus:border-${explorationMode === 'quiz' ? 'purple' : 'cyan'}-500/50 resize-none ${
-                      explorationMode === 'quiz' ? 'border-purple-500/20' : 'border-cyan-500/20'
-                    } ${isLoadingAI ? 'opacity-50 cursor-not-allowed' : ''}`}
+                             focus:outline-none focus:border-${explorationMode === 'quiz' ? 'purple' : 'cyan'}-500/50 resize-none ${explorationMode === 'quiz' ? 'border-purple-500/20' : 'border-cyan-500/20'
+                      } ${isLoadingAI ? 'opacity-50 cursor-not-allowed' : ''}`}
                     rows={3}
                   />
                 )}
@@ -2679,10 +2824,10 @@ Be conversational and human, not formulaic.`;
 
                       const nextStepLabel =
                         nextStep === 'intuition' ? '💡 Intuition' :
-                        nextStep === 'model' ? '📐 Model' :
-                        nextStep === 'imitate' ? '🎯 Imitate' :
-                        nextStep === 'quiz' ? '📝 Quiz' :
-                        'Next Step';
+                          nextStep === 'model' ? '📐 Model' :
+                            nextStep === 'imitate' ? '🎯 Imitate' :
+                              nextStep === 'quiz' ? '📝 Quiz' :
+                                'Next Step';
 
                       return (
                         <button
@@ -2748,10 +2893,10 @@ Be conversational and human, not formulaic.`;
                         {hasGuidedPractice ? (
                           activePracticeStep && availablePracticeSteps.includes(activePracticeStep) ? (
                             activePracticeStep === 'intuition' ? '💡 Intuition' :
-                            activePracticeStep === 'model' ? '📐 Model' :
-                            activePracticeStep === 'imitate' ? '🎯 Imitate' :
-                            activePracticeStep === 'quiz' ? '📝 Quiz' :
-                            '🎓 Guided Practice'
+                              activePracticeStep === 'model' ? '📐 Model' :
+                                activePracticeStep === 'imitate' ? '🎯 Imitate' :
+                                  activePracticeStep === 'quiz' ? '📝 Quiz' :
+                                    '🎓 Guided Practice'
                           ) : '🎓 Guided Practice'
                         ) : '📝 Quiz Me'}
                       </button>
@@ -3058,14 +3203,12 @@ Be conversational and human, not formulaic.`;
 
               {/* Feedback/Explanation */}
               {mcAnswered && (
-                <div className={`mb-6 p-4 rounded-lg border-2 ${
-                  mcResults[mcResults.length - 1]?.isCorrect
-                    ? 'bg-green-900/20 border-green-500/50'
-                    : 'bg-red-900/20 border-red-500/50'
-                }`}>
-                  <div className={`font-bold mb-2 ${
-                    mcResults[mcResults.length - 1]?.isCorrect ? 'text-green-300' : 'text-red-300'
+                <div className={`mb-6 p-4 rounded-lg border-2 ${mcResults[mcResults.length - 1]?.isCorrect
+                  ? 'bg-green-900/20 border-green-500/50'
+                  : 'bg-red-900/20 border-red-500/50'
                   }`}>
+                  <div className={`font-bold mb-2 ${mcResults[mcResults.length - 1]?.isCorrect ? 'text-green-300' : 'text-red-300'
+                    }`}>
                     {mcResults[mcResults.length - 1]?.isCorrect ? '✓ Correct!' : '✗ Incorrect'}
                   </div>
                   {!mcResults[mcResults.length - 1]?.isCorrect && (
@@ -3156,11 +3299,10 @@ Be conversational and human, not formulaic.`;
                 {mcResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`p-3 rounded-lg border ${
-                      result.isCorrect
-                        ? 'bg-green-900/20 border-green-500/30'
-                        : 'bg-red-900/20 border-red-500/30'
-                    }`}
+                    className={`p-3 rounded-lg border ${result.isCorrect
+                      ? 'bg-green-900/20 border-green-500/30'
+                      : 'bg-red-900/20 border-red-500/30'
+                      }`}
                   >
                     <div className="flex items-start gap-3">
                       <div className="text-2xl mt-0.5">
@@ -3251,8 +3393,8 @@ Be conversational and human, not formulaic.`;
                         ${isActive
                           ? 'bg-purple-600 text-white border-2 border-purple-400'
                           : isPast
-                          ? 'bg-green-900/30 text-green-300 border border-green-500/50'
-                          : 'bg-slate-700/50 text-gray-300 border border-slate-600 hover:bg-slate-600/50'
+                            ? 'bg-green-900/30 text-green-300 border border-green-500/50'
+                            : 'bg-slate-700/50 text-gray-300 border border-slate-600 hover:bg-slate-600/50'
                         }`}
                     >
                       {stepLabels[stepId]}
@@ -3311,11 +3453,10 @@ Be conversational and human, not formulaic.`;
                             <button
                               key={idx}
                               onClick={() => setSelectedIntuitionOption(option)}
-                              className={`text-left px-4 py-3 rounded-lg transition-all ${
-                                selectedIntuitionOption === option
-                                  ? 'bg-cyan-600/40 border-2 border-cyan-400 text-white'
-                                  : 'bg-slate-700/50 border border-slate-600 text-gray-300 hover:bg-slate-600/50 hover:border-slate-500'
-                              }`}
+                              className={`text-left px-4 py-3 rounded-lg transition-all ${selectedIntuitionOption === option
+                                ? 'bg-cyan-600/40 border-2 border-cyan-400 text-white'
+                                : 'bg-slate-700/50 border border-slate-600 text-gray-300 hover:bg-slate-600/50 hover:border-slate-500'
+                                }`}
                             >
                               {option}
                             </button>

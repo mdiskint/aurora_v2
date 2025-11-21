@@ -25,6 +25,17 @@ export async function POST(request: NextRequest) {
 
         console.log(`🎥 Received video: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
+        // Check if API key is configured
+        if (!process.env.GEMINI_API_KEY) {
+            console.error('❌ GEMINI_API_KEY is not configured');
+            return NextResponse.json(
+                { error: 'Gemini API key not configured on server' },
+                { status: 500 }
+            );
+        }
+
+        console.log('✅ GEMINI_API_KEY is configured');
+
         // Convert file to base64
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);

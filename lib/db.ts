@@ -13,16 +13,25 @@ interface BackupRecord {
   label: string;
 }
 
+interface VideoFileRecord {
+  id: string; // universeId
+  videoBlob: Blob;
+  mimeType: string;
+  timestamp: number;
+}
+
 class AuroraDatabase extends Dexie {
   universes!: Table<UniverseRecord>;
   backups!: Table<BackupRecord>;
+  videos!: Table<VideoFileRecord>;
 
   constructor() {
     super('AuroraDB');
 
-    this.version(1).stores({
+    this.version(2).stores({
       universes: 'id, timestamp',
-      backups: 'id, timestamp'
+      backups: 'id, timestamp',
+      videos: 'id, timestamp'
     });
   }
 }
@@ -139,5 +148,50 @@ export async function restoreBackup(backupId: string) {
   } catch (error) {
     console.error('❌ Restore failed:', error);
     return null;
+  }
+}
+
+// Save video file to IndexedDB
+export async function saveVideoFile(universeId: string, videoFile: File) {
+  try {
+    await db.videos.put({
+      id: universeId,
+      videoBlob: videoFile,
+      mimeType: videoFile.type,
+      timestamp: Date.now()
+    });
+    console.log('✅ Video file saved to IndexedDB:', universeId);
+    return true;
+  } catch (error) {
+    console.error('❌ Video file save failed:', error);
+    return false;
+  }
+}
+
+// Load video file from IndexedDB
+export async function loadVideoFile(universeId: string): Promise<string | null> {
+  try {
+    const record = await db.videos.get(universeId);
+    if (!record) return null;
+    
+    // Convert Blob to Object URL for video playback
+    const url = URL.createObjectURL(record.videoBlob);
+    console.log('✅ Video file loaded from IndexedDB:', universeId);
+    return url;
+  } catch (error) {
+    console.error('❌ Video file load failed:', error);
+    return null;
+  }
+}
+
+// Delete video file
+export async function deleteVideoFile(universeId: string) {
+  try {
+    await db.videos.delete(universeId);
+    console.log('✅ Video file deleted from IndexedDB:', universeId);
+    return true;
+  } catch (error) {
+    console.error('❌ Video file delete failed:', error);
+    return false;
   }
 }

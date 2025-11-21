@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { MCQ, ShortAnswer, ApplicationEssay, NodeType } from '@/lib/types';
+import { saveVideoFile } from '@/lib/db';
 
 interface SectionQuestions {
   mcqs: MCQ[];
@@ -57,6 +58,7 @@ interface CourseData {
   description: string;
   fullTextContent: string;
   videoUrl: string;
+  uploadedVideoFile: File | null; // Store the uploaded video file
   timestamps: string;
   sectionContents: string[]; // Content for each timestamp section
   memoryActivation: boolean;
@@ -82,6 +84,7 @@ export default function CourseBuilderPage() {
     description: '',
     fullTextContent: '',
     videoUrl: '',
+    uploadedVideoFile: null,
     timestamps: '',
     sectionContents: [],
     memoryActivation: false,
@@ -237,7 +240,7 @@ export default function CourseBuilderPage() {
       const data = await response.json();
       console.log('✅ Video analysis complete:', data);
 
-      // Update course data with AI-generated content
+      // Update course data with AI-generated content AND store the video file
       setCourseData(prev => ({
         ...prev,
         title: data.title || prev.title,
@@ -245,8 +248,7 @@ export default function CourseBuilderPage() {
         fullTextContent: data.fullTextContent || prev.fullTextContent,
         timestamps: data.timestamps || prev.timestamps,
         sectionContents: data.sectionContents || prev.sectionContents,
-        // If timestamps are provided, we can infer sections
-        // sectionContents will be populated by the API
+        uploadedVideoFile: selectedFile, // Store the video file for playback
       }));
 
       alert('✨ Video analysis complete! Course content has been generated.');
@@ -548,7 +550,7 @@ export default function CourseBuilderPage() {
   };
 
   // Generate the course
-  const handleGenerateCourse = () => {
+  const handleGenerateCourse = async () => {
     setIsGenerating(true);
 
     try {
@@ -609,7 +611,7 @@ export default function CourseBuilderPage() {
 
         // Update node with video metadata and questions
         updateNode(nodeId, {
-          videoUrl: courseData.videoUrl,
+          videoUrl: courseData.uploadedVideoFile ? 'uploaded-video' : courseData.videoUrl,
           videoStart: chunk.start,
           videoEnd: chunk.end,
           isLocked: false, // All nodes unlocked immediately
@@ -807,6 +809,13 @@ export default function CourseBuilderPage() {
 
       // Save to localStorage with the updated course metadata
       saveToLocalStorage();
+
+      // Save uploaded video file to IndexedDB if present
+      if (courseData.uploadedVideoFile) {
+        console.log('💾 Saving video file to IndexedDB...');
+        await saveVideoFile(savedUniverseId, courseData.uploadedVideoFile);
+        console.log('✅ Video file saved to IndexedDB');
+      }
 
       console.log('🎓 Course created successfully!');
       console.log('   - Nexus ID:', nexusId);
