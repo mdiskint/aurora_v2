@@ -1169,12 +1169,17 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
             {glowNodes.selected === nexus.id && (
               <>
                 <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                  <meshBasicMaterial
+                  <torusGeometry args={[2.5, 0.15, 8, 20]} />
+                  <meshStandardMaterial
                     ref={(mat) => {
                       if (mat) selectedMaterialsRef.current.set(nexus.id, mat);
                     }}
                     color="#FFFF00"
+                    metalness={1.0}
+                    roughness={0.0}
+                    emissive="#FFFF00"
+                    emissiveIntensity={0.3}
+                    flatShading={true}
                     transparent
                     opacity={0.8 * nexusOpacity}
                   />
