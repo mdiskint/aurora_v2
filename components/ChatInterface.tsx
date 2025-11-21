@@ -290,7 +290,8 @@ export default function ChatInterface() {
               mode: 'gap-parallel',
               currentGraph: graphStructure.currentGraph,
               activatedGraphs: graphStructure.activatedGraphs,
-              task: task
+              task: task,
+              aiProvider
             }),
           });
 
@@ -481,7 +482,8 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: [{ role: 'user', content: prompt }],
-            mode: 'doctrine'
+            mode: 'doctrine',
+            aiProvider
           }),
         });
 
@@ -579,7 +581,8 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
             body: JSON.stringify({
               mode: 'gap-synthesize',
               activatedGraphs: graphStructure.activatedGraphs,
-              question: userMessage
+              question: userMessage,
+              aiProvider
             }),
           });
 
@@ -639,7 +642,8 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
             mode: 'gap-analyze',
             currentGraph: graphStructure.currentGraph,
             activatedGraphs: graphStructure.activatedGraphs,
-            question: userMessage
+            question: userMessage,
+            aiProvider
           }),
         });
 
@@ -669,7 +673,8 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
               mode: 'gap-single',
               currentGraph: graphStructure.currentGraph,
               activatedGraphs: graphStructure.activatedGraphs,
-              question: userMessage
+              question: userMessage,
+              aiProvider
             }),
           });
 
@@ -762,6 +767,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
           messages: messagesForAPI,  // Always send messages to API
           mode: isSpatialMode ? 'spatial' : 'standard',
           conversationContext: fullContext,
+          aiProvider
         }),
       });
 

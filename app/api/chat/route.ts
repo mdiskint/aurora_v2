@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
+import { callGemini } from '@/lib/gemini';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, aiProvider = 'anthropic' } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
@@ -343,8 +344,8 @@ Content to explore:
 ${conversationHistory && conversationHistory.length > 0 ? `
 Previous exploration:
 ${conversationHistory.map((exchange: any, i: number) =>
-  `Round ${i+1}:\nQ: ${exchange.question}\nA: ${exchange.userAnswer}\nInsight: ${exchange.aiEngagement}`
-).join('\n\n')}
+        `Round ${i + 1}:\nQ: ${exchange.question}\nA: ${exchange.userAnswer}\nInsight: ${exchange.aiEngagement}`
+      ).join('\n\n')}
 
 Based on where we've been, go DEEPER on the most interesting thread.
 ` : 'This is the first question - start with what seems most thought-provoking.'}
@@ -412,8 +413,8 @@ CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
 ${conversationHistory && conversationHistory.length > 0 ? `
 Previous exploration rounds:
 ${conversationHistory.map((exchange: any, i: number) =>
-  `Round ${i+1}:\nQ: ${exchange.question}\nA: ${exchange.userAnswer}\nInsight: ${exchange.aiEngagement}`
-).join('\n\n')}
+        `Round ${i + 1}:\nQ: ${exchange.question}\nA: ${exchange.userAnswer}\nInsight: ${exchange.aiEngagement}`
+      ).join('\n\n')}
 
 ` : ''}Your most recent question:
 "${question}"
@@ -1400,8 +1401,8 @@ ${currentGraph.nexus.content}
 
 Nodes (${currentGraph.nodes.length}):
 ${currentGraph.nodes.slice(0, 10).map((n: any, i: number) =>
-  `${i+1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
-).join('\n')}
+          `${i + 1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
+        ).join('\n')}
 ${currentGraph.nodes.length > 10 ? `... and ${currentGraph.nodes.length - 10} more nodes` : ''}`);
       }
 
@@ -1413,8 +1414,8 @@ Universe ${idx + 1}: ${graph.nexus.title}
 ${graph.nexus.content}
 Nodes (${graph.nodes.length}):
 ${graph.nodes.slice(0, 5).map((n: any, i: number) =>
-  `  - ${n.type}: ${n.content.substring(0, 80)}...`
-).join('\n')}
+            `  - ${n.type}: ${n.content.substring(0, 80)}...`
+          ).join('\n')}
 ${graph.nodes.length > 5 ? `  ... and ${graph.nodes.length - 5} more nodes` : ''}`);
         });
       }
@@ -1508,8 +1509,8 @@ ${currentGraph.nexus.content}
 
 Existing nodes (${currentGraph.nodes.length}):
 ${currentGraph.nodes.slice(0, 8).map((n: any, i: number) =>
-  `- ${n.content.substring(0, 80)}...`
-).join('\n')}
+          `- ${n.content.substring(0, 80)}...`
+        ).join('\n')}
 ${currentGraph.nodes.length > 8 ? `... and ${currentGraph.nodes.length - 8} more` : ''}`);
       }
 
@@ -1704,8 +1705,8 @@ ${currentGraph.nexus.content}
 
 Existing nodes (${currentGraph.nodes.length}):
 ${currentGraph.nodes.map((n: any, i: number) =>
-  `${i+1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
-).join('\n')}`);
+          `${i + 1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
+        ).join('\n')}`);
       }
 
       if (activatedGraphs && activatedGraphs.length > 0) {
@@ -1715,8 +1716,8 @@ ${currentGraph.nodes.map((n: any, i: number) =>
 Universe ${idx + 1}: ${graph.nexus.title}
 ${graph.nexus.content}
 Key nodes: ${graph.nodes.slice(0, 5).map((n: any, i: number) =>
-  `${n.type}: ${n.content.substring(0, 100)}...`
-).join(' | ')}`);
+            `${n.type}: ${n.content.substring(0, 100)}...`
+          ).join(' | ')}`);
         });
       }
 
@@ -1778,20 +1779,50 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
 
     // 🧠 NEW: Build system message with full context
     const systemMessage = conversationContext
-      ? `You are Aurora AI, helping users explore ideas in 3D space. You have access to the full conversation context below:\n\n${conversationContext}\n\nRespond naturally based on this full context.`
-      : 'You are Aurora AI, helping users explore ideas in 3D space.';
+      ? `You are Astryon AI, helping users explore ideas in 3D space. You have access to the full conversation context below:\n\n${conversationContext}\n\nRespond naturally based on this full context.`
+      : 'You are Astryon AI, helping users explore ideas in 3D space.';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
-      system: systemMessage, // 🧠 Include context here
-      messages: [{ role: 'user', content: userMessage }],
-    });
+    // 🤖 AI PROVIDER ROUTING
+    let aiResponse: string;
 
-    console.log('✅ Got response from Claude');
+    if (aiProvider === 'gemini') {
+      console.log('🤖 Using Gemini AI');
 
-    const textContent = response.content.find((block) => block.type === 'text');
-    const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
+      try {
+        const geminiPrompt = conversationContext
+          ? `${systemMessage}\n\nUser: ${userMessage}`
+          : userMessage;
+
+        aiResponse = await callGemini(geminiPrompt, systemMessage);
+        console.log('✅ Got response from Gemini');
+      } catch (geminiError) {
+        console.error('❌ Gemini API failed, falling back to Claude:', geminiError);
+        // Fallback to Claude if Gemini fails
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2048,
+          system: systemMessage,
+          messages: [{ role: 'user', content: userMessage }],
+        });
+
+        const textContent = response.content.find((block) => block.type === 'text');
+        aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
+      }
+    } else {
+      console.log('🤖 Using Anthropic Claude');
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        system: systemMessage,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      console.log('✅ Got response from Claude');
+
+      const textContent = response.content.find((block) => block.type === 'text');
+      aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
+    }
 
     return NextResponse.json({ response: aiResponse });
   } catch (error: any) {
@@ -1799,7 +1830,7 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
     console.error('Error type:', error.constructor.name);
     console.error('Error message:', error.message);
     console.error('Error status:', error.status);
-    
+
     return NextResponse.json(
       { error: error.message || 'Failed to get response from Claude' },
       { status: 500 }
