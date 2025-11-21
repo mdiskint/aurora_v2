@@ -5,6 +5,7 @@ import { useCanvasStore } from '@/lib/store';
 import { NodeType } from '@/lib/types';
 import SpatialNavigator from './SpatialNavigator';
 import DoctrinalGenerationModal from './DoctrinalGenerationModal';
+import AIProviderToggle from './AIProviderToggle';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -40,6 +41,7 @@ export default function ChatInterface() {
   // 🧠 GAP Mode: Universe activation
   const activatedUniverseIds = useCanvasStore(state => state.activatedUniverseIds);
   const universeLibrary = useCanvasStore(state => state.universeLibrary);
+  const aiProvider = useCanvasStore(state => state.aiProvider);
 
   // 🧠 Track selection state
   useEffect(() => {
@@ -179,15 +181,15 @@ export default function ChatInterface() {
   // 🧠 Build full conversation context
   const buildConversationContext = () => {
     const context: string[] = [];
-    
+
     console.log('🧠 Building context...');
     console.log('🧠 Nexuses:', nexuses.length);
     console.log('🧠 Nodes:', Object.keys(nodes).length);
-    
+
     // 1. Get activated conversations
     const activatedConvos = getActivatedConversations();
     console.log('🧠 Activated conversations:', activatedConvos.length);
-    
+
     if (activatedConvos.length > 0) {
       context.push("=== ACTIVATED MEMORIES ===\n");
       activatedConvos.forEach(conv => {
@@ -196,18 +198,18 @@ export default function ChatInterface() {
         context.push("---\n");
       });
     }
-    
+
     // 2. Get current conversation (use selected nexus or fallback)
     const selectedNexus = selectedId ? nexuses.find(n => n.id === selectedId) : null;
     const currentNexus = selectedNexus || nexuses.find(n => n.id.startsWith('chat-')) || nexuses[0];
     console.log('🧠 Current nexus:', currentNexus?.id, currentNexus?.title);
-    
+
     if (currentNexus) {
       context.push("=== CURRENT CONVERSATION ===\n");
       context.push(`**Topic: ${currentNexus.title}**`);
       context.push(currentNexus.content);
       context.push("\n**Full Thread:**\n");
-      
+
       // Get ALL nodes
       const conversationNodes = Object.values(nodes)
         .filter(node => node.parentId === currentNexus.id)
@@ -216,12 +218,12 @@ export default function ChatInterface() {
           const bTime = parseInt(b.id.split('-')[1]) || 0;
           return aTime - bTime;
         });
-      
+
       console.log('🧠 Found nodes:', conversationNodes.length);
-      
+
       conversationNodes.forEach(node => {
         console.log('  📝', node.isAI ? 'AI' : 'User', ':', node.content.substring(0, 50));
-        
+
         if (node.isAI) {
           context.push(`\n[AI]: ${node.content}`);
         } else {
@@ -229,11 +231,11 @@ export default function ChatInterface() {
         }
       });
     }
-    
+
     const finalContext = context.join('\n');
     console.log('🧠 Final context length:', finalContext.length, 'characters');
     console.log('🧠 Context preview:', finalContext.substring(0, 200));
-    
+
     return finalContext;
   };
 
@@ -715,16 +717,16 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
     if (isFirstMessage) {
       console.log('🔍 Raw message:', userMessage);
       console.log('🔍 Clean message:', cleanMessage);
-      
+
       const titleIndex = cleanMessage.toLowerCase().indexOf('title:');
       const promptIndex = cleanMessage.toLowerCase().indexOf('prompt:');
-      
+
       console.log('🔍 Title index:', titleIndex, 'Prompt index:', promptIndex);
-      
+
       if (titleIndex !== -1 && promptIndex !== -1 && promptIndex > titleIndex) {
         title = cleanMessage.substring(titleIndex + 6, promptIndex).trim();
         actualPrompt = cleanMessage.substring(promptIndex + 7).trim();
-        
+
         console.log('🔍 Parsed title:', title);
         console.log('🔍 Parsed prompt:', actualPrompt);
       } else {
@@ -895,11 +897,11 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
         } else {
           // 🧠 Reply to selected conversation
           const parentId = selectedId || currentParentId;
-          
+
           console.log('🎯 Replying to existing conversation:', parentId);
           console.log('🎯 Selected ID:', selectedId);
           console.log('🎯 Current Parent:', currentParentId);
-          
+
           if (!parentId) {
             throw new Error('No parent node found');
           }
@@ -1013,6 +1015,11 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
             </button>
           </div>
         )}
+
+        {/* AI Provider Toggle */}
+        <div style={{ marginBottom: '12px' }}>
+          <AIProviderToggle />
+        </div>
 
         <textarea
           value={message}
