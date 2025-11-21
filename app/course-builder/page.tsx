@@ -846,7 +846,6 @@ export default function CourseBuilderPage() {
           courseData.sectionContents.every(content => content.trim() !== '');
 
         return courseData.fullTextContent.trim() !== '' &&
-          courseData.videoUrl.trim() !== '' &&
           hasTimestamps &&
           allSectionsHaveContent;
       case 3:
@@ -941,8 +940,8 @@ export default function CourseBuilderPage() {
                     onClick={handleVideoUpload}
                     disabled={!selectedFile || isAnalyzingVideo}
                     className={`px-6 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${!selectedFile || isAnalyzingVideo
-                        ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:shadow-lg hover:shadow-cyan-500/20'
+                      ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:shadow-lg hover:shadow-cyan-500/20'
                       }`}
                   >
                     {isAnalyzingVideo ? (
@@ -1019,10 +1018,10 @@ export default function CourseBuilderPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Video URL <span className="text-red-400">*</span>
+                  Video URL <span className="text-gray-500">(Optional)</span>
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
-                  YouTube or Vimeo link (will be split into sections based on timestamps)
+                  YouTube or Vimeo link - only needed if you want to embed a video player
                 </p>
                 <input
                   type="text"
