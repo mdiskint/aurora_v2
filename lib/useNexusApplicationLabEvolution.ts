@@ -96,6 +96,9 @@ Requirements:
 - The final essay prompt should be the most challenging and comprehensive
 - Write in a warm, encouraging tone
 - Be specific and concrete, not generic
+- The questions and scenarios MUST ONLY cover content explicitly discussed in the provided conversation nodes
+- Do NOT ask questions that require outside knowledge not present in the conversation
+- Ensure all scenarios are solvable using ONLY the mental models and concepts developed in this specific conversation
 
 IMPORTANT: Return ONLY valid JSON, no additional text before or after.`
             }],

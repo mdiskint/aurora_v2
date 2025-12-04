@@ -1,0 +1,73 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/route';
+import prisma from '@/lib/prisma';
+
+export async function GET(req: Request) {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user?.email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    try {
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email },
+            include: { universes: true },
+        });
+
+        if (!user) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        return NextResponse.json(user.universes);
+    } catch (error) {
+        console.error('Error fetching universes:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}
+
+export async function POST(req: Request) {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user?.email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    try {
+        const body = await req.json();
+        const { id, data, videoUrl } = body;
+
+        if (!id || !data) {
+            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email },
+        });
+
+        if (!user) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        const universe = await prisma.universe.upsert({
+            where: { id },
+            update: {
+                data,
+                videoUrl,
+                updatedAt: new Date(),
+            },
+            create: {
+                id,
+                userId: user.id,
+                data,
+                videoUrl,
+            },
+        });
+
+        return NextResponse.json(universe);
+    } catch (error) {
+        console.error('Error saving universe:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}

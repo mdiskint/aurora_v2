@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Node, NodeType, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
-import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup } from './db';
+import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
@@ -411,8 +411,7 @@ interface CanvasStore {
   connectionModeNodeA: string | null;
   connectionModeActive: boolean;
 
-  // 🤖 AI PROVIDER
-  aiProvider: 'anthropic' | 'gemini';
+
   selectedNodesForConnection: string[];
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
@@ -435,7 +434,7 @@ interface CanvasStore {
   setHoveredNode: (id: string | null) => void;
   startConnectionMode: (nodeId: string) => void;
   clearConnectionMode: () => void;
-  setAiProvider: (provider: 'anthropic' | 'gemini') => void;
+
   createConnection: (nodeAId: string, nodeBId: string) => void;
   addNodeToConnection: (nodeId: string) => void;
   createMultiConnection: (nodeIds: string[]) => void;
@@ -603,8 +602,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   connectionModeActive: false,
   selectedNodesForConnection: [],
 
-  // 🤖 AI PROVIDER SELECTION
-  aiProvider: 'anthropic' as 'anthropic' | 'gemini',
+
 
   // 💾 SAVE TO LOCALSTORAGE + INDEXEDDB
   saveToLocalStorage: async () => {
@@ -673,6 +671,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const universeCount = Object.keys(state.universeLibrary).length;
       for (const [id, universeData] of Object.entries(state.universeLibrary)) {
         await saveUniverse(id, universeData);
+        // ☁️ Sync to Cloud (NeonDB)
+        await saveToCloud(id, universeData, universeData.nexuses[0]?.videoUrl);
       }
 
       // 💾 Create backup snapshot every 5 saves
@@ -755,6 +755,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       let folders: any = {};
       let activatedConversations: string[] = [];
       let originalSnapshots: { [id: string]: UniverseSnapshot } = {};
+
+      // ☁️ Try loading from Cloud (NeonDB)
+      try {
+        const cloudUniverses = await loadFromCloud();
+        if (cloudUniverses) {
+          console.log('☁️ Merging cloud universes with local data...');
+          // Merge cloud universes into local library
+          // Cloud data takes precedence if timestamps are newer (TODO: Implement proper conflict resolution)
+          // For now, we'll just add missing universes or update existing ones
+          universeLibrary = { ...universeLibrary, ...cloudUniverses };
+        }
+      } catch (cloudError) {
+        console.warn('☁️ Failed to load from cloud (user might be offline or not logged in):', cloudError);
+      }
 
       // If IndexedDB is empty, try localStorage as fallback and migrate
       if (Object.keys(universeLibrary).length === 0) {
@@ -2191,11 +2205,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
-  // 🤖 SET AI PROVIDER
-  setAiProvider: (provider: 'anthropic' | 'gemini') => {
-    console.log('🤖 Switching AI provider to:', provider);
-    set({ aiProvider: provider });
-  },
+
 
   addNodeToConnection: (nodeId: string) => {
     set((state) => {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { MCQ, ShortAnswer, ApplicationEssay, NodeType } from '@/lib/types';
-import { saveVideoFile } from '@/lib/db';
+import { upload } from '@vercel/blob/client';
 
 interface SectionQuestions {
   mcqs: MCQ[];
@@ -221,34 +221,54 @@ export default function CourseBuilderPage() {
     }
 
     setIsAnalyzingVideo(true);
-    console.log('🎥 Uploading video for analysis:', selectedFile.name);
+    console.log('🎥 Uploading video:', selectedFile.name);
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      const response = await fetch('/api/analyze-video', {
-        method: 'POST',
-        body: formData,
+      // 1. Upload to Vercel Blob (Client Side - Supports 500MB+)
+      console.log('☁️ Uploading to Vercel Blob...');
+      const blob = await upload(selectedFile.name, selectedFile, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+      console.log('✅ Video uploaded to Vercel Blob:', blob.url);
+
+      // 2. Analyze video with Gemini (Only if < 20MB)
+      // Note: We skip analysis for large files due to serverless limits, but the video is still saved!
+      let aiData: any = {}; // Use 'any' for now to easily assign properties
+
+      if (selectedFile.size < 20 * 1024 * 1024) {
+        console.log('🤖 Analyzing video with Gemini...');
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        const response = await fetch('/api/analyze-video', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          aiData = await response.json();
+          console.log('✅ Video analysis complete:', aiData);
+        } else {
+          console.warn('⚠️ Video analysis failed (skipping):', await response.text());
+        }
+      } else {
+        console.log('ℹ️ Video is too large for AI analysis (>20MB). Skipping analysis but keeping video.');
+        alert('Video uploaded successfully! Note: AI analysis was skipped because the file is larger than 20MB.');
       }
 
-      const data = await response.json();
-      console.log('✅ Video analysis complete:', data);
-
-      // Update course data with AI-generated content AND store the video file
+      // Update course data with AI-generated content (if any) AND store the video URL
       setCourseData(prev => ({
         ...prev,
-        title: data.title || prev.title,
-        description: data.description || prev.description,
-        fullTextContent: data.fullTextContent || prev.fullTextContent,
-        timestamps: data.timestamps || prev.timestamps,
-        sectionContents: data.sectionContents || prev.sectionContents,
-        uploadedVideoFile: selectedFile, // Store the video file for playback
+        // Use AI title/desc if available, otherwise keep existing or use filename
+        title: aiData.title || prev.title || selectedFile.name,
+        description: aiData.description || prev.description,
+        fullTextContent: aiData.fullTextContent || prev.fullTextContent,
+        timestamps: aiData.timestamps || prev.timestamps,
+        sectionContents: aiData.sectionContents || prev.sectionContents,
+        uploadedVideoFile: null, // No longer needed locally
+        videoUrl: blob.url, // Store the Vercel Blob URL
       }));
 
       alert('✨ Video analysis complete! Course content has been generated.');
@@ -259,6 +279,9 @@ export default function CourseBuilderPage() {
       setIsAnalyzingVideo(false);
     }
   };
+
+
+
 
   // Generate questions for all sections
   const handleGenerateQuestions = async () => {
@@ -611,7 +634,7 @@ export default function CourseBuilderPage() {
 
         // Update node with video metadata and questions
         updateNode(nodeId, {
-          videoUrl: courseData.uploadedVideoFile ? 'uploaded-video' : courseData.videoUrl,
+          videoUrl: courseData.videoUrl, // Use the cloud URL (Vercel Blob or YouTube)
           videoStart: chunk.start,
           videoEnd: chunk.end,
           isLocked: false, // All nodes unlocked immediately
@@ -810,12 +833,8 @@ export default function CourseBuilderPage() {
       // Save to localStorage with the updated course metadata
       saveToLocalStorage();
 
-      // Save uploaded video file to IndexedDB if present
-      if (courseData.uploadedVideoFile) {
-        console.log('💾 Saving video file to IndexedDB...');
-        await saveVideoFile(savedUniverseId, courseData.uploadedVideoFile);
-        console.log('✅ Video file saved to IndexedDB');
-      }
+      // Video is already uploaded to Vercel Blob, so no need to save to IndexedDB
+      // if (courseData.uploadedVideoFile) { ... }
 
       console.log('🎓 Course created successfully!');
       console.log('   - Nexus ID:', nexusId);

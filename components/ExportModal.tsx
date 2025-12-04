@@ -244,7 +244,7 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
         {!exportSuccess ? (
           <>
             <h2 style={{ fontSize: '24px', marginBottom: '8px', color: '#FFD700' }}>
-              📄 Export Aurora Universe
+              📄 Export Astryon Universe
             </h2>
             <p style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '24px' }}>
               Universe: <strong style={{ color: 'white' }}>{currentNexus.title}</strong>

@@ -33,7 +33,7 @@ export default function Navigation() {
         {/* Create Nexus button will appear here from CanvasScene */}
       </div>
 
-      {/* Center Section - Aurora Logo (Absolutely positioned for true centering) */}
+      {/* Center Section - Astryon Logo (Absolutely positioned for true centering) */}
       <div
         onClick={() => router.push('/chat')}
         style={{
@@ -43,6 +43,7 @@ export default function Navigation() {
           cursor: 'pointer',
           fontSize: '48px',
           fontWeight: 'bold',
+          fontFamily: 'var(--font-orbitron)',
           background: 'linear-gradient(90deg, #00ff87, #60efff, #b967ff, #ff61d8)',
           backgroundClip: 'text',
           WebkitBackgroundClip: 'text',
@@ -62,7 +63,7 @@ export default function Navigation() {
           e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
         }}
       >
-        AURORA
+        ASTRYON
       </div>
 
       <style jsx>{`

@@ -5,7 +5,7 @@ import { useCanvasStore } from '@/lib/store';
 import { NodeType } from '@/lib/types';
 import SpatialNavigator from './SpatialNavigator';
 import DoctrinalGenerationModal from './DoctrinalGenerationModal';
-import AIProviderToggle from './AIProviderToggle';
+
 
 interface Message {
   role: 'user' | 'assistant';
@@ -41,7 +41,7 @@ export default function ChatInterface() {
   // 🧠 GAP Mode: Universe activation
   const activatedUniverseIds = useCanvasStore(state => state.activatedUniverseIds);
   const universeLibrary = useCanvasStore(state => state.universeLibrary);
-  const aiProvider = useCanvasStore(state => state.aiProvider);
+
 
   // 🧠 Track selection state
   useEffect(() => {
@@ -291,7 +291,7 @@ export default function ChatInterface() {
               currentGraph: graphStructure.currentGraph,
               activatedGraphs: graphStructure.activatedGraphs,
               task: task,
-              aiProvider
+
             }),
           });
 
@@ -369,9 +369,10 @@ export default function ChatInterface() {
     if (!message.trim()) return;
 
     const userMessage = message.trim();
-    const explorePattern = /^explore:\s*/i;
-    const isSpatialMode = explorePattern.test(userMessage);
-    const cleanMessage = userMessage.replace(explorePattern, '').trim();
+    // Spatial mode is always on - no need for "Explore:" prefix
+    // User can use ** for manual parsing, otherwise AI generates structure
+    const isSpatialMode = true;
+    const cleanMessage = userMessage;
 
     setMessage('');
     setIsLoading(true);
@@ -429,10 +430,10 @@ export default function ChatInterface() {
             const truncatedContent = conv.content.substring(0, 300);
             gapContext += `${truncatedContent}${conv.content.length > 300 ? '...' : ''}\n`;
 
-            const universeNodes = Object.values(nodes).filter(n => n.parentId === conv.id);
-            if (universeNodes.length > 0) {
+            const astryonUniverseNodes = Object.values(nodes).filter(n => n.parentId === conv.id);
+            if (astryonUniverseNodes.length > 0) {
               gapContext += '\nCases/Topics in this universe:\n';
-              universeNodes.forEach(node => {
+              astryonUniverseNodes.forEach(node => {
                 const nodeTitle = node.semanticTitle || node.title || 'Untitled';
                 const nodeContent = node.content.substring(0, 150);
                 gapContext += `- ${nodeTitle}: ${nodeContent}${node.content.length > 150 ? '...' : ''}\n`;
@@ -483,7 +484,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
           body: JSON.stringify({
             messages: [{ role: 'user', content: prompt }],
             mode: 'doctrine',
-            aiProvider
+
           }),
         });
 
@@ -582,7 +583,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
               mode: 'gap-synthesize',
               activatedGraphs: graphStructure.activatedGraphs,
               question: userMessage,
-              aiProvider
+
             }),
           });
 
@@ -643,7 +644,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
             currentGraph: graphStructure.currentGraph,
             activatedGraphs: graphStructure.activatedGraphs,
             question: userMessage,
-            aiProvider
+
           }),
         });
 
@@ -674,7 +675,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
               currentGraph: graphStructure.currentGraph,
               activatedGraphs: graphStructure.activatedGraphs,
               question: userMessage,
-              aiProvider
+
             }),
           });
 
@@ -767,7 +768,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
           messages: messagesForAPI,  // Always send messages to API
           mode: isSpatialMode ? 'spatial' : 'standard',
           conversationContext: fullContext,
-          aiProvider
+
         }),
       });
 
@@ -961,7 +962,7 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <div style={{ color: isSpatialModeActive ? '#9333EA' : (gapModeEnabled ? '#8B5CF6' : '#00FFD4'), fontSize: '14px', fontWeight: 'bold' }}>
-            {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : gapModeEnabled ? '🧠 GAP Mode Active' : '🧠 Aurora Chat'} {!isFirstMessage && '(Full Context Active)'}
+            {isSpatialModeActive ? '🌌 Spatial Exploration Mode' : gapModeEnabled ? '🧠 GAP Mode Active' : '🧠 Astryon Chat'} {!isFirstMessage && '(Full Context Active)'}
           </div>
 
           {/* GAP Mode Toggle Button */}
@@ -1022,23 +1023,20 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
           </div>
         )}
 
-        {/* AI Provider Toggle */}
-        <div style={{ marginBottom: '12px' }}>
-          <AIProviderToggle />
-        </div>
+
 
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder={isSpatialModeActive ? "Spatial mode active! AI will create multiple nodes..." : "Type your message... (or 'Explore: [prompt]' for spatial mode)"}
+          placeholder="Enter a topic (AI creates nodes) or use **Title **Node1 **Node2 for manual parsing..."
           disabled={isLoading}
           style={{
             width: '100%',
             minHeight: '80px',
             padding: '8px',
             backgroundColor: '#1a1a1a',
-            border: `1px solid ${isSpatialModeActive ? '#9333EA' : '#333'}`,
+            border: '1px solid #9333EA',
             borderRadius: '4px',
             color: '#fff',
             fontSize: '14px',

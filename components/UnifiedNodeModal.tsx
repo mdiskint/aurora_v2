@@ -14,7 +14,6 @@ import {
 } from '@/lib/guidedPracticeHelpers';
 import { generateUniverseStudyGuide, UniverseDefinition } from '@/lib/studyGuideGenerator';
 import { StudyGuideWriteUp } from '@/lib/types';
-import { loadVideoFile } from '@/lib/db';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -31,8 +30,9 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
 
-  // Check if this is a blob URL (uploaded video)
-  const isBlobUrl = videoUrl.startsWith('blob:');
+  // Check if this is a blob URL (local) or Vercel Blob URL (cloud)
+  // Vercel Blob URLs typically end with .mp4 or other video extensions, or contain 'public.blob.vercel-storage.com'
+  const isBlobUrl = videoUrl.startsWith('blob:') || videoUrl.includes('vercel-storage.com') || videoUrl.endsWith('.mp4');
 
   // For blob URLs, use HTML5 video player
   useEffect(() => {
@@ -43,7 +43,7 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
     // Set start time when video loads
     const handleLoadedMetadata = () => {
       setVideoDuration(video.duration);
-      
+
       // Debug: Check for audio tracks
       const audioTracks = video.audioTracks;
       const hasAudio = audioTracks && audioTracks.length > 0;
@@ -54,11 +54,11 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
         volume: video.volume,
         videoSrc: videoUrl.substring(0, 50) + '...'
       });
-      
+
       if (!hasAudio) {
         console.warn('⚠️ No audio tracks detected in video!');
       }
-      
+
       if (startTime && startTime > 0) {
         video.currentTime = startTime;
       }
@@ -495,36 +495,8 @@ export default function UnifiedNodeModal() {
   const node = selectedId ? nodes[selectedId] : null;
 
   // Load uploaded video file from IndexedDB if needed
-  useEffect(() => {
-    const loadVideo = async () => {
-      if (!node || node.videoUrl !== 'uploaded-video') {
-        setLoadedVideoUrl(null);
-        return;
-      }
-
-      // Find the universe ID (parent nexus)
-      let currentId = node.parentId;
-      while (currentId) {
-        const foundNexus = nexuses.find(n => n.id === currentId);
-        if (foundNexus) {
-          // Load video from IndexedDB
-          const videoUrl = await loadVideoFile(foundNexus.id);
-          setLoadedVideoUrl(videoUrl);
-          console.log('✅ Loaded video file from IndexedDB for universe:', foundNexus.id);
-          return;
-        }
-
-        const parentNode = nodes[currentId];
-        if (parentNode) {
-          currentId = parentNode.parentId;
-        } else {
-          break;
-        }
-      }
-    };
-
-    loadVideo();
-  }, [node, nodes, nexuses]);
+  // Video loading is now handled directly by the videoUrl (Vercel Blob)
+  // useEffect(() => { ... }, [node]);
 
   // 🔄 MANAGE GUIDED PRACTICE PROGRESS when switching between L1 nodes
   useEffect(() => {
@@ -2348,9 +2320,9 @@ Be conversational and human, not formulaic.`;
 
             {/* Video Player (if node has video) */}
             {node?.videoUrl && (
-              <div className="px-6 pt-6 pb-3 flex-shrink-0">
+              <div className="mb-8">
                 <VideoPlayer
-                  videoUrl={loadedVideoUrl || node.videoUrl}
+                  videoUrl={node.videoUrl}
                   startTime={node.videoStart}
                   endTime={node.videoEnd}
                 />

@@ -256,7 +256,7 @@ export default function ReplyModal() {
           body: JSON.stringify({
             messages: [{
               role: 'user',
-              content: `You are Aurora AI. The user is exploring a node with this content:\n\n"${selectedContent}"\n\nThe user asks: ${content}\n\nProvide a thoughtful, insightful response that helps them explore this idea further.`
+              content: `You are Astryon AI. The user is exploring a node with this content:\n\n"${selectedContent}"\n\nThe user asks: ${content}\n\nProvide a thoughtful, insightful response that helps them explore this idea further.`
             }],
             mode: 'reply'
           }),
@@ -358,7 +358,7 @@ export default function ReplyModal() {
       selectNode(null);
     }
   };
-  
+
   const handleClose = async () => {
     // Check if we're ending a connection node Socratic exploration
     if (isExistingConnectionNode && selectedId) {
@@ -461,9 +461,9 @@ export default function ReplyModal() {
     setQuotedText(null);
     selectNode(null);
   };
-  
+
   if (!isOpen) return null;
-  
+
   return createPortal(
     <div
       style={{
@@ -683,7 +683,7 @@ export default function ReplyModal() {
             Replying to: {selectedContent.slice(0, 50)}{selectedContent.length > 50 ? '...' : ''}
           </p>
         )}
-        
+
         {/* Quoted Text Section - Prominent Display (not for Socratic mode) */}
         {quotedText && !isExistingConnectionNode && !isConnectionNode && (
           <div style={{
@@ -693,9 +693,9 @@ export default function ReplyModal() {
             marginBottom: '16px',
             borderLeft: '4px solid #9333EA',
           }}>
-            <div style={{ 
-              color: '#9ca3af', 
-              fontSize: '12px', 
+            <div style={{
+              color: '#9ca3af',
+              fontSize: '12px',
               marginBottom: '8px',
               textTransform: 'uppercase',
               letterSpacing: '0.05em'
@@ -713,7 +713,7 @@ export default function ReplyModal() {
             </div>
           </div>
         )}
-        
+
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
@@ -721,12 +721,12 @@ export default function ReplyModal() {
             isExistingConnectionNode
               ? "Type your answer to continue the Socratic exploration..."
               : isSingleNodeSocratic
-              ? "Type your answer to continue exploring this idea..."
-              : isConnectionNode
-              ? "(Optional) Add context or questions to guide the exploration... Or click 'Explore Together' to let AI start!"
-              : isAIMode
-              ? "What would you like to explore about this node? Ask AI anything..."
-              : "Type your reply..."
+                ? "Type your answer to continue exploring this idea..."
+                : isConnectionNode
+                  ? "(Optional) Add context or questions to guide the exploration... Or click 'Explore Together' to let AI start!"
+                  : isAIMode
+                    ? "What would you like to explore about this node? Ask AI anything..."
+                    : "Type your reply..."
           }
           style={{
             width: '100%',
@@ -742,7 +742,7 @@ export default function ReplyModal() {
           }}
           autoFocus
         />
-        
+
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
           <button
             onClick={handleClose}
@@ -768,8 +768,8 @@ export default function ReplyModal() {
               backgroundColor: isLoadingAI
                 ? '#6b7280'
                 : (isConnectionNode || content.trim())
-                ? ((isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA')
-                : '#6b7280',
+                  ? ((isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '#FFD700' : isAIMode ? '#00E5FF' : '#9333EA')
+                  : '#6b7280',
               color: (isConnectionNode || isExistingConnectionNode || isSingleNodeSocratic) ? '#000' : isAIMode ? '#000' : 'white',
               border: 'none',
               borderRadius: '8px',
@@ -781,14 +781,14 @@ export default function ReplyModal() {
             {isLoadingAI
               ? '🤖 AI is thinking...'
               : isSingleNodeSocratic
-              ? '💬 Answer'
-              : isExistingConnectionNode
-              ? '💬 Answer'
-              : isConnectionNode
-              ? '✨ Explore Together'
-              : isAIMode
-              ? '🤖 Ask AI'
-              : 'Submit Reply'}
+                ? '💬 Answer'
+                : isExistingConnectionNode
+                  ? '💬 Answer'
+                  : isConnectionNode
+                    ? '✨ Explore Together'
+                    : isAIMode
+                      ? '🤖 Ask AI'
+                      : 'Submit Reply'}
           </button>
         </div>
       </div>

@@ -173,7 +173,7 @@ export async function loadVideoFile(universeId: string): Promise<string | null> 
   try {
     const record = await db.videos.get(universeId);
     if (!record) return null;
-    
+
     // Convert Blob to Object URL for video playback
     const url = URL.createObjectURL(record.videoBlob);
     console.log('✅ Video file loaded from IndexedDB:', universeId);
@@ -193,5 +193,53 @@ export async function deleteVideoFile(universeId: string) {
   } catch (error) {
     console.error('❌ Video file delete failed:', error);
     return false;
+  }
+}
+
+// Save universe to Cloud (NeonDB)
+export async function saveToCloud(id: string, data: any, videoUrl?: string) {
+  try {
+    const response = await fetch('/api/universes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id, data, videoUrl }),
+    });
+
+    if (response.ok) {
+      console.log('✅ Universe saved to Cloud:', id);
+      return true;
+    } else {
+      // If 401, user is not logged in, which is fine.
+      if (response.status !== 401) {
+        console.warn('⚠️ Cloud save failed:', response.statusText);
+      }
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Cloud save error:', error);
+    return false;
+  }
+}
+
+// Load all universes from Cloud
+export async function loadFromCloud() {
+  try {
+    const response = await fetch('/api/universes');
+    if (response.ok) {
+      const universes = await response.json();
+      console.log('✅ Loaded universes from Cloud');
+      // Convert array to object map to match loadAllUniverses format
+      const universeMap: any = {};
+      universes.forEach((u: any) => {
+        universeMap[u.id] = u.data;
+      });
+      return universeMap;
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Cloud load error:', error);
+    return null;
   }
 }

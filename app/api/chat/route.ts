@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, aiProvider = 'anthropic' } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
@@ -175,7 +175,7 @@ IMPORTANT:
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8192, // Increased to handle atomized children
-        system: 'You are Aurora AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       });
 
@@ -276,7 +276,7 @@ IMPORTANT:
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
-        system: 'You are Aurora AI, a universe architect. Generate structured spatial knowledge graphs that explore content deeply. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        system: 'You are Astryon AI, a universe architect. Generate structured spatial knowledge graphs that explore content deeply. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: breakOffPrompt }],
       });
 
@@ -1212,7 +1212,7 @@ Remember: Return ONLY the JSON object, nothing else.`,
 15. Child-Sized Tasks, Adult-Sized Content
 
 **YOUR TASK:**
-Analyze the provided educational content and produce a JSON blueprint for atomizing it into an Aurora learning universe.
+Analyze the provided educational content and produce a JSON blueprint for atomizing it into an Astryon learning universe.
 
 **OUTPUT FORMAT (JSON only, no other text):**
 {
@@ -1620,7 +1620,7 @@ IMPORTANT:
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
-        system: 'You are Aurora AI, a universe synthesis architect. You create new knowledge structures that synthesize insights from multiple source universes. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        system: 'You are Astryon AI, a universe synthesis architect. You create new knowledge structures that synthesize insights from multiple source universes. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: synthesisPrompt }],
       });
 
@@ -1782,47 +1782,19 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
       ? `You are Astryon AI, helping users explore ideas in 3D space. You have access to the full conversation context below:\n\n${conversationContext}\n\nRespond naturally based on this full context.`
       : 'You are Astryon AI, helping users explore ideas in 3D space.';
 
-    // 🤖 AI PROVIDER ROUTING
-    let aiResponse: string;
+    console.log('🤖 Using Anthropic Claude');
 
-    if (aiProvider === 'gemini') {
-      console.log('🤖 Using Gemini AI');
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2048,
+      system: systemMessage,
+      messages: [{ role: 'user', content: userMessage }],
+    });
 
-      try {
-        const geminiPrompt = conversationContext
-          ? `${systemMessage}\n\nUser: ${userMessage}`
-          : userMessage;
+    console.log('✅ Got response from Claude');
 
-        aiResponse = await callGemini(geminiPrompt, systemMessage);
-        console.log('✅ Got response from Gemini');
-      } catch (geminiError) {
-        console.error('❌ Gemini API failed, falling back to Claude:', geminiError);
-        // Fallback to Claude if Gemini fails
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          system: systemMessage,
-          messages: [{ role: 'user', content: userMessage }],
-        });
-
-        const textContent = response.content.find((block) => block.type === 'text');
-        aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
-      }
-    } else {
-      console.log('🤖 Using Anthropic Claude');
-
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2048,
-        system: systemMessage,
-        messages: [{ role: 'user', content: userMessage }],
-      });
-
-      console.log('✅ Got response from Claude');
-
-      const textContent = response.content.find((block) => block.type === 'text');
-      aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
-    }
+    const textContent = response.content.find((block) => block.type === 'text');
+    const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
 
     return NextResponse.json({ response: aiResponse });
   } catch (error: any) {
