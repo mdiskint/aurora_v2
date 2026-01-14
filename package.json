@@ -1,0 +1,50 @@
+{
+  "name": "aurora-v2",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "npx tsx lib/__tests__/studyGuideGenerator.test.ts && npx tsx lib/__tests__/universeRunLifecycle.test.ts",
+    "test:guide": "npx tsx lib/__tests__/studyGuideGenerator.test.ts",
+    "test:lifecycle": "npx tsx lib/__tests__/universeRunLifecycle.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.67.0",
+    "@google/generative-ai": "^0.24.1",
+    "@neondatabase/serverless": "^1.0.2",
+    "@next-auth/prisma-adapter": "^1.0.7",
+    "@prisma/client": "^5.22.0",
+    "@react-three/drei": "^10.7.6",
+    "@react-three/fiber": "^9.3.0",
+    "@vercel/blob": "^2.0.0",
+    "dexie": "^4.2.1",
+    "docx": "^9.5.1",
+    "file-saver": "^2.0.5",
+    "jspdf": "^3.0.3",
+    "next": "^15.5.9",
+    "next-auth": "^4.24.7",
+    "openai": "^6.15.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-force-graph-2d": "^1.29.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.180.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.4",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

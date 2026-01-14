@@ -1,0 +1,26 @@
+{
+  "name": "aurora-server",
+  "version": "1.0.0",
+  "description": "Aurora WebSocket Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "websocket",
+    "collaboration",
+    "aurora"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "openai": "^6.15.0",
+    "socket.io": "^4.5.4"
+  }
+}
