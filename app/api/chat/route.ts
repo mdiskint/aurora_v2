@@ -144,26 +144,72 @@ export async function POST(request: NextRequest) {
         // First section = Nexus ONLY
         const nexus = sections[0].trim();
         // Remaining sections = Nodes ONLY (excludes first section)
-        const nodeContents = sections.slice(1);
+        const nodeContents = sections.slice(1).map(s => s.trim());
 
         console.log('🏛️ Nexus section (index 0):', nexus);
         console.log('📦 Node sections (index 1+):', nodeContents);
 
+        // Enrich each node with AI, including sibling context
+        const enrichedNodes = [];
+        for (let i = 0; i < nodeContents.length; i++) {
+          const currentNode = nodeContents[i];
+          const siblingsSummary = nodeContents
+            .map((content, idx) => {
+              if (idx === i) return null;
+              return `- Node ${idx + 1}: ${content.substring(0, 200)}`;
+            })
+            .filter(Boolean)
+            .join('\n');
+
+          const enrichPrompt = `You are expanding a node in a knowledge universe.
+
+UNIVERSE OVERVIEW (nexus content):
+${nexus}
+
+This universe has ${nodeContents.length} nodes. Here are the other nodes for context:
+${siblingsSummary}
+
+YOUR NODE to expand (Node ${i + 1}):
+${currentNode}
+
+Write a rich, detailed explanation of this node's topic (3-5 paragraphs). You MUST:
+1. Draw on the universe overview above as foundational context -- reference its ideas, frameworks, or examples where relevant
+2. Reference and build on ideas from the other nodes where relevant (e.g., "Building on the concept from [sibling topic]..." or "Unlike [sibling topic], this...")
+3. Show how this node connects to or contrasts with both the overview and the other nodes
+4. Be educational, clear, and specific with examples
+
+Return ONLY the expanded content text. No titles, no labels, no markdown headers.`;
+
+          try {
+            console.log(`🤖 Enriching node ${i + 1}/${nodeContents.length} with cross-node context...`);
+            const enrichResponse = await safeAICall(anthropic, openai, {
+              system: 'You are an expert educator creating interconnected learning content. Write clear, detailed explanations that reference and build on related concepts.',
+              messages: [{ role: 'user', content: enrichPrompt }],
+              max_tokens: 2000,
+              temperature: 0.7,
+            }, 'high');
+
+            const enrichedContent = (enrichResponse as any).content[0].text;
+            enrichedNodes.push({ content: enrichedContent });
+            console.log(`   ✅ Node ${i + 1} enriched (${enrichedContent.length} chars)`);
+          } catch (error) {
+            console.error(`   ❌ Failed to enrich node ${i + 1}, using original:`, error);
+            enrichedNodes.push({ content: currentNode });
+          }
+        }
+
         const spatialData = {
-          nexusTitle: nexus.substring(0, 50), // First 50 chars for title
-          nexusContent: nexus, // Full first section for content
-          nodes: nodeContents.map((content, idx) => {
-            console.log(`   Node ${idx + 1}:`, content.substring(0, 50) + '...');
-            return { content: content.trim() };
-          })
+          nexusTitle: nexus.substring(0, 50),
+          nexusContent: nexus,
+          nodes: enrichedNodes
         };
 
-        console.log('✅ Parsed manual structure:');
+        console.log('✅ Parsed and enriched manual structure:');
         console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
-        console.log(`   - Nodes: ${spatialData.nodes.length}`);
+        console.log(`   - Nodes: ${spatialData.nodes.length} (AI-enriched with cross-references)`);
 
         return NextResponse.json({
-          response: `Created manual universe with ${spatialData.nodes.length} nodes`,
+          response: `Created manual universe with ${spatialData.nodes.length} enriched nodes`,
           spatialData
         });
       }
