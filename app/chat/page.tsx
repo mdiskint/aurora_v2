@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import ChatInterface from '@/components/ChatInterface';
+import ChatInterface from '@/components/chat/ChatInterface';
 import Navigation from '@/components/Navigation';
 import { useNexusEvolution } from '@/lib/useNexusEvolution';
 import { useNexusApplicationLabEvolution } from '@/lib/useNexusApplicationLabEvolution';

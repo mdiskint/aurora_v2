@@ -111,7 +111,7 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
     // Check if descendant (walk up the tree)
     let current = node;
     let depth = 0;
-    const maxDepth = 10;
+    const maxDepth = 1000; // Increased significantly for deep trees
     while (current.parentId && depth < maxDepth) {
       if (current.parentId === currentNexus.id) return true;
       current = nodes[current.parentId];
@@ -155,6 +155,8 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
             id: node.id,
             title: node.title,
             content: node.content,
+            parentId: node.parentId,
+            children: node.children,
             semanticTitle: node.semanticTitle,
             nodeType: node.nodeType,
             isConnectionNode: node.isConnectionNode,

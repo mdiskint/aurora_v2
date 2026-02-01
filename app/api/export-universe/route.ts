@@ -1,6 +1,18 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
+interface ExportNode {
+  id: string;
+  title: string;
+  content: string;
+  parentId: string;
+  children: string[];
+  semanticTitle?: string;
+  nodeType?: string;
+  isConnectionNode?: boolean;
+  isSynthesis?: boolean;
+}
+
 interface ExportRequest {
   exportType: 'full' | 'analysis';
   nexus: {
@@ -8,15 +20,7 @@ interface ExportRequest {
     title: string;
     content: string;
   };
-  nodes: Array<{
-    id: string;
-    title: string;
-    content: string;
-    semanticTitle?: string;
-    nodeType?: string;
-    isConnectionNode?: boolean;
-    isSynthesis?: boolean;
-  }>;
+  nodes: ExportNode[];
 }
 
 export async function POST(request: NextRequest) {
@@ -42,46 +46,63 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
-    // Prepare node data with semantic titles
-    const nodeDescriptions = nodes.map(node => {
-      const title = node.semanticTitle || node.content.slice(0, 50) + '...';
-      const typeLabel = node.isConnectionNode ? '[CONNECTION]' :
-                       node.isSynthesis ? '[SYNTHESIS]' :
-                       node.nodeType === 'ai-response' ? '[AI]' :
-                       node.nodeType === 'user-reply' ? '[USER]' :
-                       node.nodeType === 'socratic-question' ? '[SOCRATIC]' :
-                       '[NODE]';
 
-      return `${typeLabel} ${title}\nContent: ${node.content.slice(0, 500)}${node.content.length > 500 ? '...' : ''}`;
+    // Reconstruction of the tree for both modes
+    const rootNodes = nodes.filter(n => n.parentId === nexus.id).sort((a, b) => {
+      const aTime = parseInt(a.id.split('-')[1]) || 0;
+      const bTime = parseInt(b.id.split('-')[1]) || 0;
+      return aTime - bTime;
     });
 
-    // Filter specific node types for analysis mode
-    const synthesisNodes = nodes.filter(n => n.isSynthesis);
-    const connectionNodes = nodes.filter(n => n.isConnectionNode);
-    const aiInsights = nodes.filter(n => n.nodeType === 'ai-response');
+    let markdown = '';
 
-    // Build the prompt based on export type
-    const prompt = exportType === 'full'
-      ? buildFullHistoryPrompt(nexus, nodeDescriptions)
-      : buildAnalysisOnlyPrompt(nexus, synthesisNodes, connectionNodes, aiInsights);
+    // ALWAYS generate the literal tree for now to satisfy the user's requirement for a bullet-pointed study guide
+    console.log('🚀 Generating hierarchical tree export for universe:', nexus.title);
+    markdown = `# ${nexus.title}\n\n`;
 
-    console.log('📝 Generating', exportType, 'export for universe:', nexus.title);
+    const generateMarkdownTree = (node: ExportNode, depth: number = 0): string => {
+      const indent = '  '.repeat(depth);
+      const title = node.semanticTitle || node.title || node.content.slice(0, 50) + '...';
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
-    });
+      // Logical labeling for study guide feel
+      const typeLabel = node.isConnectionNode ? 'CONNECTION' :
+        node.isSynthesis ? 'SYNTHESIS' :
+          node.nodeType === 'ai-response' ? 'EXPLANATION' :
+            node.nodeType === 'user-reply' ? 'USER' :
+              node.nodeType === 'socratic-question' ? 'INQUIRY' :
+                node.nodeType === 'quiz-mc' ? 'QUIZ (MC)' :
+                  node.nodeType === 'quiz-fr' ? 'QUIZ (FR)' :
+                    'NODE';
 
-    const textContent = message.content.find((block) => block.type === 'text');
-    const markdown = textContent && 'text' in textContent
-      ? textContent.text.trim()
-      : '# Export Failed\n\nUnable to generate document.';
+      let out = `${indent}- **[${typeLabel}] ${title}**\n`;
 
-    console.log('✅ Generated document:', markdown.slice(0, 100) + '...');
+      // Indent content for readability
+      const contentLines = node.content.split('\n');
+      contentLines.forEach(line => {
+        if (line.trim()) {
+          out += `${indent}  ${line.trim()}\n`;
+        }
+      });
+
+      // Recurse for children, sorted by timestamp to match UI
+      const childNodes = nodes.filter(n => n.parentId === node.id).sort((a, b) => {
+        const aTime = parseInt(a.id.split('-')[1]) || 0;
+        const bTime = parseInt(b.id.split('-')[1]) || 0;
+        return aTime - bTime;
+      });
+
+      if (childNodes.length > 0) {
+        childNodes.forEach(child => {
+          out += generateMarkdownTree(child, depth + 1);
+        });
+      }
+
+      return out;
+    };
+
+    markdown += rootNodes.map(node => generateMarkdownTree(node, 0)).join('\n');
+
+    console.log('✅ Generated document (first 100 chars):', markdown.slice(0, 100) + '...');
 
     // Parse markdown into structured data for Word/PDF export
     const structuredData = parseMarkdownToStructured(markdown, nexus.title);
@@ -100,67 +121,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function buildFullHistoryPrompt(
-  nexus: { title: string; content: string },
-  nodeDescriptions: string[]
-): string {
-  return `Create a comprehensive conversation transcript document in markdown format.
-
-Universe Title: "${nexus.title}"
-Universe Context: ${nexus.content}
-
-Format each exchange with clear labels and indentation to show conversation structure:
-
-**[USER REPLY]**
-[User's actual content]
-
-**[AI RESPONSE]**
-[AI's actual content]
-
-**[SOCRATIC QUESTION]**
-[AI's question]
-
-**[USER ANSWER]**
-[User's answer to Socratic question]
-
-  **[FOLLOW-UP QUESTION]** (indented when it's a continuation)
-  [AI's follow-up]
-
-  **[USER ANSWER]**
-  [User's answer]
-
-**[CONNECTION NODE - Connecting: Topic A + Topic B + Topic C]**
-[Content from inspiration node showing synthesis]
-
-**[SYNTHESIS]**
-[Content from synthesis node]
-
-Show the full conversation tree with proper indentation:
-- Main threads at left margin
-- Replies indented 2 spaces
-- Sub-replies indented 4 spaces
-- Clearly label each exchange type
-
-Do NOT add commentary - just present the conversation as it happened.
-
-Structure:
-# ${nexus.title} - Full Conversation
-
-## Conversation Transcript
-
-[Full conversation with labels and indentation]
-
----
-
-All Nodes in Universe:
-${nodeDescriptions.join('\n\n')}
-
----
-
-Present the conversation chronologically as it unfolded. Use the node types and parent-child relationships to build the conversation tree. Label each exchange based on its type (USER REPLY, AI RESPONSE, SOCRATIC QUESTION, USER ANSWER, CONNECTION NODE, SYNTHESIS).
-
-Generate the complete conversation transcript now:`;
-}
 
 function buildAnalysisOnlyPrompt(
   nexus: { title: string; content: string },
@@ -278,34 +238,40 @@ function parseMarkdownToStructured(markdown: string, title: string) {
   let match;
   let summary = '';
 
-  while ((match = sectionRegex.exec(markdown)) !== null) {
-    const heading = match[1];
-    const startIndex = match.index + match[0].length;
+  // Find everything after the main title but before the first section
+  const afterTitleIndex = titleMatch ? titleMatch.index + titleMatch[0].length : 0;
+  const firstSectionMatch = sectionRegex.exec(markdown);
+  sectionRegex.lastIndex = 0; // Reset for the main loop
 
-    // Get content from this heading to next heading (or end)
-    sectionRegex.lastIndex = startIndex;
-    const nextMatch = sectionRegex.exec(markdown);
-    const endIndex = nextMatch ? nextMatch.index : markdown.length;
+  if (firstSectionMatch) {
+    // There are sections (Executive Summary, etc.)
+    summary = markdown.slice(afterTitleIndex, firstSectionMatch.index).trim();
 
-    const content = markdown.slice(startIndex, endIndex).trim();
+    while ((match = sectionRegex.exec(markdown)) !== null) {
+      const heading = match[1];
+      const startIndex = match.index + match[0].length;
+      const nextMatch = sectionRegex.exec(markdown);
+      const endIndex = nextMatch ? nextMatch.index : markdown.length;
+      const content = markdown.slice(startIndex, endIndex).trim();
 
-    // First section is typically Executive Summary
-    if (sections.length === 0 && (heading.toLowerCase().includes('summary') || heading.toLowerCase().includes('executive'))) {
-      summary = content;
-    } else {
+      if (heading.toLowerCase().includes('summary') || heading.toLowerCase().includes('executive')) {
+        summary = content;
+      } else {
+        sections.push({ heading, content });
+      }
+
+      if (nextMatch) sectionRegex.lastIndex = nextMatch.index;
+      else break;
+    }
+  } else {
+    // No ## sections found - everything is the tree
+    const treeContent = markdown.slice(afterTitleIndex).trim();
+    if (treeContent) {
       sections.push({
-        heading,
-        content
+        heading: 'Full Conversation Tree',
+        content: treeContent
       });
     }
-
-    sectionRegex.lastIndex = endIndex;
-  }
-
-  // If no summary was found, use first paragraph after title
-  if (!summary) {
-    const firstParagraphMatch = markdown.match(/^#[^\n]*\n\n([\s\S]+?)(?:\n\n|\n##|$)/);
-    summary = firstParagraphMatch ? firstParagraphMatch[1].trim() : 'Analysis of ' + extractedTitle;
   }
 
   return {

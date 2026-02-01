@@ -3,22 +3,36 @@ import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 import { callGemini } from '@/lib/gemini';
 
-async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any) {
+const MODEL_CONFIG = {
+  high: {
+    anthropic: 'claude-3-5-sonnet-20241022',
+    openai: 'gpt-4o',
+  },
+  low: {
+    anthropic: 'claude-3-5-haiku-20241022',
+    openai: 'gpt-4o-mini',
+  }
+};
+
+async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'low' = 'high') {
+  const modelToUse = complexity === 'high' ? MODEL_CONFIG.high : MODEL_CONFIG.low;
+  const currentParams = { ...params, model: modelToUse.anthropic };
+
   if (process.env.ANTHROPIC_API_KEY) {
     try {
-      console.log('🤖 Attempting Anthropic call...');
-      return await anthropic.messages.create(params);
+      console.log(`🤖 Attempting Anthropic call (${complexity} tier: ${modelToUse.anthropic})...`);
+      return await anthropic.messages.create(currentParams);
     } catch (error: any) {
       console.error('❌ Anthropic failed:', error.message);
       if (!process.env.OPENAI_API_KEY) throw error;
-      console.log('🔄 Fallback condition met, switching to OpenAI...');
+      console.log(`🔄 Fallback condition met, switching to OpenAI (${modelToUse.openai})...`);
     }
   }
 
   if (process.env.OPENAI_API_KEY) {
-    console.log('🚀 Executing OpenAI fallback (gpt-4o)...');
+    console.log(`🚀 Executing OpenAI fallback (${modelToUse.openai})...`);
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: modelToUse.openai,
       messages: [
         ...(params.system ? [{ role: "system", content: params.system }] : []),
         ...params.messages
@@ -99,18 +113,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 🌌 SPATIAL MODE: Detect "Explore:" prefix or explicit spatial mode
-    const isSpatialMode = mode === 'spatial' || userMessage.toLowerCase().startsWith('explore:');
+    // 🌌 SPATIAL MODE: Explicitly triggered by mode parameter
+    const isSpatialMode = mode === 'spatial';
 
     if (isSpatialMode) {
       console.log('🌌 SPATIAL MODE ACTIVATED - Generating universe structure');
 
-      // Extract topic from "Explore: topic" or use full message
-      const userTopic = userMessage.toLowerCase().startsWith('explore:')
-        ? userMessage.substring(8).trim()
-        : userMessage;
+      // Use full message for topic
+      const userTopic = userMessage;
 
       console.log('🎯 Topic for universe:', userTopic);
+
 
       // 🔍 CHECK FOR MANUAL MODE: User provided ** structure
       if (userTopic.includes('**')) {
@@ -129,17 +142,17 @@ export async function POST(request: NextRequest) {
         }
 
         // First section = Nexus ONLY
-        const nexusSection = sections[0].trim();
+        const nexus = sections[0].trim();
         // Remaining sections = Nodes ONLY (excludes first section)
-        const nodeSections = sections.slice(1);
+        const nodeContents = sections.slice(1);
 
-        console.log('🏛️ Nexus section (index 0):', nexusSection);
-        console.log('📦 Node sections (index 1+):', nodeSections);
+        console.log('🏛️ Nexus section (index 0):', nexus);
+        console.log('📦 Node sections (index 1+):', nodeContents);
 
         const spatialData = {
-          nexusTitle: nexusSection.substring(0, 50), // First 50 chars for title
-          nexusContent: nexusSection, // Full first section for content
-          nodes: nodeSections.map((content, idx) => {
+          nexusTitle: nexus.substring(0, 50), // First 50 chars for title
+          nexusContent: nexus, // Full first section for content
+          nodes: nodeContents.map((content, idx) => {
             console.log(`   Node ${idx + 1}:`, content.substring(0, 50) + '...');
             return { content: content.trim() };
           })
@@ -148,7 +161,6 @@ export async function POST(request: NextRequest) {
         console.log('✅ Parsed manual structure:');
         console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
         console.log(`   - Nodes: ${spatialData.nodes.length}`);
-        console.log('   - Nexus appears in nodes? NO (using slice(1))');
 
         return NextResponse.json({
           response: `Created manual universe with ${spatialData.nodes.length} nodes`,
@@ -214,7 +226,7 @@ IMPORTANT:
         max_tokens: 8192, // Increased to handle atomized children
         system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
-      });
+      }, 'low');
 
       console.log('✅ Got response from Claude');
 
@@ -1162,7 +1174,7 @@ Your task is to synthesize a learning conversation into a comprehensive mastery 
 
 Write in a warm, encouraging tone that celebrates the student's progress while being substantive and specific.`,
         messages: [{ role: 'user', content: summaryPrompt }],
-      });
+      }, 'low');
 
       const masterySummary = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('✨ Mastery summary generated:', masterySummary.substring(0, 100) + '...');
@@ -1351,6 +1363,76 @@ Analyze the provided educational content and produce a JSON blueprint for atomiz
       return NextResponse.json({ message: atomizationBlueprint, response: atomizationBlueprint });
     }
 
+    // 🎓 LEOPOLD-PRACTICE MODE: Generate atomized practice steps for a single node (No map pollution)
+    if (mode === 'leopold-practice') {
+      console.log('🎓 LEOPOLD-PRACTICE MODE: Generating targeted practice steps');
+
+      const response = await safeAICall(anthropic, openai, {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        system: `You are a Leopold Teaching Doctrine architect. Your task is to generate a high-quality, 5-step guided practice sequence for the provided content.
+
+LEOPOLD TEACHING DOCTRINES:
+1. Understanding Before Memorization
+2. Intuition Before Rule
+3. Model Before Imitate
+4. Practice Disguised as Play
+5. Immediate Feedback
+
+YOUR TASK:
+Generate a JSON object containing 5 practice steps for the provided topic/content.
+
+OUTPUT FORMAT (JSON only):
+{
+  "practiceSteps": [
+    {
+      "nodeType": "intuition-example",
+      "content": "A concrete, relatable analogy or scenario that builds gut-level intuition for the concept. (2-4 sentences)"
+    },
+    {
+      "nodeType": "model-answer",
+      "content": "A clear demonstration of the correct reasoning pattern or approach. (2-4 sentences)"
+    },
+    {
+      "nodeType": "imitate",
+      "content": "A 'Now you try' prompt where the student applies the pattern to a similar but fresh example."
+    },
+    {
+      "nodeType": "quiz-mc",
+      "content": "A multiple-choice question testing the core intuition.",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctOption": "A",
+      "explanation": "Why this is the correct intuition."
+    },
+    {
+      "nodeType": "synthesis",
+      "content": "A final scenario that combines everything, asking the student to reflect on the 'why' and the 'how' together. (3-4 sentences)"
+    }
+  ]
+}
+
+IMPORTANT:
+- Return ONLY valid JSON.
+- Do NOT include any markdown code blocks or commentary.
+- Ensure 'nodeType' matches the allowed internal types exactly.`,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      const practiceJson = response.content[0].type === 'text' ? response.content[0].text : '';
+      console.log('✨ Leopold practice steps generated');
+
+      try {
+        const parsed = JSON.parse(practiceJson);
+        return NextResponse.json({ response: parsed });
+      } catch (err) {
+        console.error('Failed to parse practice JSON:', practiceJson);
+        return NextResponse.json({
+          error: 'Failed to generate valid practice steps',
+          raw: practiceJson
+        }, { status: 500 });
+      }
+    }
+
     // 🎓 QUIZ MODE: Handle quiz grading (PROVIDE ANSWER HERE)
     if (mode === 'quiz' && userMessage.includes('Previous question:')) {
       console.log('📝 QUIZ GRADING MODE - Evaluating student answer');
@@ -1429,7 +1511,7 @@ Would you like another question?`;
       });
 
       // Build context from multiple universes
-      let contextSections: string[] = [];
+      const contextSections: string[] = [];
 
       if (currentGraph) {
         contextSections.push(`CURRENT UNIVERSE (on canvas):
@@ -1537,7 +1619,7 @@ IMPORTANT: Return ONLY the JSON, no other text.`;
       });
 
       // Build context from multiple universes
-      let contextSections: string[] = [];
+      const contextSections: string[] = [];
 
       if (currentGraph) {
         contextSections.push(`CURRENT UNIVERSE:
@@ -1733,7 +1815,7 @@ IMPORTANT:
       });
 
       // Build context from multiple universes
-      let contextSections: string[] = [];
+      const contextSections: string[] = [];
 
       if (currentGraph) {
         contextSections.push(`CURRENT UNIVERSE:

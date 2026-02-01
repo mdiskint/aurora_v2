@@ -78,6 +78,8 @@ export default function CourseBuilderPage() {
   const [questionGenerationProgress, setQuestionGenerationProgress] = useState({ current: 0, total: 0 });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzingVideo, setIsAnalyzingVideo] = useState(false);
+  const [manualVideoFile, setManualVideoFile] = useState<File | null>(null);
+  const [isUploadingManualVideo, setIsUploadingManualVideo] = useState(false);
 
   const [courseData, setCourseData] = useState<CourseData>({
     title: '',
@@ -282,6 +284,35 @@ export default function CourseBuilderPage() {
 
 
 
+
+  // Handle manual video file upload (no analysis, just upload to Vercel Blob)
+  const handleManualVideoUpload = async () => {
+    if (!manualVideoFile) {
+      alert('Please select a video file first.');
+      return;
+    }
+
+    setIsUploadingManualVideo(true);
+
+    try {
+      const blob = await upload(manualVideoFile.name, manualVideoFile, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+      });
+
+      setCourseData(prev => ({
+        ...prev,
+        videoUrl: blob.url,
+      }));
+
+      setManualVideoFile(null);
+    } catch (error) {
+      console.error('Error uploading video:', error);
+      alert(`Failed to upload video: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsUploadingManualVideo(false);
+    }
+  };
 
   // Generate questions for all sections
   const handleGenerateQuestions = async () => {
@@ -731,7 +762,7 @@ export default function CourseBuilderPage() {
 
             // Determine node type based on role
             let nodeType = child.role;
-            let additionalProps: any = {};
+            const additionalProps: any = {};
 
             // Handle different roles
             if (child.role === 'synthesis') {
@@ -1046,18 +1077,61 @@ export default function CourseBuilderPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Video URL <span className="text-gray-500">(Optional)</span>
+                  Video File <span className="text-gray-500">(Optional)</span>
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
-                  YouTube or Vimeo link - only needed if you want to embed a video player
+                  Upload a video file from your computer to embed a video player
                 </p>
-                <input
-                  type="text"
-                  value={courseData.videoUrl}
-                  onChange={(e) => setCourseData({ ...courseData, videoUrl: e.target.value })}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
-                />
+
+                {courseData.videoUrl && (
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1 px-4 py-3 bg-slate-900 border border-green-500/30 rounded-lg text-green-300 text-sm font-mono truncate">
+                      Video uploaded
+                    </div>
+                    <button
+                      onClick={() => setCourseData({ ...courseData, videoUrl: '' })}
+                      className="px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-end gap-4">
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => setManualVideoFile(e.target.files ? e.target.files[0] : null)}
+                      className="block w-full text-sm text-gray-400
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-cyan-500/10 file:text-cyan-300
+                        hover:file:bg-cyan-500/20
+                        cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleManualVideoUpload}
+                    disabled={!manualVideoFile || isUploadingManualVideo}
+                    className={`px-6 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                      !manualVideoFile || isUploadingManualVideo
+                        ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:shadow-lg hover:shadow-cyan-500/20'
+                    }`}
+                  >
+                    {isUploadingManualVideo ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      'Upload Video'
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -1201,7 +1275,9 @@ export default function CourseBuilderPage() {
 
                 <div>
                   <div className="text-sm text-gray-400">Video</div>
-                  <div className="text-gray-200 mt-1 font-mono text-sm truncate">{courseData.videoUrl}</div>
+                  <div className="text-gray-200 mt-1 font-mono text-sm truncate">
+                    {courseData.videoUrl ? 'Uploaded' : 'No video'}
+                  </div>
                 </div>
 
                 <div>

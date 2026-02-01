@@ -417,7 +417,8 @@ export default function UnifiedNodeModal() {
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [showAnchorFeedback, setShowAnchorFeedback] = useState(false);
+  const [isLoadingLeopold, setIsLoadingLeopold] = useState(false);
+  const [isLoadingAtomize, setIsLoadingAtomize] = useState(false);
 
   // Loaded video URL from IndexedDB
   const [loadedVideoUrl, setLoadedVideoUrl] = useState<string | null>(null);
@@ -592,6 +593,109 @@ export default function UnifiedNodeModal() {
       hasGuidedPractice: hasGuidedPractice
     });
   }
+
+  // 🎓 Trigger Leopold atomization for current node
+  const handleLeopoldTrigger = async () => {
+    if (!node) return;
+
+    setIsLoadingLeopold(true);
+    console.log(`🎓 Triggering Leopold method for node: ${node.id}`);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'leopold-practice',
+          messages: [{ role: 'user', content: node.content }]
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Leopold generation failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.response && data.response.practiceSteps) {
+        console.log(`✨ Generated ${data.response.practiceSteps.length} Leopold practice steps`);
+
+        // Update the current node with practice metadata
+        updateNode(node.id, {
+          practiceSteps: data.response.practiceSteps
+        });
+
+        showToastNotification('✨ Leopold methodology applied! Starting guided practice...');
+
+        // 🎓 AUTO-START GUIDED PRACTICE
+        // Wait a moment for state updates to propagate
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Reset and open guided practice panel
+        setActivePracticeStep('intuition');
+        setPracticeStepInput('');
+        setPracticeStepFeedback('');
+        setIsGradingPractice(false);
+        setShowGuidedPractice(true);
+
+        console.log('🎓 Auto-started guided practice mode with metadata');
+      } else {
+        throw new Error('No practice data returned from AI');
+      }
+    } catch (err) {
+      console.error('❌ Leopold trigger failed:', err);
+      showToastNotification(`Failed to apply Leopold: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsLoadingLeopold(false);
+    }
+  };
+
+  // ⚛️ Trigger Atomization (breaking node into multiple children)
+  const handleAtomizeTrigger = async () => {
+    if (!node) return;
+
+    setIsLoadingAtomize(true);
+    console.log(`⚛️ Triggering Atomization for node: ${node.id}`);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'spatial',
+          messages: [{ role: 'user', content: node.content }]
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Atomization failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.spatialData && data.spatialData.nodes) {
+        console.log(`✨ Generated ${data.spatialData.nodes.length} atomized nodes`);
+
+        // Create nodes under the current node
+        for (const newNode of data.spatialData.nodes) {
+          addNode(
+            newNode.content,
+            node.id,
+            undefined,
+            newNode.nodeType || 'ai-response'
+          );
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        showToastNotification(`✨ Successfully atomized into ${data.spatialData.nodes.length} nodes!`);
+      } else {
+        throw new Error('No spatial data returned from AI');
+      }
+    } catch (err) {
+      console.error('❌ Atomization failed:', err);
+      showToastNotification(`Failed to atomize: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsLoadingAtomize(false);
+    }
+  };
 
   // Toast notification helper
   const showToastNotification = (message: string) => {
@@ -2270,52 +2374,75 @@ Be conversational and human, not formulaic.`;
                   </div>
                 </div>
               </div>
+              <div className="flex items-center">
+                {/* Atomize Button - Replaces Anchor */}
+                {node && !isConnectionNode && !node.id.startsWith('meta-inspiration') && (
+                  <div className="flex flex-col items-center mx-2">
+                    <button
+                      onClick={handleAtomizeTrigger}
+                      disabled={isLoadingAtomize}
+                      className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
+                        ${isLoadingAtomize
+                          ? 'bg-amber-900/40 border-2 border-amber-700 text-amber-500 cursor-not-allowed'
+                          : 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'}`}
+                    >
+                      {isLoadingAtomize ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></span>
+                          Atomizing...
+                        </>
+                      ) : (
+                        <>⚛️ Atomize</>
+                      )}
+                    </button>
+                  </div>
+                )}
 
-              {/* Anchor Button - Top Center */}
-              {node && !isConnectionNode && !node.id.startsWith('meta-inspiration') && (
-                <div className="flex flex-col items-center mx-6">
-                  <button
-                    onClick={() => {
-                      toggleAnchor(node.id);
-                      setShowAnchorFeedback(true);
-                      setTimeout(() => setShowAnchorFeedback(false), 2000);
-                    }}
-                    className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
-                      ${node.isAnchored
-                        ? 'bg-yellow-600/40 border-2 border-yellow-400 text-yellow-200'
-                        : 'bg-transparent hover:bg-yellow-600/20 border-2 border-yellow-500/50 text-yellow-300'}`}
-                  >
-                    ⚓ {node.isAnchored ? 'Anchored' : 'Anchor Node'}
-                  </button>
-                  {showAnchorFeedback && (
-                    <div className="text-xs text-cyan-300 mt-1 animate-pulse">
-                      {node.isAnchored ? '✓ Anchored!' : '✓ Removed'}
-                    </div>
-                  )}
-                </div>
-              )}
+                {/* Leopold Button - Next to Atomize */}
+                {node && !isConnectionNode && !node.id.startsWith('meta-inspiration') && (
+                  <div className="flex flex-col items-center mx-2">
+                    <button
+                      onClick={handleLeopoldTrigger}
+                      disabled={isLoadingLeopold}
+                      className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
+                        ${isLoadingLeopold
+                          ? 'bg-cyan-900/40 border-2 border-cyan-700 text-cyan-500 cursor-not-allowed'
+                          : 'bg-transparent hover:bg-cyan-600/20 border-2 border-cyan-500/50 text-cyan-300'}`}
+                    >
+                      {isLoadingLeopold ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></span>
+                          Generating...
+                        </>
+                      ) : (
+                        <>🎓 Leopold Method</>
+                      )}
+                    </button>
+                  </div>
+                )}
 
-              {/* Application Essay Button - For nexuses with application essays */}
-              {nexus?.applicationEssay && (
-                <div className="flex flex-col items-center mx-6">
-                  <button
-                    onClick={() => setShowEssaySection(true)}
-                    className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-bold flex items-center gap-2"
-                  >
-                    📝 Application Essay
-                  </button>
-                </div>
-              )}
+                {/* Application Essay Button - For nexuses with application essays */}
+                {nexus?.applicationEssay && (
+                  <div className="flex flex-col items-center mx-2">
+                    <button
+                      onClick={() => setShowEssaySection(true)}
+                      className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-bold flex items-center gap-2"
+                    >
+                      📝 Application Essay
+                    </button>
+                  </div>
+                )}
 
-              <button
-                onClick={handleClose}
-                className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/10 rounded"
-                type="button"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+                <button
+                  onClick={handleClose}
+                  className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/10 rounded ml-4"
+                  type="button"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Video Player (if node has video) */}
@@ -3065,819 +3192,880 @@ Be conversational and human, not formulaic.`;
             )}
           </div>
         </div>
-      </div>
+      </div >
 
       {/* Quiz Format Selection Modal */}
-      {showQuizFormatModal && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2004]"
-            onClick={() => setShowQuizFormatModal(false)}
-          />
-          <div className="fixed z-[2005] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] max-w-90vw">
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-8">
-              <h2 className="text-2xl font-bold text-purple-300 mb-6">Choose Quiz Format</h2>
+      {
+        showQuizFormatModal && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2004]"
+              onClick={() => setShowQuizFormatModal(false)}
+            />
+            <div className="fixed z-[2005] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] max-w-90vw">
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-8">
+                <h2 className="text-2xl font-bold text-purple-300 mb-6">Choose Quiz Format</h2>
 
-              <div className="space-y-4 mb-6">
-                {/* Short Answer Option */}
-                <button
-                  onClick={() => {
-                    setShowQuizFormatModal(false);
-                    handleExploreTogether('quiz');
-                  }}
-                  className="w-full p-6 bg-purple-900/20 hover:bg-purple-900/40 border-2 border-purple-500/50 hover:border-purple-400 rounded-xl transition-all text-left group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-4xl">📝</div>
-                    <div className="flex-1">
-                      <div className="text-xl font-bold text-purple-200 mb-1">Short Answer</div>
-                      <div className="text-sm text-gray-400">Write detailed responses</div>
+                <div className="space-y-4 mb-6">
+                  {/* Short Answer Option */}
+                  <button
+                    onClick={() => {
+                      setShowQuizFormatModal(false);
+                      handleExploreTogether('quiz');
+                    }}
+                    className="w-full p-6 bg-purple-900/20 hover:bg-purple-900/40 border-2 border-purple-500/50 hover:border-purple-400 rounded-xl transition-all text-left group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="text-4xl">📝</div>
+                      <div className="flex-1">
+                        <div className="text-xl font-bold text-purple-200 mb-1">Short Answer</div>
+                        <div className="text-sm text-gray-400">Write detailed responses</div>
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
 
-                {/* Multiple Choice Option */}
-                <button
-                  onClick={handleStartMultipleChoice}
-                  className="w-full p-6 bg-cyan-900/20 hover:bg-cyan-900/40 border-2 border-cyan-500/50 hover:border-cyan-400 rounded-xl transition-all text-left group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-4xl">✓</div>
-                    <div className="flex-1">
-                      <div className="text-xl font-bold text-cyan-200 mb-1">Multiple Choice</div>
-                      <div className="text-sm text-gray-400">Select from 4 options</div>
+                  {/* Multiple Choice Option */}
+                  <button
+                    onClick={handleStartMultipleChoice}
+                    className="w-full p-6 bg-cyan-900/20 hover:bg-cyan-900/40 border-2 border-cyan-500/50 hover:border-cyan-400 rounded-xl transition-all text-left group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="text-4xl">✓</div>
+                      <div className="flex-1">
+                        <div className="text-xl font-bold text-cyan-200 mb-1">Multiple Choice</div>
+                        <div className="text-sm text-gray-400">Select from 4 options</div>
+                      </div>
                     </div>
-                  </div>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowQuizFormatModal(false)}
+                  className="w-full px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                >
+                  Cancel
                 </button>
               </div>
-
-              <button
-                onClick={() => setShowQuizFormatModal(false)}
-                className="w-full px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
-              >
-                Cancel
-              </button>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )
+      }
 
       {/* Multiple Choice Quiz Display */}
-      {explorationMode === 'quiz-mc' && mcQuestions.length > 0 && currentMcQuestion < mcQuestions.length && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] max-w-90vw max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl p-8">
-              {/* Header */}
-              <div className="flex justify-between items-center mb-4">
-                <div className="text-sm font-semibold text-cyan-300">
-                  Question {currentMcQuestion + 1} of {mcQuestions.length}
+      {
+        explorationMode === 'quiz-mc' && mcQuestions.length > 0 && currentMcQuestion < mcQuestions.length && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] max-w-90vw max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl p-8">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-4">
+                  <div className="text-sm font-semibold text-cyan-300">
+                    Question {currentMcQuestion + 1} of {mcQuestions.length}
+                  </div>
+                  <div className="w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 transition-all duration-500"
+                      style={{ width: `${((currentMcQuestion + 1) / mcQuestions.length) * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 transition-all duration-500"
-                    style={{ width: `${((currentMcQuestion + 1) / mcQuestions.length) * 100}%` }}
-                  />
+
+                {/* Question */}
+                <div className="mb-6">
+                  <h3 className="text-xl text-gray-200 leading-relaxed">{mcQuestions[currentMcQuestion].question}</h3>
                 </div>
-              </div>
 
-              {/* Question */}
-              <div className="mb-6">
-                <h3 className="text-xl text-gray-200 leading-relaxed">{mcQuestions[currentMcQuestion].question}</h3>
-              </div>
+                {/* Options */}
+                <div className="space-y-3 mb-6">
+                  {(['A', 'B', 'C', 'D'] as const).map((letter) => {
+                    const isSelected = selectedMcAnswer === letter;
+                    const isCorrect = letter === mcQuestions[currentMcQuestion].correctAnswer;
+                    const showResult = mcAnswered;
 
-              {/* Options */}
-              <div className="space-y-3 mb-6">
-                {(['A', 'B', 'C', 'D'] as const).map((letter) => {
-                  const isSelected = selectedMcAnswer === letter;
-                  const isCorrect = letter === mcQuestions[currentMcQuestion].correctAnswer;
-                  const showResult = mcAnswered;
+                    let bgClass = 'bg-slate-800/50 hover:bg-slate-700/50 border-slate-600';
+                    let textClass = 'text-gray-200';
 
-                  let bgClass = 'bg-slate-800/50 hover:bg-slate-700/50 border-slate-600';
-                  let textClass = 'text-gray-200';
-
-                  if (showResult) {
-                    if (isCorrect) {
-                      bgClass = 'bg-green-900/40 border-green-500';
-                      textClass = 'text-green-200';
-                    } else if (isSelected && !isCorrect) {
-                      bgClass = 'bg-red-900/40 border-red-500';
-                      textClass = 'text-red-200';
+                    if (showResult) {
+                      if (isCorrect) {
+                        bgClass = 'bg-green-900/40 border-green-500';
+                        textClass = 'text-green-200';
+                      } else if (isSelected && !isCorrect) {
+                        bgClass = 'bg-red-900/40 border-red-500';
+                        textClass = 'text-red-200';
+                      }
+                    } else if (isSelected) {
+                      bgClass = 'bg-cyan-900/40 border-cyan-500';
+                      textClass = 'text-cyan-200';
                     }
-                  } else if (isSelected) {
-                    bgClass = 'bg-cyan-900/40 border-cyan-500';
-                    textClass = 'text-cyan-200';
-                  }
 
-                  return (
-                    <button
-                      key={letter}
-                      onClick={() => !mcAnswered && setSelectedMcAnswer(letter)}
-                      disabled={mcAnswered}
-                      className={`w-full p-4 border-2 rounded-lg transition-all text-left ${bgClass} ${textClass} ${!mcAnswered && 'cursor-pointer'} ${mcAnswered && 'cursor-default'}`}
+                    return (
+                      <button
+                        key={letter}
+                        onClick={() => !mcAnswered && setSelectedMcAnswer(letter)}
+                        disabled={mcAnswered}
+                        className={`w-full p-4 border-2 rounded-lg transition-all text-left ${bgClass} ${textClass} ${!mcAnswered && 'cursor-pointer'} ${mcAnswered && 'cursor-default'}`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="font-bold text-lg mt-0.5">{letter})</div>
+                          <div className="flex-1">{mcQuestions[currentMcQuestion].options[letter]}</div>
+                          {showResult && isCorrect && <div className="text-xl">✓</div>}
+                          {showResult && isSelected && !isCorrect && <div className="text-xl">✗</div>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Feedback/Explanation */}
+                {mcAnswered && (
+                  <div className={`mb-6 p-4 rounded-lg border-2 ${mcResults[mcResults.length - 1]?.isCorrect
+                    ? 'bg-green-900/20 border-green-500/50'
+                    : 'bg-red-900/20 border-red-500/50'
+                    }`}>
+                    <div className={`font-bold mb-2 ${mcResults[mcResults.length - 1]?.isCorrect ? 'text-green-300' : 'text-red-300'
+                      }`}>
+                      {mcResults[mcResults.length - 1]?.isCorrect ? '✓ Correct!' : '✗ Incorrect'}
+                    </div>
+                    {!mcResults[mcResults.length - 1]?.isCorrect && (
+                      <div className="text-sm text-gray-300 mb-2">
+                        You selected: {selectedMcAnswer}) {mcQuestions[currentMcQuestion].options[selectedMcAnswer as keyof typeof mcQuestions[0]['options']]}
+                        <br />
+                        Correct answer: {mcQuestions[currentMcQuestion].correctAnswer}) {mcQuestions[currentMcQuestion].options[mcQuestions[currentMcQuestion].correctAnswer as keyof typeof mcQuestions[0]['options']]}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-300 mt-2 border-t border-gray-600 pt-2">
+                      <strong>Explanation:</strong> {mcQuestions[currentMcQuestion].explanation}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  {!mcAnswered ? (
+                    <>
+                      <button
+                        onClick={handleSubmitMcAnswer}
+                        disabled={!selectedMcAnswer}
+                        className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                      >
+                        Submit Answer
+                      </button>
+                      <button
+                        onClick={handleEndMcQuiz}
+                        className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                      >
+                        End Quiz
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {currentMcQuestion < mcQuestions.length - 1 ? (
+                        <button
+                          onClick={handleNextMcQuestion}
+                          className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
+                        >
+                          Next Question →
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setCurrentMcQuestion(mcQuestions.length)}
+                          className="flex-1 px-6 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all font-medium"
+                        >
+                          View Results →
+                        </button>
+                      )}
+                      <button
+                        onClick={handleEndMcQuiz}
+                        className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                      >
+                        End Quiz
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      }
+
+      {/* Final Score Display */}
+      {
+        explorationMode === 'quiz-mc' && currentMcQuestion >= mcQuestions.length && mcResults.length > 0 && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] max-w-90vw">
+              <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-8">
+                <h2 className="text-3xl font-bold text-purple-300 mb-2 text-center">Quiz Complete!</h2>
+
+                {/* Score */}
+                <div className="text-center mb-6">
+                  <div className="text-6xl font-bold text-cyan-300 mb-2">
+                    {mcResults.filter(r => r.isCorrect).length} / {mcResults.length}
+                  </div>
+                  <div className="text-xl text-gray-400">
+                    ({Math.round((mcResults.filter(r => r.isCorrect).length / mcResults.length) * 100)}%)
+                  </div>
+                </div>
+
+                {/* Results List */}
+                <div className="space-y-2 mb-6 max-h-80 overflow-y-auto">
+                  {mcResults.map((result, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-lg border ${result.isCorrect
+                        ? 'bg-green-900/20 border-green-500/30'
+                        : 'bg-red-900/20 border-red-500/30'
+                        }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="font-bold text-lg mt-0.5">{letter})</div>
-                        <div className="flex-1">{mcQuestions[currentMcQuestion].options[letter]}</div>
-                        {showResult && isCorrect && <div className="text-xl">✓</div>}
-                        {showResult && isSelected && !isCorrect && <div className="text-xl">✗</div>}
+                        <div className="text-2xl mt-0.5">
+                          {result.isCorrect ? '✓' : '✗'}
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm text-gray-200 mb-1">
+                            <strong>Q{idx + 1}:</strong> {result.question}
+                          </div>
+                          {!result.isCorrect && (
+                            <div className="text-xs text-gray-400">
+                              Your answer: {result.selectedAnswer} • Correct: {result.correctAnswer}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
+                    </div>
+                  ))}
+                </div>
 
-              {/* Feedback/Explanation */}
-              {mcAnswered && (
-                <div className={`mb-6 p-4 rounded-lg border-2 ${mcResults[mcResults.length - 1]?.isCorrect
-                  ? 'bg-green-900/20 border-green-500/50'
-                  : 'bg-red-900/20 border-red-500/50'
-                  }`}>
-                  <div className={`font-bold mb-2 ${mcResults[mcResults.length - 1]?.isCorrect ? 'text-green-300' : 'text-red-300'
-                    }`}>
-                    {mcResults[mcResults.length - 1]?.isCorrect ? '✓ Correct!' : '✗ Incorrect'}
-                  </div>
-                  {!mcResults[mcResults.length - 1]?.isCorrect && (
-                    <div className="text-sm text-gray-300 mb-2">
-                      You selected: {selectedMcAnswer}) {mcQuestions[currentMcQuestion].options[selectedMcAnswer as keyof typeof mcQuestions[0]['options']]}
-                      <br />
-                      Correct answer: {mcQuestions[currentMcQuestion].correctAnswer}) {mcQuestions[currentMcQuestion].options[mcQuestions[currentMcQuestion].correctAnswer as keyof typeof mcQuestions[0]['options']]}
+                {/* Actions */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setCurrentMcQuestion(0);
+                      setSelectedMcAnswer(null);
+                      setMcAnswered(false);
+                      setMcResults([]);
+                    }}
+                    className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
+                  >
+                    Take Again
+                  </button>
+                  <button
+                    onClick={handleEndMcQuiz}
+                    className="flex-1 px-6 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all font-medium"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      }
+
+      {/* 🎓 GUIDED PRACTICE PANEL */}
+      {
+        showGuidedPractice && practiceBundle && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
+              onClick={() => setShowGuidedPractice(false)}
+            />
+            <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-br from-slate-900 via-purple-900/10 to-slate-900 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-6">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-purple-300">🎓 Guided Practice</h2>
+                  <button
+                    onClick={() => setShowGuidedPractice(false)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Step Navigation */}
+                <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+                  {availablePracticeSteps.map((stepId, idx) => {
+                    const stepLabels: Record<PracticeStepId, string> = {
+                      intuition: '💡 Intuition',
+                      model: '📐 Model',
+                      imitate: '🎯 Imitate',
+                      quiz: '📝 Quiz',
+                      synthesis: '🔗 Synthesis',
+                      scenario: '🌍 Scenario', // Legacy support
+                    };
+
+                    const isActive = activePracticeStep === stepId;
+                    const stepIndex = availablePracticeSteps.indexOf(activePracticeStep);
+                    const isPast = idx < stepIndex;
+
+                    return (
+                      <button
+                        key={stepId}
+                        onClick={() => setActivePracticeStep(stepId)}
+                        className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all font-medium text-sm
+                        ${isActive
+                            ? 'bg-purple-600 text-white border-2 border-purple-400'
+                            : isPast
+                              ? 'bg-green-900/30 text-green-300 border border-green-500/50'
+                              : 'bg-slate-700/50 text-gray-300 border border-slate-600 hover:bg-slate-600/50'
+                          }`}
+                      >
+                        {stepLabels[stepId]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Step Content */}
+                <div className="min-h-[300px] mb-6">
+                  {/* Intuition Step - always available, uses doctrine content if no specific intuition node */}
+                  {activePracticeStep === 'intuition' && (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-cyan-300">💡 Build Your Intuition</h3>
+
+                      {/* Show intuition example content (or doctrine content as fallback) */}
+                      <div className="bg-slate-800/50 rounded-lg p-4 border border-cyan-500/30">
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                          {practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || ''}
+                        </p>
+                      </div>
+
+                      {/* Generate question when this step becomes active */}
+                      {(() => {
+                        const contentToUse = practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '';
+                        const nodeId = practiceBundle.conceptNode?.id || '';
+                        if (contentToUse && nodeId && !isLoadingIntuitionQuestion && intuitionQuestionNodeId !== nodeId) {
+                          // Trigger question generation (using setTimeout to avoid render loop)
+                          setTimeout(() => generateIntuitionQuestion(contentToUse, nodeId), 0);
+                        }
+                        return null;
+                      })()}
+
+                      {/* Loading state */}
+                      {isLoadingIntuitionQuestion && (
+                        <div className="flex items-center justify-center py-6">
+                          <div className="text-cyan-300 flex items-center gap-2">
+                            <span className="animate-spin">⏳</span>
+                            <span>Generating your reflection question...</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Question with options */}
+                      {intuitionQuestion && !isLoadingIntuitionQuestion && (
+                        <div className="space-y-4">
+                          <div className="bg-gradient-to-r from-cyan-900/30 to-purple-900/30 rounded-lg p-4 border border-cyan-500/50">
+                            <p className="text-lg font-medium text-white leading-relaxed">
+                              {intuitionQuestion.question}
+                            </p>
+                          </div>
+
+                          {/* Clickable options */}
+                          <div className="grid grid-cols-1 gap-2">
+                            {intuitionQuestion.options.map((option, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setSelectedIntuitionOption(option)}
+                                className={`text-left px-4 py-3 rounded-lg transition-all ${selectedIntuitionOption === option
+                                  ? 'bg-cyan-600/40 border-2 border-cyan-400 text-white'
+                                  : 'bg-slate-700/50 border border-slate-600 text-gray-300 hover:bg-slate-600/50 hover:border-slate-500'
+                                  }`}
+                              >
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Free-form elaboration */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                              {selectedIntuitionOption
+                                ? "Elaborate on your choice - what experiences or reasoning led you there?"
+                                : "Or share your own perspective..."}
+                            </label>
+                            <textarea
+                              value={practiceStepInput}
+                              onChange={(e) => setPracticeStepInput(e.target.value)}
+                              placeholder={selectedIntuitionOption
+                                ? "Explain your thinking, connect to personal experience, or add nuance..."
+                                : "Share your own take on this doctrine..."}
+                              rows={4}
+                              className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => {
+                            const contentToUse = practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '';
+                            const fullResponse = selectedIntuitionOption
+                              ? `Selected: "${selectedIntuitionOption}"\n\nElaboration: ${practiceStepInput}`
+                              : practiceStepInput;
+                            if ((selectedIntuitionOption || practiceStepInput.trim()) && contentToUse) {
+                              handleGradePracticeStep('intuition', fullResponse, contentToUse);
+                              setPracticeStepInput('');
+                              setSelectedIntuitionOption(null);
+                            }
+                          }}
+                          disabled={(!selectedIntuitionOption && !practiceStepInput.trim()) || isGradingPractice}
+                          className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                        >
+                          {isGradingPractice ? '⏳ Getting Response...' : '💬 Continue'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            const fullResponse = selectedIntuitionOption
+                              ? `Selected: "${selectedIntuitionOption}"\n\nElaboration: ${practiceStepInput}`
+                              : practiceStepInput;
+                            handleSavePracticeStepOnly('intuition', fullResponse, practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '');
+                          }}
+                          disabled={(!selectedIntuitionOption && !practiceStepInput.trim()) || isGradingPractice}
+                          className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                        >
+                          💾 Save Only
+                        </button>
+                      </div>
+
+                      {practiceStepFeedback && (
+                        <div className="bg-cyan-900/20 border border-cyan-500/50 rounded-lg p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-semibold text-cyan-300 mb-2">✨ AI Insight:</p>
+                            <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                          </div>
+                          <div className="flex gap-2 pt-2 border-t border-cyan-500/30">
+                            {practiceBundle.modelAnswerNode && (
+                              <button
+                                onClick={() => {
+                                  setPracticeStepFeedback('');
+                                  setPracticeStepInput('');
+                                  setActivePracticeStep('model');
+                                }}
+                                className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white rounded-lg transition-all font-medium flex items-center justify-center gap-2"
+                              >
+                                Continue to Model Step
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                setPracticeStepFeedback('');
+                                setPracticeStepInput('');
+                              }}
+                              className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-                  <div className="text-sm text-gray-300 mt-2 border-t border-gray-600 pt-2">
-                    <strong>Explanation:</strong> {mcQuestions[currentMcQuestion].explanation}
+
+                  {/* Model Step */}
+                  {activePracticeStep === 'model' && practiceBundle.modelAnswerNode && (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-blue-300">📐 Model Reasoning Pattern</h3>
+                      <div className="bg-gradient-to-r from-blue-900/20 to-indigo-900/20 rounded-lg p-4 border border-blue-500/30">
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                          {practiceBundle.modelAnswerNode.content}
+                        </p>
+                      </div>
+                      <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                        <p className="text-sm text-blue-200">
+                          💡 <strong>Tip:</strong> Study this pattern carefully - you'll apply it in the next step.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Imitate Step */}
+                  {activePracticeStep === 'imitate' && practiceBundle.imitateNode && (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-yellow-300">🎯 Imitate the Pattern</h3>
+                      <div className="bg-slate-800/50 rounded-lg p-4 border border-yellow-500/30">
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                          {practiceBundle.imitateNode.content}
+                        </p>
+                      </div>
+
+                      {/* Show model answer reference */}
+                      {practiceBundle.modelAnswerNode && (
+                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                          <p className="text-xs text-blue-300 font-semibold mb-1">📐 Reference Pattern:</p>
+                          <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                            {practiceBundle.modelAnswerNode.content}
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Your attempt:
+                        </label>
+                        <textarea
+                          value={practiceStepInput}
+                          onChange={(e) => setPracticeStepInput(e.target.value)}
+                          placeholder="Apply the reasoning pattern you just learned..."
+                          rows={6}
+                          className="w-full px-4 py-3 bg-slate-900 border border-yellow-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 resize-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => {
+                            if (practiceStepInput.trim() && practiceBundle.modelAnswerNode) {
+                              handleGradePracticeStep('imitate', practiceStepInput, practiceBundle.modelAnswerNode.content);
+                              setPracticeStepInput('');
+                            }
+                          }}
+                          disabled={!practiceStepInput.trim() || isGradingPractice}
+                          className="flex-1 px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                        >
+                          {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Get AI Feedback'}
+                        </button>
+                        <button
+                          onClick={() => handleSavePracticeStepOnly('imitate', practiceStepInput, practiceBundle.modelAnswerNode!.content)}
+                          disabled={!practiceStepInput.trim() || isGradingPractice}
+                          className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                        >
+                          💾 Save Only
+                        </button>
+                      </div>
+
+                      {practiceStepFeedback && (
+                        <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-semibold text-green-300 mb-2">✨ AI Feedback:</p>
+                            <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                          </div>
+                          <div className="flex gap-2 pt-2 border-t border-green-500/30">
+                            {(practiceBundle.quizMcNode || practiceBundle.quizShortAnswerNode) && (
+                              <button
+                                onClick={() => {
+                                  setPracticeStepFeedback('');
+                                  setPracticeStepInput('');
+                                  setActivePracticeStep('quiz');
+                                }}
+                                className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white rounded-lg transition-all font-medium flex items-center justify-center gap-2"
+                              >
+                                Continue to Quiz
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                setPracticeStepFeedback('');
+                                setPracticeStepInput('');
+                              }}
+                              className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Quiz Step */}
+                  {activePracticeStep === 'quiz' && (practiceBundle.quizMcNode || practiceBundle.quizShortAnswerNode) && (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-purple-300">📝 Test Your Understanding</h3>
+                      <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
+                        <p className="text-sm text-purple-200">
+                          Click the button below to take the quiz for this section. You'll return here when complete.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          // Close guided practice panel before showing quiz format modal
+                          setShowGuidedPractice(false);
+                          // Brief delay to let guided practice close smoothly
+                          setTimeout(() => {
+                            setShowQuizFormatModal(true);
+                          }, 200);
+                        }}
+                        className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-medium"
+                      >
+                        Start Quiz
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Synthesis Step (Final Application Scenario) */}
+                  {activePracticeStep === 'synthesis' && practiceBundle.synthesisNode && (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-cyan-300">🔗 Synthesis & Application</h3>
+                      <div className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-lg p-4 border border-cyan-500/30">
+                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                          {practiceBundle.synthesisNode.content}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Your synthesis and application:
+                        </label>
+                        <textarea
+                          value={practiceStepInput}
+                          onChange={(e) => setPracticeStepInput(e.target.value)}
+                          placeholder="Apply everything you've learned to analyze this scenario..."
+                          rows={8}
+                          className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => {
+                            if (practiceStepInput.trim()) {
+                              handleGradePracticeStep('scenario', practiceStepInput, practiceBundle.synthesisNode!.content);
+                            }
+                          }}
+                          disabled={!practiceStepInput.trim() || isGradingPractice}
+                          className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                        >
+                          {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Complete & Get Feedback'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (practiceStepInput.trim()) {
+                              const combinedContent = `${practiceBundle.synthesisNode!.content}\n\n---\n\n**Your Response:**\n${practiceStepInput}`;
+                              const newNodeId = addNode(combinedContent, node!.id, undefined, 'synthesis');
+                              setPracticeStepInput('');
+
+                              // Brief pause to let the cyan icosahedron materialize
+                              await new Promise(resolve => setTimeout(resolve, 600));
+
+                              // Animate camera to the new synthesis node
+                              selectNode(newNodeId, true);
+
+                              // Show success message
+                              setToastMessage('🎉 Synthesis complete! All practice steps finished.');
+                              setShowToast(true);
+                              setTimeout(() => {
+                                setShowToast(false);
+                                setShowGuidedPractice(false);
+                              }, 3000);
+                            }
+                          }}
+                          disabled={!practiceStepInput.trim() || isGradingPractice}
+                          className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                        >
+                          💾 Save Only
+                        </button>
+                      </div>
+
+                      {practiceStepFeedback && (
+                        <div className="bg-cyan-900/20 border border-cyan-500/50 rounded-lg p-4">
+                          <p className="text-sm font-semibold text-cyan-300 mb-2">✨ AI Feedback:</p>
+                          <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Navigation Buttons */}
+                <div className="flex justify-between pt-4 border-t border-purple-500/30">
+                  <button
+                    onClick={() => {
+                      const currentIdx = availablePracticeSteps.indexOf(activePracticeStep);
+                      if (currentIdx > 0) {
+                        setActivePracticeStep(availablePracticeSteps[currentIdx - 1]);
+                        setPracticeStepInput('');
+                        setPracticeStepFeedback('');
+                      }
+                    }}
+                    disabled={availablePracticeSteps.indexOf(activePracticeStep) === 0}
+                    className="px-6 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      const currentIdx = availablePracticeSteps.indexOf(activePracticeStep);
+                      if (currentIdx < availablePracticeSteps.length - 1) {
+                        setActivePracticeStep(availablePracticeSteps[currentIdx + 1]);
+                        setPracticeStepInput('');
+                        setPracticeStepFeedback('');
+                      }
+                    }}
+                    disabled={availablePracticeSteps.indexOf(activePracticeStep) === availablePracticeSteps.length - 1}
+                    className="px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      }
+
+      {/* 🎓 COMPLETION MODAL - Universe Completion Summary */}
+      {
+        showCompletionModal && completedStudyGuide && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10002,
+            }}
+            onClick={() => setShowCompletionModal(false)}
+          >
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                borderRadius: '16px',
+                padding: '32px',
+                maxWidth: '500px',
+                width: '90%',
+                border: '2px solid #10b981',
+                boxShadow: '0 20px 60px rgba(16, 185, 129, 0.3)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎓</div>
+                <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981', margin: '0 0 8px 0' }}>
+                  Universe Complete!
+                </h2>
+                <p style={{ color: '#94a3b8', margin: 0 }}>
+                  {completedStudyGuide.universeTitle}
+                </p>
+              </div>
+
+              {/* Quiz Score Summary */}
+              {completedStudyGuide.quizSnapshot && (
+                <div
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    marginBottom: '24px',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: '#94a3b8' }}>Quiz Score</span>
+                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                      {completedStudyGuide.quizSnapshot.correctAnswers}/{completedStudyGuide.quizSnapshot.totalQuestions}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>Accuracy</span>
+                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                      {completedStudyGuide.quizSnapshot.accuracyPercentage}%
+                    </span>
                   </div>
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-3">
-                {!mcAnswered ? (
-                  <>
-                    <button
-                      onClick={handleSubmitMcAnswer}
-                      disabled={!selectedMcAnswer}
-                      className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                    >
-                      Submit Answer
-                    </button>
-                    <button
-                      onClick={handleEndMcQuiz}
-                      className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
-                    >
-                      End Quiz
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {currentMcQuestion < mcQuestions.length - 1 ? (
-                      <button
-                        onClick={handleNextMcQuestion}
-                        className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
-                      >
-                        Next Question →
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setCurrentMcQuestion(mcQuestions.length)}
-                        className="flex-1 px-6 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all font-medium"
-                      >
-                        View Results →
-                      </button>
-                    )}
-                    <button
-                      onClick={handleEndMcQuiz}
-                      className="px-6 py-3 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
-                    >
-                      End Quiz
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Final Score Display */}
-      {explorationMode === 'quiz-mc' && currentMcQuestion >= mcQuestions.length && mcResults.length > 0 && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] max-w-90vw">
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-8">
-              <h2 className="text-3xl font-bold text-purple-300 mb-2 text-center">Quiz Complete!</h2>
-
-              {/* Score */}
-              <div className="text-center mb-6">
-                <div className="text-6xl font-bold text-cyan-300 mb-2">
-                  {mcResults.filter(r => r.isCorrect).length} / {mcResults.length}
-                </div>
-                <div className="text-xl text-gray-400">
-                  ({Math.round((mcResults.filter(r => r.isCorrect).length / mcResults.length) * 100)}%)
-                </div>
-              </div>
-
-              {/* Results List */}
-              <div className="space-y-2 mb-6 max-h-80 overflow-y-auto">
-                {mcResults.map((result, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-3 rounded-lg border ${result.isCorrect
-                      ? 'bg-green-900/20 border-green-500/30'
-                      : 'bg-red-900/20 border-red-500/30'
-                      }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl mt-0.5">
-                        {result.isCorrect ? '✓' : '✗'}
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm text-gray-200 mb-1">
-                          <strong>Q{idx + 1}:</strong> {result.question}
-                        </div>
-                        {!result.isCorrect && (
-                          <div className="text-xs text-gray-400">
-                            Your answer: {result.selectedAnswer} • Correct: {result.correctAnswer}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3">
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <button
                   onClick={() => {
-                    setCurrentMcQuestion(0);
-                    setSelectedMcAnswer(null);
-                    setMcAnswered(false);
-                    setMcResults([]);
+                    setShowCompletionModal(false);
+                    setShowStudyGuideViewer(true);
                   }}
-                  className="flex-1 px-6 py-3 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300 rounded-lg transition-all font-medium"
+                  style={{
+                    padding: '14px 24px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
-                  Take Again
+                  View Study Guide
                 </button>
+
                 <button
-                  onClick={handleEndMcQuiz}
-                  className="flex-1 px-6 py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300 rounded-lg transition-all font-medium"
+                  onClick={() => setShowCompletionModal(false)}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'transparent',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    borderRadius: '10px',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                  }}
                 >
-                  Done
+                  Close
                 </button>
               </div>
             </div>
           </div>
-        </>
-      )}
+        )
+      }
 
-      {/* 🎓 GUIDED PRACTICE PANEL */}
-      {showGuidedPractice && practiceBundle && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2002]"
-            onClick={() => setShowGuidedPractice(false)}
-          />
-          <div className="fixed z-[2003] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-br from-slate-900 via-purple-900/10 to-slate-900 border-2 border-purple-500/50 rounded-2xl shadow-2xl p-6">
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-purple-300">🎓 Guided Practice</h2>
-                <button
-                  onClick={() => setShowGuidedPractice(false)}
-                  className="text-gray-400 hover:text-white transition-colors"
-                  title="Close"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Step Navigation */}
-              <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-                {availablePracticeSteps.map((stepId, idx) => {
-                  const stepLabels: Record<PracticeStepId, string> = {
-                    intuition: '💡 Intuition',
-                    model: '📐 Model',
-                    imitate: '🎯 Imitate',
-                    quiz: '📝 Quiz',
-                    synthesis: '🔗 Synthesis',
-                    scenario: '🌍 Scenario', // Legacy support
-                  };
-
-                  const isActive = activePracticeStep === stepId;
-                  const stepIndex = availablePracticeSteps.indexOf(activePracticeStep);
-                  const isPast = idx < stepIndex;
-
-                  return (
-                    <button
-                      key={stepId}
-                      onClick={() => setActivePracticeStep(stepId)}
-                      className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all font-medium text-sm
-                        ${isActive
-                          ? 'bg-purple-600 text-white border-2 border-purple-400'
-                          : isPast
-                            ? 'bg-green-900/30 text-green-300 border border-green-500/50'
-                            : 'bg-slate-700/50 text-gray-300 border border-slate-600 hover:bg-slate-600/50'
-                        }`}
-                    >
-                      {stepLabels[stepId]}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Step Content */}
-              <div className="min-h-[300px] mb-6">
-                {/* Intuition Step - always available, uses doctrine content if no specific intuition node */}
-                {activePracticeStep === 'intuition' && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-cyan-300">💡 Build Your Intuition</h3>
-
-                    {/* Show intuition example content (or doctrine content as fallback) */}
-                    <div className="bg-slate-800/50 rounded-lg p-4 border border-cyan-500/30">
-                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                        {practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || ''}
-                      </p>
-                    </div>
-
-                    {/* Generate question when this step becomes active */}
-                    {(() => {
-                      const contentToUse = practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '';
-                      const nodeId = practiceBundle.conceptNode?.id || '';
-                      if (contentToUse && nodeId && !isLoadingIntuitionQuestion && intuitionQuestionNodeId !== nodeId) {
-                        // Trigger question generation (using setTimeout to avoid render loop)
-                        setTimeout(() => generateIntuitionQuestion(contentToUse, nodeId), 0);
-                      }
-                      return null;
-                    })()}
-
-                    {/* Loading state */}
-                    {isLoadingIntuitionQuestion && (
-                      <div className="flex items-center justify-center py-6">
-                        <div className="text-cyan-300 flex items-center gap-2">
-                          <span className="animate-spin">⏳</span>
-                          <span>Generating your reflection question...</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Question with options */}
-                    {intuitionQuestion && !isLoadingIntuitionQuestion && (
-                      <div className="space-y-4">
-                        <div className="bg-gradient-to-r from-cyan-900/30 to-purple-900/30 rounded-lg p-4 border border-cyan-500/50">
-                          <p className="text-lg font-medium text-white leading-relaxed">
-                            {intuitionQuestion.question}
-                          </p>
-                        </div>
-
-                        {/* Clickable options */}
-                        <div className="grid grid-cols-1 gap-2">
-                          {intuitionQuestion.options.map((option, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => setSelectedIntuitionOption(option)}
-                              className={`text-left px-4 py-3 rounded-lg transition-all ${selectedIntuitionOption === option
-                                ? 'bg-cyan-600/40 border-2 border-cyan-400 text-white'
-                                : 'bg-slate-700/50 border border-slate-600 text-gray-300 hover:bg-slate-600/50 hover:border-slate-500'
-                                }`}
-                            >
-                              {option}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Free-form elaboration */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            {selectedIntuitionOption
-                              ? "Elaborate on your choice - what experiences or reasoning led you there?"
-                              : "Or share your own perspective..."}
-                          </label>
-                          <textarea
-                            value={practiceStepInput}
-                            onChange={(e) => setPracticeStepInput(e.target.value)}
-                            placeholder={selectedIntuitionOption
-                              ? "Explain your thinking, connect to personal experience, or add nuance..."
-                              : "Share your own take on this doctrine..."}
-                            rows={4}
-                            className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => {
-                          const contentToUse = practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '';
-                          const fullResponse = selectedIntuitionOption
-                            ? `Selected: "${selectedIntuitionOption}"\n\nElaboration: ${practiceStepInput}`
-                            : practiceStepInput;
-                          if ((selectedIntuitionOption || practiceStepInput.trim()) && contentToUse) {
-                            handleGradePracticeStep('intuition', fullResponse, contentToUse);
-                            setPracticeStepInput('');
-                            setSelectedIntuitionOption(null);
-                          }
-                        }}
-                        disabled={(!selectedIntuitionOption && !practiceStepInput.trim()) || isGradingPractice}
-                        className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                      >
-                        {isGradingPractice ? '⏳ Getting Response...' : '💬 Continue'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          const fullResponse = selectedIntuitionOption
-                            ? `Selected: "${selectedIntuitionOption}"\n\nElaboration: ${practiceStepInput}`
-                            : practiceStepInput;
-                          handleSavePracticeStepOnly('intuition', fullResponse, practiceBundle.intuitionExampleNode?.content || practiceBundle.conceptNode?.content || '');
-                        }}
-                        disabled={(!selectedIntuitionOption && !practiceStepInput.trim()) || isGradingPractice}
-                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                      >
-                        💾 Save Only
-                      </button>
-                    </div>
-
-                    {practiceStepFeedback && (
-                      <div className="bg-cyan-900/20 border border-cyan-500/50 rounded-lg p-4 space-y-3">
-                        <div>
-                          <p className="text-sm font-semibold text-cyan-300 mb-2">✨ AI Insight:</p>
-                          <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
-                        </div>
-                        <div className="flex gap-2 pt-2 border-t border-cyan-500/30">
-                          {practiceBundle.modelAnswerNode && (
-                            <button
-                              onClick={() => {
-                                setPracticeStepFeedback('');
-                                setPracticeStepInput('');
-                                setActivePracticeStep('model');
-                              }}
-                              className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white rounded-lg transition-all font-medium flex items-center justify-center gap-2"
-                            >
-                              Continue to Model Step
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                              </svg>
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setPracticeStepFeedback('');
-                              setPracticeStepInput('');
-                            }}
-                            className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Model Step */}
-                {activePracticeStep === 'model' && practiceBundle.modelAnswerNode && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-blue-300">📐 Model Reasoning Pattern</h3>
-                    <div className="bg-gradient-to-r from-blue-900/20 to-indigo-900/20 rounded-lg p-4 border border-blue-500/30">
-                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                        {practiceBundle.modelAnswerNode.content}
-                      </p>
-                    </div>
-                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                      <p className="text-sm text-blue-200">
-                        💡 <strong>Tip:</strong> Study this pattern carefully - you'll apply it in the next step.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Imitate Step */}
-                {activePracticeStep === 'imitate' && practiceBundle.imitateNode && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-yellow-300">🎯 Imitate the Pattern</h3>
-                    <div className="bg-slate-800/50 rounded-lg p-4 border border-yellow-500/30">
-                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                        {practiceBundle.imitateNode.content}
-                      </p>
-                    </div>
-
-                    {/* Show model answer reference */}
-                    {practiceBundle.modelAnswerNode && (
-                      <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                        <p className="text-xs text-blue-300 font-semibold mb-1">📐 Reference Pattern:</p>
-                        <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
-                          {practiceBundle.modelAnswerNode.content}
-                        </p>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Your attempt:
-                      </label>
-                      <textarea
-                        value={practiceStepInput}
-                        onChange={(e) => setPracticeStepInput(e.target.value)}
-                        placeholder="Apply the reasoning pattern you just learned..."
-                        rows={6}
-                        className="w-full px-4 py-3 bg-slate-900 border border-yellow-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 resize-none"
-                      />
-                    </div>
-
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => {
-                          if (practiceStepInput.trim() && practiceBundle.modelAnswerNode) {
-                            handleGradePracticeStep('imitate', practiceStepInput, practiceBundle.modelAnswerNode.content);
-                            setPracticeStepInput('');
-                          }
-                        }}
-                        disabled={!practiceStepInput.trim() || isGradingPractice}
-                        className="flex-1 px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                      >
-                        {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Get AI Feedback'}
-                      </button>
-                      <button
-                        onClick={() => handleSavePracticeStepOnly('imitate', practiceStepInput, practiceBundle.modelAnswerNode!.content)}
-                        disabled={!practiceStepInput.trim() || isGradingPractice}
-                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                      >
-                        💾 Save Only
-                      </button>
-                    </div>
-
-                    {practiceStepFeedback && (
-                      <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-4 space-y-3">
-                        <div>
-                          <p className="text-sm font-semibold text-green-300 mb-2">✨ AI Feedback:</p>
-                          <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
-                        </div>
-                        <div className="flex gap-2 pt-2 border-t border-green-500/30">
-                          {(practiceBundle.quizMcNode || practiceBundle.quizShortAnswerNode) && (
-                            <button
-                              onClick={() => {
-                                setPracticeStepFeedback('');
-                                setPracticeStepInput('');
-                                setActivePracticeStep('quiz');
-                              }}
-                              className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white rounded-lg transition-all font-medium flex items-center justify-center gap-2"
-                            >
-                              Continue to Quiz
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                              </svg>
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setPracticeStepFeedback('');
-                              setPracticeStepInput('');
-                            }}
-                            className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50 text-gray-300 rounded-lg transition-all"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Quiz Step */}
-                {activePracticeStep === 'quiz' && (practiceBundle.quizMcNode || practiceBundle.quizShortAnswerNode) && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-purple-300">📝 Test Your Understanding</h3>
-                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
-                      <p className="text-sm text-purple-200">
-                        Click the button below to take the quiz for this section. You'll return here when complete.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        // Close guided practice panel before showing quiz format modal
-                        setShowGuidedPractice(false);
-                        // Brief delay to let guided practice close smoothly
-                        setTimeout(() => {
-                          setShowQuizFormatModal(true);
-                        }, 200);
-                      }}
-                      className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-medium"
-                    >
-                      Start Quiz
-                    </button>
-                  </div>
-                )}
-
-                {/* Synthesis Step (Final Application Scenario) */}
-                {activePracticeStep === 'synthesis' && practiceBundle.synthesisNode && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-cyan-300">🔗 Synthesis & Application</h3>
-                    <div className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-lg p-4 border border-cyan-500/30">
-                      <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                        {practiceBundle.synthesisNode.content}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Your synthesis and application:
-                      </label>
-                      <textarea
-                        value={practiceStepInput}
-                        onChange={(e) => setPracticeStepInput(e.target.value)}
-                        placeholder="Apply everything you've learned to analyze this scenario..."
-                        rows={8}
-                        className="w-full px-4 py-3 bg-slate-900 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 resize-none"
-                      />
-                    </div>
-
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => {
-                          if (practiceStepInput.trim()) {
-                            handleGradePracticeStep('scenario', practiceStepInput, practiceBundle.synthesisNode!.content);
-                          }
-                        }}
-                        disabled={!practiceStepInput.trim() || isGradingPractice}
-                        className="flex-1 px-6 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                      >
-                        {isGradingPractice ? '⏳ Getting Feedback...' : '🎓 Complete & Get Feedback'}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (practiceStepInput.trim()) {
-                            const combinedContent = `${practiceBundle.synthesisNode!.content}\n\n---\n\n**Your Response:**\n${practiceStepInput}`;
-                            const newNodeId = addNode(combinedContent, node!.id, undefined, 'synthesis');
-                            setPracticeStepInput('');
-
-                            // Brief pause to let the cyan icosahedron materialize
-                            await new Promise(resolve => setTimeout(resolve, 600));
-
-                            // Animate camera to the new synthesis node
-                            selectNode(newNodeId, true);
-
-                            // Show success message
-                            setToastMessage('🎉 Synthesis complete! All practice steps finished.');
-                            setShowToast(true);
-                            setTimeout(() => {
-                              setShowToast(false);
-                              setShowGuidedPractice(false);
-                            }, 3000);
-                          }
-                        }}
-                        disabled={!practiceStepInput.trim() || isGradingPractice}
-                        className="px-6 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-gray-500 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                      >
-                        💾 Save Only
-                      </button>
-                    </div>
-
-                    {practiceStepFeedback && (
-                      <div className="bg-cyan-900/20 border border-cyan-500/50 rounded-lg p-4">
-                        <p className="text-sm font-semibold text-cyan-300 mb-2">✨ AI Feedback:</p>
-                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">{practiceStepFeedback}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Navigation Buttons */}
-              <div className="flex justify-between pt-4 border-t border-purple-500/30">
-                <button
-                  onClick={() => {
-                    const currentIdx = availablePracticeSteps.indexOf(activePracticeStep);
-                    if (currentIdx > 0) {
-                      setActivePracticeStep(availablePracticeSteps[currentIdx - 1]);
-                      setPracticeStepInput('');
-                      setPracticeStepFeedback('');
-                    }
-                  }}
-                  disabled={availablePracticeSteps.indexOf(activePracticeStep) === 0}
-                  className="px-6 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                >
-                  ← Back
-                </button>
-                <button
-                  onClick={() => {
-                    const currentIdx = availablePracticeSteps.indexOf(activePracticeStep);
-                    if (currentIdx < availablePracticeSteps.length - 1) {
-                      setActivePracticeStep(availablePracticeSteps[currentIdx + 1]);
-                      setPracticeStepInput('');
-                      setPracticeStepFeedback('');
-                    }
-                  }}
-                  disabled={availablePracticeSteps.indexOf(activePracticeStep) === availablePracticeSteps.length - 1}
-                  className="px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 disabled:text-gray-600 text-white rounded-lg transition-all font-medium disabled:cursor-not-allowed"
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* 🎓 COMPLETION MODAL - Universe Completion Summary */}
-      {showCompletionModal && completedStudyGuide && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10002,
-          }}
-          onClick={() => setShowCompletionModal(false)}
-        >
+      {/* 🎓 STUDY GUIDE VIEWER - Full Study Guide Content */}
+      {
+        showStudyGuideViewer && completedStudyGuide && (
           <div
             style={{
-              background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-              borderRadius: '16px',
-              padding: '32px',
-              maxWidth: '500px',
-              width: '90%',
-              border: '2px solid #10b981',
-              boxShadow: '0 20px 60px rgba(16, 185, 129, 0.3)',
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.9)',
+              display: 'flex',
+              flexDirection: 'column',
+              zIndex: 10003,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎓</div>
-              <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981', margin: '0 0 8px 0' }}>
-                Universe Complete!
-              </h2>
-              <p style={{ color: '#94a3b8', margin: 0 }}>
-                {completedStudyGuide.universeTitle}
-              </p>
-            </div>
-
-            {/* Quiz Score Summary */}
-            {completedStudyGuide.quizSnapshot && (
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '24px',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ color: '#94a3b8' }}>Quiz Score</span>
-                  <span style={{ color: '#10b981', fontWeight: 'bold' }}>
-                    {completedStudyGuide.quizSnapshot.correctAnswers}/{completedStudyGuide.quizSnapshot.totalQuestions}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Accuracy</span>
-                  <span style={{ color: '#10b981', fontWeight: 'bold' }}>
-                    {completedStudyGuide.quizSnapshot.accuracyPercentage}%
-                  </span>
-                </div>
+            {/* Header */}
+            <div
+              style={{
+                padding: '16px 24px',
+                borderBottom: '1px solid #334155',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: '#0f172a',
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#10b981' }}>
+                  Study Guide
+                </h2>
+                <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#64748b' }}>
+                  {completedStudyGuide.universeTitle}
+                </p>
               </div>
-            )}
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <button
-                onClick={() => {
-                  setShowCompletionModal(false);
-                  setShowStudyGuideViewer(true);
-                }}
+                onClick={() => setShowStudyGuideViewer(false)}
                 style={{
-                  padding: '14px 24px',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  padding: '8px 16px',
+                  background: '#334155',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '10px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              >
-                View Study Guide
-              </button>
-
-              <button
-                onClick={() => setShowCompletionModal(false)}
-                style={{
-                  padding: '12px 24px',
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  border: '1px solid #334155',
-                  borderRadius: '10px',
+                  borderRadius: '8px',
                   fontSize: '14px',
                   cursor: 'pointer',
                 }}
@@ -3885,117 +4073,72 @@ Be conversational and human, not formulaic.`;
                 Close
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* 🎓 STUDY GUIDE VIEWER - Full Study Guide Content */}
-      {showStudyGuideViewer && completedStudyGuide && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.9)',
-            display: 'flex',
-            flexDirection: 'column',
-            zIndex: 10003,
-          }}
-        >
-          {/* Header */}
-          <div
-            style={{
-              padding: '16px 24px',
-              borderBottom: '1px solid #334155',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: '#0f172a',
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#10b981' }}>
-                Study Guide
-              </h2>
-              <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#64748b' }}>
-                {completedStudyGuide.universeTitle}
-              </p>
-            </div>
-            <button
-              onClick={() => setShowStudyGuideViewer(false)}
-              style={{
-                padding: '8px 16px',
-                background: '#334155',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '14px',
-                cursor: 'pointer',
-              }}
-            >
-              Close
-            </button>
-          </div>
-
-          {/* Content */}
-          <div
-            style={{
-              flex: 1,
-              overflow: 'auto',
-              padding: '24px',
-              maxWidth: '900px',
-              margin: '0 auto',
-              width: '100%',
-            }}
-          >
+            {/* Content */}
             <div
               style={{
-                background: '#1e293b',
-                borderRadius: '12px',
-                padding: '32px',
-                color: '#e2e8f0',
-                fontSize: '15px',
-                lineHeight: '1.7',
-                whiteSpace: 'pre-wrap',
+                flex: 1,
+                overflow: 'auto',
+                padding: '24px',
+                maxWidth: '900px',
+                margin: '0 auto',
+                width: '100%',
               }}
             >
-              {completedStudyGuide.content}
+              <div
+                style={{
+                  background: '#1e293b',
+                  borderRadius: '12px',
+                  padding: '32px',
+                  color: '#e2e8f0',
+                  fontSize: '15px',
+                  lineHeight: '1.7',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {completedStudyGuide.content}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Toast Notification */}
-      {showToast && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            backgroundColor: '#10b981',
-            color: '#FFFFFF',
-            padding: '16px 24px',
-            borderRadius: '12px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            zIndex: 10001,
-            fontSize: '16px',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            animation: 'slideInUp 0.3s ease-out',
-          }}
-        >
-          {toastMessage}
-        </div>
-      )}
+      {
+        showToast && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: '24px',
+              right: '24px',
+              backgroundColor: '#10b981',
+              color: '#FFFFFF',
+              padding: '16px 24px',
+              borderRadius: '12px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              zIndex: 10001,
+              fontSize: '16px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              animation: 'slideInUp 0.3s ease-out',
+            }}
+          >
+            {toastMessage}
+          </div>
+        )
+      }
 
       {/* Application Essay Section - Full Screen Overlay */}
-      {showEssaySection && nexus?.applicationEssay && (
-        <ApplicationEssaySection
-          applicationEssay={nexus.applicationEssay}
-          onClose={() => setShowEssaySection(false)}
-        />
-      )}
+      {
+        showEssaySection && nexus?.applicationEssay && (
+          <ApplicationEssaySection
+            applicationEssay={nexus.applicationEssay}
+            onClose={() => setShowEssaySection(false)}
+          />
+        )
+      }
     </>
   );
 }

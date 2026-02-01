@@ -160,7 +160,7 @@ if (typeof window !== 'undefined') {
         let totalSize = 0;
         let auroraSize = 0;
 
-        for (let key in localStorage) {
+        for (const key in localStorage) {
           if (localStorage.hasOwnProperty(key)) {
             const itemSize = localStorage.getItem(key)?.length || 0;
             totalSize += itemSize + key.length;
@@ -550,6 +550,9 @@ interface CanvasStore {
 
   // 🛡️ INITIALIZATION TRACKING
   isStoreInitialized: boolean;
+
+  buildGraphStructure: () => { currentGraph: any; activatedGraphs: any[]; hasMultipleUniverses: boolean } | null;
+  buildConversationContext: () => string;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -1720,7 +1723,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('📝 Step 4: Creating nexus...');
 
     const initialContent = `You: ${userMessage}\n\nClaude: ${aiResponse}`;
-    let newNexus: Nexus = {
+    const newNexus: Nexus = {
       id: newUniverseId,
       position: [0, 0, 0],
       title: title,
@@ -3076,7 +3079,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const newParentNode = state.nodes[newParentId];
 
       // Determine new node type based on parent level
-      let newNodeType = node.nodeType;
+      const newNodeType = node.nodeType;
       if (isNexusParent) {
         // Attached to nexus → becomes L1 (keep original type but reset level)
         // User replies stay user-reply, AI stays ai-response, etc.
@@ -3874,6 +3877,144 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return anchoredNodes;
   },
 
+  
+  buildConversationContext: () => {
+    const state = get();
+    const context: string[] = [];
+    const activatedConvos = state.getActivatedConversations();
+
+    if (activatedConvos.length > 0) {
+      context.push("=== ACTIVATED MEMORIES ===\n");
+      activatedConvos.forEach(conv => {
+        context.push(`**${conv.title}**`);
+        context.push(conv.content);
+        context.push("---\n");
+      });
+    }
+
+    const selectedNexus = state.selectedId ? state.nexuses.find(n => n.id === state.selectedId) : null;
+    const currentNexus = selectedNexus || state.nexuses.find(n => n.id.startsWith('chat-')) || state.nexuses[0];
+
+    if (currentNexus) {
+      context.push("=== CURRENT CONVERSATION ===\n");
+      context.push(`**Topic: ${currentNexus.title}**`);
+      context.push(currentNexus.content);
+      context.push("\n**Full Thread:**\n");
+
+      const conversationNodes = Object.values(state.nodes)
+        .filter(node => node.parentId === currentNexus.id)
+        .sort((a, b) => {
+          const aTime = parseInt(a.id.split('-')[1]) || 0;
+          const bTime = parseInt(b.id.split('-')[1]) || 0;
+          return aTime - bTime;
+        });
+
+      conversationNodes.forEach(node => {
+        if (node.isAI) {
+          context.push(`\n[AI]: ${node.content}`);
+        } else {
+          context.push(`\n[User]: ${node.content}`);
+        }
+      });
+    }
+
+    return context.join('\n');
+  },
+
+  buildGraphStructure: () => {
+    const state = get();
+    const { nexuses, nodes, activatedUniverseIds, universeLibrary, selectedId } = state;
+    if (nexuses.length === 0 && activatedUniverseIds.length === 0) {
+      return null;
+    }
+
+    if (nexuses.length === 0 && activatedUniverseIds.length > 0) {
+      // Synthesis mode
+    }
+
+    const buildUniverseGraph = (universeId: string) => {
+      const universe = universeLibrary[universeId];
+      if (!universe) {
+        return null;
+      }
+
+      const nexus = universe.nexuses[0];
+      if (!nexus) return null;
+
+      const universeNodes = Object.values(universe.nodes);
+
+      const fullNodes = universeNodes.map(node => ({
+        id: node.id,
+        type: node.nodeType || 'user-reply',
+        content: node.content,
+        parentId: node.parentId,
+        position: node.position,
+        semanticTitle: node.semanticTitle
+      }));
+
+      const connections = universeNodes.map(node => ({
+        from: node.parentId,
+        to: node.id
+      }));
+
+      return {
+        universeId,
+        nexus: {
+          id: nexus.id,
+          content: nexus.content,
+          title: nexus.title,
+          position: nexus.position
+        },
+        nodes: fullNodes,
+        connections
+      };
+    };
+
+    let currentGraph = null;
+    if (nexuses.length > 0) {
+      const currentNexus = selectedId
+        ? nexuses.find(n => n.id === selectedId) || nexuses[0]
+        : nexuses[0];
+
+      if (currentNexus) {
+        const universeNodes = Object.values(nodes);
+        const fullNodes = universeNodes.map(node => ({
+          id: node.id,
+          type: node.nodeType || 'user-reply',
+          content: node.content,
+          parentId: node.parentId,
+          position: node.position,
+          semanticTitle: node.semanticTitle
+        }));
+
+        const connections = universeNodes.map(node => ({
+          from: node.parentId,
+          to: node.id
+        }));
+
+        currentGraph = {
+          nexus: {
+            id: currentNexus.id,
+            content: currentNexus.content,
+            title: currentNexus.title,
+            position: currentNexus.position
+          },
+          nodes: fullNodes,
+          connections
+        };
+      }
+    }
+
+    const activatedGraphs = activatedUniverseIds
+      .map(universeId => buildUniverseGraph(universeId))
+      .filter(graph => graph !== null);
+
+    return {
+      currentGraph,
+      activatedGraphs,
+      hasMultipleUniverses: activatedGraphs.length > 0
+    };
+  },
   // 🌌 UNIVERSE MANAGEMENT FUNCTIONS
 
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => {
@@ -3925,7 +4066,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
 
       // Use existing activeUniverseId
-      let universeId = state.activeUniverseId;
+      const universeId = state.activeUniverseId;
       const libraryBeforeSave = { ...state.universeLibrary };
       const libraryCountBefore = Object.keys(libraryBeforeSave).length;
 
@@ -4442,7 +4583,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const state = get();
     const folderIds = Object.keys(state.folders);
     let deleted = 0;
-    let migrated = 0;
+    const migrated = 0;
 
     const updatedLibrary = { ...state.universeLibrary };
 

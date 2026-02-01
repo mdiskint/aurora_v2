@@ -168,22 +168,8 @@ app.post('/api/chat', async (req, res) => {
 
     let response;
     try {
-      console.log('🤖 Attempting Anthropic call...');
-      response = await anthropic.messages.create({
-        model: 'claude-opus-4-5-20251101',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: messages
-      });
-
-      res.json({
-        response: response.content[0].text
-      });
-    } catch (anthropicError) {
-      console.error('❌ Anthropic failed:', anthropicError.message);
-
       if (process.env.OPENAI_API_KEY) {
-        console.log('🔄 Falling back to OpenAI (gpt-4o)...');
+        console.log('🤖 Attempting OpenAI call (gpt-4o)...');
         try {
           const completion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -197,19 +183,35 @@ app.post('/api/chat', async (req, res) => {
           res.json({
             response: completion.choices[0].message.content
           });
+          return;
         } catch (openaiError) {
-          console.error('❌ OpenAI also failed:', openaiError.message);
-          res.status(500).json({
-            error: 'All AI providers failed',
-            details: openaiError.message
-          });
+          console.error('❌ OpenAI failed:', openaiError.message);
+          // Fall through to Anthropic
         }
-      } else {
+      }
+
+      console.log('🔄 Trying Anthropic (claude-opus-4-5-20251101)...');
+      try {
+        response = await anthropic.messages.create({
+          model: 'claude-opus-4-5-20251101',
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages: messages
+        });
+
+        res.json({
+          response: response.content[0].text
+        });
+      } catch (anthropicError) {
+        console.error('❌ Anthropic also failed:', anthropicError.message);
         res.status(500).json({
-          error: 'Anthropic failed and no OpenAI fallback available',
+          error: 'All AI providers failed',
           details: anthropicError.message
         });
       }
+    } catch (globalError) {
+      console.error('❌ Global chat error:', globalError.message);
+      res.status(500).json({ error: 'Internal server error', details: globalError.message });
     }
   } catch (globalError) {
     console.error('❌ Global chat error:', globalError.message);

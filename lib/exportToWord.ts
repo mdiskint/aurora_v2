@@ -16,12 +16,12 @@ export async function exportToWord(data: ExportData) {
 
     // Conversation label detection with colors
     const labelPatterns = [
-      { pattern: /^\*\*\[USER REPLY\]\*\*/, label: '[USER REPLY]', color: '8B5CF6' },
-      { pattern: /^\*\*\[AI RESPONSE\]\*\*/, label: '[AI RESPONSE]', color: 'CC5500' },
-      { pattern: /^\*\*\[SOCRATIC QUESTION\]\*\*/, label: '[SOCRATIC QUESTION]', color: 'FFD700' },
-      { pattern: /^\*\*\[USER ANSWER\]\*\*/, label: '[USER ANSWER]', color: '8B5CF6' },
-      { pattern: /^\*\*\[FOLLOW-UP QUESTION\]\*\*/, label: '[FOLLOW-UP QUESTION]', color: 'FFD700' },
-      { pattern: /^\*\*\[CONNECTION NODE[^\]]*\]\*\*/, label: null, color: '00FFD4' }, // Dynamic label
+      { pattern: /^\*\*\[USER\]\*\*/, label: '[USER]', color: '8B5CF6' },
+      { pattern: /^\*\*\[EXPLANATION\]\*\*/, label: '[EXPLANATION]', color: 'CC5500' },
+      { pattern: /^\*\*\[INQUIRY\]\*\*/, label: '[INQUIRY]', color: 'FFD700' },
+      { pattern: /^\*\*\[QUIZ \(MC\)\]\*\*/, label: '[QUIZ (MC)]', color: 'EF4444' },
+      { pattern: /^\*\*\[QUIZ \(FR\)\]\*\*/, label: '[QUIZ (FR)]', color: 'EF4444' },
+      { pattern: /^\*\*\[CONNECTION\]\*\*/, label: '[CONNECTION]', color: '00FFD4' },
       { pattern: /^\*\*\[SYNTHESIS\]\*\*/, label: '[SYNTHESIS]', color: 'A855F7' }
     ];
 
@@ -34,7 +34,7 @@ export async function exportToWord(data: ExportData) {
       }
 
       // Check for conversation labels (e.g., **[USER REPLY]**)
-      let labelMatch = null;
+      let labelMatch = false;
       for (const labelPattern of labelPatterns) {
         const match = line.match(labelPattern.pattern);
         if (match) {
@@ -153,16 +153,18 @@ export async function exportToWord(data: ExportData) {
     })
   );
 
-  // Summary section
-  documentChildren.push(
-    new Paragraph({
-      text: 'Executive Summary',
-      heading: HeadingLevel.HEADING_1,
-      spacing: { before: 400, after: 200 }
-    })
-  );
+  // Summary section (only if summary exists)
+  if (data.summary && data.summary.trim()) {
+    documentChildren.push(
+      new Paragraph({
+        text: 'Executive Summary',
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 400, after: 200 }
+      })
+    );
 
-  documentChildren.push(...createContentParagraphs(data.summary));
+    documentChildren.push(...createContentParagraphs(data.summary));
+  }
 
   // Add each section
   data.sections.forEach(section => {

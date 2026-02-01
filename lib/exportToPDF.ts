@@ -53,34 +53,36 @@ export function exportToPDF(data: ExportData) {
   // Title
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
-  const 
-  
-  
-  titleLines = doc.splitTextToSize(data.title, maxWidth);
+  const
+
+
+    titleLines = doc.splitTextToSize(data.title, maxWidth);
   titleLines.forEach((line: string) => {
     doc.text(line, pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
   });
   yPosition += 10;
 
-  // Executive Summary
-  checkNewPage(20);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Executive Summary', marginLeft, yPosition);
-  yPosition += 10;
+  // Executive Summary (only if exists)
+  if (data.summary && data.summary.trim()) {
+    checkNewPage(20);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Executive Summary', marginLeft, yPosition);
+    yPosition += 10;
 
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+  }
 
   // Conversation label patterns with colors
   const labelPatterns = [
-    { pattern: /^\*\*\[USER REPLY\]\*\*/, label: '[USER REPLY]', color: [139, 92, 246] as [number, number, number] },
-    { pattern: /^\*\*\[AI RESPONSE\]\*\*/, label: '[AI RESPONSE]', color: [204, 85, 0] as [number, number, number] },
-    { pattern: /^\*\*\[SOCRATIC QUESTION\]\*\*/, label: '[SOCRATIC QUESTION]', color: [255, 215, 0] as [number, number, number] },
-    { pattern: /^\*\*\[USER ANSWER\]\*\*/, label: '[USER ANSWER]', color: [139, 92, 246] as [number, number, number] },
-    { pattern: /^\*\*\[FOLLOW-UP QUESTION\]\*\*/, label: '[FOLLOW-UP QUESTION]', color: [255, 215, 0] as [number, number, number] },
-    { pattern: /^\*\*\[CONNECTION NODE[^\]]*\]\*\*/, label: null, color: [0, 255, 212] as [number, number, number] },
+    { pattern: /^\*\*\[USER\]\*\*/, label: '[USER]', color: [139, 92, 246] as [number, number, number] },
+    { pattern: /^\*\*\[EXPLANATION\]\*\*/, label: '[EXPLANATION]', color: [204, 85, 0] as [number, number, number] },
+    { pattern: /^\*\*\[INQUIRY\]\*\*/, label: '[INQUIRY]', color: [255, 215, 0] as [number, number, number] },
+    { pattern: /^\*\*\[QUIZ \(MC\)\]\*\*/, label: '[QUIZ (MC)]', color: [239, 68, 68] as [number, number, number] },
+    { pattern: /^\*\*\[QUIZ \(FR\)\]\*\*/, label: '[QUIZ (FR)]', color: [239, 68, 68] as [number, number, number] },
+    { pattern: /^\*\*\[CONNECTION\]\*\*/, label: '[CONNECTION]', color: [0, 255, 212] as [number, number, number] },
     { pattern: /^\*\*\[SYNTHESIS\]\*\*/, label: '[SYNTHESIS]', color: [168, 85, 247] as [number, number, number] }
   ];
 
@@ -130,61 +132,63 @@ export function exportToPDF(data: ExportData) {
     return false; // No label found
   };
 
-  // Parse summary for bullet points and conversation labels
-  const summaryLinesArray = data.summary.split('\n');
-  summaryLinesArray.forEach((line: string) => {
-    if (!line.trim()) {
-      yPosition += 3;
-      return;
-    }
+  // Parse summary for bullet points and conversation labels (only if exists)
+  if (data.summary && data.summary.trim()) {
+    const summaryLinesArray = data.summary.split('\n');
+    summaryLinesArray.forEach((line: string) => {
+      if (!line.trim()) {
+        yPosition += 3;
+        return;
+      }
 
-    // Check for conversation labels first
-    if (processLine(line)) {
-      return;
-    }
+      // Check for conversation labels first
+      if (processLine(line)) {
+        return;
+      }
 
-    // Main bullet
-    if (line.match(/^-\s+/)) {
-      checkNewPage(7);
-      const bulletText = line.substring(2).trim();
-      doc.text('•', marginLeft + 2, yPosition);
-      const wrappedLines = doc.splitTextToSize(bulletText, maxWidth - 7);
-      wrappedLines.forEach((wrapped: string, idx: number) => {
-        if (idx > 0) checkNewPage(7);
-        doc.text(wrapped, marginLeft + 7, yPosition);
-        yPosition += 7;
-      });
-    }
-    // Sub-bullet
-    else if (line.match(/^\s{2,}-\s+/)) {
-      checkNewPage(7);
-      const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
-      const indentLevel = Math.floor(leadingSpaces / 2);
-      const indent = marginLeft + 7 + (indentLevel * 5);
-      const bulletText = line.trim().substring(2).trim();
-      doc.setFontSize(9);
-      doc.text('◦', indent, yPosition);
-      doc.setFontSize(11);
-      const wrappedLines = doc.splitTextToSize(bulletText, maxWidth - (indent - marginLeft) - 5);
-      wrappedLines.forEach((wrapped: string, idx: number) => {
-        if (idx > 0) checkNewPage(7);
-        doc.text(wrapped, indent + 5, yPosition);
-        yPosition += 7;
-      });
-    }
-    // Regular text with indentation
-    else {
-      const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
-      const indent = marginLeft + (leadingSpaces / 2) * 12.7; // 2 spaces ≈ 0.5 inch
-      const textLines = doc.splitTextToSize(line.trim(), maxWidth - (indent - marginLeft));
-      textLines.forEach((textLine: string) => {
+      // Main bullet
+      if (line.match(/^-\s+/)) {
         checkNewPage(7);
-        doc.text(textLine, indent, yPosition);
-        yPosition += 7;
-      });
-    }
-  });
-  yPosition += 10;
+        const bulletText = line.substring(2).trim();
+        doc.text('•', marginLeft + 2, yPosition);
+        const wrappedLines = doc.splitTextToSize(bulletText, maxWidth - 7);
+        wrappedLines.forEach((wrapped: string, idx: number) => {
+          if (idx > 0) checkNewPage(7);
+          doc.text(wrapped, marginLeft + 7, yPosition);
+          yPosition += 7;
+        });
+      }
+      // Sub-bullet
+      else if (line.match(/^\s{2,}-\s+/)) {
+        checkNewPage(7);
+        const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+        const indentLevel = Math.floor(leadingSpaces / 2);
+        const indent = marginLeft + 7 + (indentLevel * 5);
+        const bulletText = line.trim().substring(2).trim();
+        doc.setFontSize(9);
+        doc.text('◦', indent, yPosition);
+        doc.setFontSize(11);
+        const wrappedLines = doc.splitTextToSize(bulletText, maxWidth - (indent - marginLeft) - 5);
+        wrappedLines.forEach((wrapped: string, idx: number) => {
+          if (idx > 0) checkNewPage(7);
+          doc.text(wrapped, indent + 5, yPosition);
+          yPosition += 7;
+        });
+      }
+      // Regular text with indentation
+      else {
+        const leadingSpaces = line.match(/^(\s+)/)?.[1].length || 0;
+        const indent = marginLeft + (leadingSpaces / 2) * 12.7; // 2 spaces ≈ 0.5 inch
+        const textLines = doc.splitTextToSize(line.trim(), maxWidth - (indent - marginLeft));
+        textLines.forEach((textLine: string) => {
+          checkNewPage(7);
+          doc.text(textLine, indent, yPosition);
+          yPosition += 7;
+        });
+      }
+    });
+    yPosition += 10;
+  }
 
   // Sections
   data.sections.forEach((section, index) => {

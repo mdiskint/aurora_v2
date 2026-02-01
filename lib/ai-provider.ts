@@ -15,32 +15,40 @@ export async function callAI(params: {
 }) {
     const { messages, system, mode } = params as any;
 
-    // Try Anthropic first if key exists
-    if (process.env.ANTHROPIC_API_KEY) {
+    // Try OpenAI first if key exists
+    if (process.env.OPENAI_API_KEY) {
         try {
-            console.log('🤖 Attempting Anthropic call...');
-            const response = await anthropic.messages.create({
-                model: params.model || 'claude-3-5-sonnet-20240620', // Default fallback
-                max_tokens: params.max_tokens || 4096,
-                system: system,
-                messages: messages,
-            });
-
-            const textContent = response.content.find((block) => block.type === 'text');
-            return textContent && 'text' in textContent ? textContent.text : '';
+            return await fallbackToOpenAI(messages, system);
         } catch (error: any) {
-            console.error('❌ Anthropic failed:', error.message);
-
-            // If use limit or other non-auth error, try OpenAI
-            if (process.env.OPENAI_API_KEY) {
-                return fallbackToOpenAI(messages, system);
+            console.error('❌ OpenAI failed:', error.message);
+            // Fall through to Anthropic
+            if (process.env.ANTHROPIC_API_KEY) {
+                return await callAnthropic(params, messages, system);
             }
             throw error;
         }
-    } else if (process.env.OPENAI_API_KEY) {
-        return fallbackToOpenAI(messages, system);
+    } else if (process.env.ANTHROPIC_API_KEY) {
+        return await callAnthropic(params, messages, system);
     } else {
         throw new Error('No AI provider keys configured');
+    }
+}
+
+async function callAnthropic(params: any, messages: any[], system?: string) {
+    console.log('🔄 Falling back to Anthropic...');
+    try {
+        const response = await anthropic.messages.create({
+            model: params.model || 'claude-3-5-sonnet-20240620',
+            max_tokens: params.max_tokens || 4096,
+            system: system,
+            messages: messages,
+        });
+
+        const textContent = response.content.find((block) => block.type === 'text');
+        return textContent && 'text' in textContent ? (textContent as any).text : '';
+    } catch (error: any) {
+        console.error('❌ Anthropic also failed:', error.message);
+        throw error;
     }
 }
 
