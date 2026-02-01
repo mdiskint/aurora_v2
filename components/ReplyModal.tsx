@@ -250,13 +250,35 @@ export default function ReplyModal() {
       setIsLoadingAI(true);
 
       try {
+        // Build full universe context so AI can search across all nodes
+        const universeContext: string[] = [];
+        nexuses.forEach(nex => {
+          universeContext.push(`[Nexus: ${nex.title}]\n${nex.content}`);
+          const children = Object.values(nodes).filter(n => n.parentId === nex.id);
+          children.forEach(child => {
+            universeContext.push(`  [Node: ${child.title || child.id}]\n  ${child.content.substring(0, 500)}`);
+          });
+        });
+        const universeSnapshot = universeContext.join('\n\n');
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: [{
               role: 'user',
-              content: `You are Astryon AI. The user is exploring a node with this content:\n\n"${selectedContent}"\n\nThe user asks: ${content}\n\nProvide a thoughtful, insightful response that helps them explore this idea further.`
+              content: `You are Astryon AI. The user is exploring their conversation universe. Search across ALL nodes to answer their question.
+
+=== FULL UNIVERSE ===
+${universeSnapshot}
+
+=== CURRENTLY SELECTED NODE ===
+${selectedContent}
+
+=== USER QUESTION ===
+${content}
+
+Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.`
             }],
             mode: 'reply'
           }),

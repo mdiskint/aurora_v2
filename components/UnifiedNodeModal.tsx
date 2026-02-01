@@ -1131,7 +1131,30 @@ export default function UnifiedNodeModal() {
 
     try {
       const contextContent = displayContent || '';
-      const fullPrompt = `Context from selected node:\n"${contextContent}"\n\nUser question: ${inputContent.trim()}`;
+
+      // Build full universe context so AI can search across all nodes
+      const universeContext: string[] = [];
+      nexuses.forEach(nex => {
+        universeContext.push(`[Nexus: ${nex.title}]\n${nex.content}`);
+        const children = Object.values(nodes).filter(n => n.parentId === nex.id);
+        children.forEach(child => {
+          universeContext.push(`  [Node: ${child.title || child.id}]\n  ${child.content.substring(0, 500)}`);
+        });
+      });
+      const universeSnapshot = universeContext.join('\n\n');
+
+      const fullPrompt = `You have access to the user's full conversation universe. Search across ALL nodes to answer their question.
+
+=== FULL UNIVERSE ===
+${universeSnapshot}
+
+=== CURRENTLY SELECTED NODE ===
+${contextContent}
+
+=== USER QUESTION ===
+${inputContent.trim()}
+
+Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.`;
 
       const response = await fetch('/api/chat', {
         method: 'POST',
