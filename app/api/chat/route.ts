@@ -5,7 +5,7 @@ import { callGemini } from '@/lib/gemini';
 
 const MODEL_CONFIG = {
   high: {
-    anthropic: 'claude-3-5-sonnet-20241022',
+    anthropic: 'claude-sonnet-4-20250514',
     openai: 'gpt-4o',
   },
   low: {
