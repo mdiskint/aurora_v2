@@ -19,6 +19,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
                 return {
                     allowedContentTypes: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v'],
+                    addRandomSuffix: true,
                     tokenPayload: JSON.stringify({
                         userId: session.user?.email,
                     }),
