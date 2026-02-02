@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { callGemini } from '@/lib/gemini';
+import { callGemini, callGeminiWithSearch } from '@/lib/gemini';
 
 export const maxDuration = 300;
 
@@ -151,10 +151,47 @@ export async function POST(request: NextRequest) {
         console.log('🏛️ Nexus section (index 0):', nexus);
         console.log('📦 Node sections (index 1+):', nodeContents);
 
-        const enrichedNodes = nodeContents.map((content, idx) => {
-          console.log(`   Node ${idx + 1}:`, content.substring(0, 50) + '...');
-          return { content };
-        });
+        // Enrich each node with Gemini + Google Search grounding
+        console.log('🔍 Enriching nodes with cross-references and Google Search grounding...');
+
+        const enrichedNodes = await Promise.all(
+          nodeContents.map(async (content, idx) => {
+            const siblingContext = nodeContents
+              .filter((_, i) => i !== idx)
+              .map(s => `- ${s.substring(0, 150)}`)
+              .join('\n');
+
+            const enrichPrompt = `You are enriching a node in a learning universe.
+
+Universe Topic: "${nexus}"
+
+THIS NODE's raw content:
+"${content}"
+
+SIBLING NODES in the same universe:
+${siblingContext}
+
+Your task: Expand and enrich this node's content by:
+1. Adding depth and detail to the core concept (2-3 paragraphs)
+2. Referencing connections to sibling nodes where relevant
+3. Including any current real-world context or recent developments (use your search capability)
+4. Adding concrete examples or applications
+
+Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`;
+
+            try {
+              const enriched = await callGeminiWithSearch(
+                enrichPrompt,
+                'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and current real-world context using web search. Be concise but substantive.'
+              );
+              console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars)`);
+              return { content: enriched || content };
+            } catch (error: any) {
+              console.error(`   ❌ Node ${idx + 1} enrichment failed:`, error.message);
+              return { content };
+            }
+          })
+        );
 
         const spatialData = {
           nexusTitle: nexus.substring(0, 50),
@@ -164,7 +201,7 @@ export async function POST(request: NextRequest) {
 
         console.log('✅ Parsed and enriched manual structure:');
         console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
-        console.log(`   - Nodes: ${spatialData.nodes.length} (AI-enriched with cross-references)`);
+        console.log(`   - Nodes: ${spatialData.nodes.length} (Gemini-enriched with Google Search grounding)`);
 
         return NextResponse.json({
           response: `Created manual universe with ${spatialData.nodes.length} enriched nodes`,

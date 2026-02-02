@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGemini } from '@/lib/gemini';
+import { callGeminiWithFileAPI } from '@/lib/gemini';
+import { writeFile, unlink } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
-export const maxDuration = 60; // Set max duration to 60 seconds for Vercel (optional but good practice)
+export const maxDuration = 300; // 5 minutes for upload + processing + analysis
 
 export async function POST(request: NextRequest) {
     try {
@@ -15,17 +18,17 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check file size (20MB limit for MVP)
-        if (file.size > 20 * 1024 * 1024) {
+        // 2GB is the Gemini File API max; cap at 500MB for practical serverless limits
+        const MAX_FILE_SIZE = 500 * 1024 * 1024;
+        if (file.size > MAX_FILE_SIZE) {
             return NextResponse.json(
-                { error: 'File too large. Please upload a video smaller than 20MB.' },
+                { error: 'File too large. Please upload a video smaller than 500MB.' },
                 { status: 400 }
             );
         }
 
         console.log(`🎥 Received video: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
-        // Check if API key is configured
         if (!process.env.GEMINI_API_KEY) {
             console.error('❌ GEMINI_API_KEY is not configured');
             return NextResponse.json(
@@ -36,14 +39,16 @@ export async function POST(request: NextRequest) {
 
         console.log('✅ GEMINI_API_KEY is configured');
 
-        // Convert file to base64
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const base64Data = buffer.toString('base64');
+        // Write file to temp directory for Gemini File API upload
         const mimeType = file.type || 'video/mp4';
+        const tempPath = join(tmpdir(), `gemini-upload-${Date.now()}-${file.name}`);
 
-        // Prompt for Gemini
-        const systemPrompt = `You are an expert educational content creator. Your task is to watch the provided video, identify its natural topic segments, and produce structured teaching material for each segment.
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            await writeFile(tempPath, Buffer.from(arrayBuffer));
+            console.log(`📁 Temp file written: ${tempPath}`);
+
+            const systemPrompt = `You are an expert educational content creator. Your task is to watch the provided video, identify its natural topic segments, and produce structured teaching material for each segment.
 
     Return a valid JSON object with the following structure:
     {
@@ -68,37 +73,42 @@ export async function POST(request: NextRequest) {
     5. The "fullTextContent" field should be a course overview, NOT a transcript. Summarize the overall subject, state what the student will learn, and briefly describe how the sections build on each other.
     6. Return ONLY the JSON object. Do not include markdown formatting or extra text.`;
 
-        const userPrompt = "Analyze this video and generate a course structure.";
+            const userPrompt = "Analyze this video and generate a course structure.";
 
-        console.log('🤖 Sending video to Gemini for analysis...');
+            console.log('🤖 Uploading to Gemini File API and analyzing...');
 
-        const response = await callGemini(userPrompt, systemPrompt, {
-            mimeType,
-            data: base64Data
-        });
+            const response = await callGeminiWithFileAPI(tempPath, mimeType, userPrompt, systemPrompt);
 
-        console.log('✅ Gemini analysis complete');
+            console.log('✅ Gemini analysis complete');
 
-        // Parse JSON response
-        let jsonResponse;
-        try {
-            let cleanJson = response.trim();
-            // Remove markdown code blocks if present
-            if (cleanJson.startsWith('```json')) cleanJson = cleanJson.slice(7);
-            if (cleanJson.startsWith('```')) cleanJson = cleanJson.slice(3);
-            if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3);
+            // Parse JSON response
+            let jsonResponse;
+            try {
+                let cleanJson = response.trim();
+                if (cleanJson.startsWith('```json')) cleanJson = cleanJson.slice(7);
+                if (cleanJson.startsWith('```')) cleanJson = cleanJson.slice(3);
+                if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3);
 
-            jsonResponse = JSON.parse(cleanJson);
-        } catch (e) {
-            console.error('❌ Failed to parse Gemini response:', e);
-            console.error('Raw response:', response);
-            return NextResponse.json(
-                { error: 'Failed to parse AI response', rawResponse: response },
-                { status: 500 }
-            );
+                jsonResponse = JSON.parse(cleanJson);
+            } catch (e) {
+                console.error('❌ Failed to parse Gemini response:', e);
+                console.error('Raw response:', response);
+                return NextResponse.json(
+                    { error: 'Failed to parse AI response', rawResponse: response },
+                    { status: 500 }
+                );
+            }
+
+            return NextResponse.json(jsonResponse);
+        } finally {
+            // Clean up temp file
+            try {
+                await unlink(tempPath);
+                console.log('🧹 Temp file cleaned up');
+            } catch {
+                // Ignore cleanup errors
+            }
         }
-
-        return NextResponse.json(jsonResponse);
 
     } catch (error: any) {
         console.error('❌ Error analyzing video:', error);

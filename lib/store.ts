@@ -2946,6 +2946,18 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         console.log('🗑️   ✅ Deleted from IndexedDB');
       });
 
+      // Delete from cloud
+      fetch('/api/universes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ universeId }),
+      }).then(res => {
+        if (res.ok) console.log('🗑️   ✅ Deleted from cloud');
+        else console.warn('🗑️   ⚠️ Cloud delete returned:', res.status);
+      }).catch(e => {
+        console.error('🗑️   ❌ Failed to delete from cloud:', e);
+      });
+
       // Save to localStorage
       get().saveToLocalStorage();
 

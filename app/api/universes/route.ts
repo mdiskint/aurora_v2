@@ -71,3 +71,43 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
+
+export async function DELETE(req: Request) {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user?.email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    try {
+        const { universeId } = await req.json();
+
+        if (!universeId) {
+            return NextResponse.json({ error: 'Missing universeId' }, { status: 400 });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { email: session.user.email },
+        });
+
+        if (!user) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        await prisma.universe.delete({
+            where: {
+                id: universeId,
+                userId: user.id,
+            },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        // P2025 = record not found — not an error if already deleted locally
+        if (error?.code === 'P2025') {
+            return NextResponse.json({ success: true });
+        }
+        console.error('Error deleting universe:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}

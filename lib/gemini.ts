@@ -1,18 +1,22 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
 
+// Legacy SDK client (used by callGemini for inline data)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
+// New SDK client (used by File API)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
+// Legacy: inline base64 data (kept for backward compatibility with small files)
 export async function callGemini(prompt: string, systemPrompt?: string, mediaData?: { mimeType: string; data: string }) {
     const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' });
 
     const parts: any[] = [];
 
-    // Add system prompt if provided
     if (systemPrompt) {
         parts.push({ text: `System: ${systemPrompt}\n\n` });
     }
 
-    // Add media if provided
     if (mediaData) {
         parts.push({
             inlineData: {
@@ -22,7 +26,6 @@ export async function callGemini(prompt: string, systemPrompt?: string, mediaDat
         });
     }
 
-    // Add user prompt
     parts.push({ text: `User: ${prompt}` });
 
     const result = await model.generateContent(parts);
@@ -30,4 +33,78 @@ export async function callGemini(prompt: string, systemPrompt?: string, mediaDat
     return response.text();
 }
 
-export { genAI };
+// New: Upload file to Gemini File API, poll for processing, then generate content
+export async function callGeminiWithFileAPI(
+    filePath: string,
+    mimeType: string,
+    prompt: string,
+    systemPrompt?: string
+): Promise<string> {
+    // 1. Upload file to Gemini File API
+    console.log('📤 Uploading file to Gemini File API...');
+    const uploadedFile = await ai.files.upload({
+        file: filePath,
+        config: { mimeType },
+    });
+
+    console.log(`✅ File uploaded: ${uploadedFile.name}, state: ${uploadedFile.state}`);
+
+    // 2. Poll for processing completion
+    let file = uploadedFile;
+    let pollCount = 0;
+    while (file.state === 'PROCESSING') {
+        pollCount++;
+        console.log(`⏳ File processing... (poll ${pollCount})`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        file = await ai.files.get({ name: file.name! });
+    }
+
+    if (file.state === 'FAILED') {
+        throw new Error('Gemini file processing failed');
+    }
+
+    console.log(`✅ File ready: ${file.name}, state: ${file.state}`);
+
+    // 3. Generate content using the file URI
+    const contents: any[] = [];
+
+    if (systemPrompt) {
+        contents.push(`System: ${systemPrompt}\n\n`);
+    }
+
+    contents.push(createPartFromUri(file.uri!, file.mimeType!));
+    contents.push(`User: ${prompt}`);
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: createUserContent(contents),
+    });
+
+    return response.text || '';
+}
+
+// Text-only generation with Google Search grounding (for node enrichment)
+export async function callGeminiWithSearch(
+    prompt: string,
+    systemPrompt?: string
+): Promise<string> {
+    const contents: any[] = [];
+
+    if (systemPrompt) {
+        contents.push(`System: ${systemPrompt}\n\n`);
+    }
+
+    contents.push(prompt);
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: createUserContent(contents),
+        config: {
+            tools: [{ googleSearch: {} }],
+        },
+    });
+
+    return response.text || '';
+}
+
+export { genAI, ai };
