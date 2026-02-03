@@ -207,7 +207,7 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
               : 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and concrete examples. Do NOT use web search or external sources. Generate content purely from the provided context. Be concise but substantive.';
 
             try {
-              const enriched = nodeDepth === 0
+              const enriched = nodeDepth <= 1
                 ? content  // L1: raw content, no AI processing
                 : useWebSearch
                   ? await callGeminiWithSearch(enrichPrompt, systemPrompt)
