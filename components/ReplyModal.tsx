@@ -294,7 +294,8 @@ ${content}
 
 Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.${useSearch ? ' If the universe lacks sufficient information, use web search results to supplement your answer with real-world facts, citations, or current developments.' : ''}`
             }],
-            mode: useSearch ? 'ask-with-search' : 'reply'
+            mode: useSearch ? 'ask-with-search' : 'reply',
+            ...(useSearch && { searchQuery: content.trim() }),
           }),
         });
 

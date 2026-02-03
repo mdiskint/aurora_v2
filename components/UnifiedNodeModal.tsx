@@ -1185,6 +1185,7 @@ Answer using information from ANY node in the universe, not just the selected on
         body: JSON.stringify({
           messages: [{ role: 'user', content: fullPrompt }],
           mode: useSearch ? 'ask-with-search' : 'standard',
+          ...(useSearch && { searchQuery: inputContent.trim() }),
         }),
       });
 

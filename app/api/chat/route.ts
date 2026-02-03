@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
@@ -1963,8 +1963,8 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
     if (mode === 'ask-with-search') {
       console.log('🌐 ASK-WITH-SEARCH MODE: Running Tavily search before Claude');
 
-      const searchQuery = userMessage.substring(0, 300);
-      console.log('🔎 Tavily search query:', searchQuery.substring(0, 80));
+      const searchQuery = clientSearchQuery || userMessage.substring(0, 300);
+      console.log('🔎 Tavily search query:', searchQuery.substring(0, 120));
 
       let webContext = '';
       try {
