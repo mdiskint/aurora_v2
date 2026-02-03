@@ -1155,6 +1155,17 @@ export default function UnifiedNodeModal() {
       });
       const universeSnapshot = universeContext.join('\n\n');
 
+      // Calculate node depth to decide if we should use web search
+      let askDepth = 1;
+      let walkAskId: string | undefined = node?.parentId;
+      const nexusIdsForAsk = new Set(nexuses.map(n => n.id));
+      while (walkAskId && !nexusIdsForAsk.has(walkAskId) && nodes[walkAskId]) {
+        askDepth++;
+        walkAskId = nodes[walkAskId].parentId;
+      }
+      const useSearch = askDepth >= 2;
+      console.log(`🔍 Ask AI: node depth=${askDepth}, useSearch=${useSearch}`);
+
       const fullPrompt = `You have access to the user's full conversation universe. Search across ALL nodes to answer their question.
 
 === FULL UNIVERSE ===
@@ -1166,14 +1177,14 @@ ${contextContent}
 === USER QUESTION ===
 ${inputContent.trim()}
 
-Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.`;
+Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.${useSearch ? ' If the universe lacks sufficient information, use web search results to supplement your answer with real-world facts, citations, or current developments.' : ''}`;
 
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: fullPrompt }],
-          mode: 'standard',
+          mode: useSearch ? 'ask-with-search' : 'standard',
         }),
       });
 

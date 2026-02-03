@@ -1959,6 +1959,44 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
       return NextResponse.json({ response: aiResponse });
     }
 
+    // 🌐 ASK-WITH-SEARCH MODE: In-node AI query with Tavily web search for L2+ nodes
+    if (mode === 'ask-with-search') {
+      console.log('🌐 ASK-WITH-SEARCH MODE: Running Tavily search before Claude');
+
+      const searchQuery = userMessage.substring(0, 300);
+      console.log('🔎 Tavily search query:', searchQuery.substring(0, 80));
+
+      let webContext = '';
+      try {
+        webContext = await searchWeb(searchQuery);
+        console.log(`📄 Tavily returned ${webContext.length} chars`);
+      } catch (error: any) {
+        console.error('❌ Tavily search failed:', error.message);
+      }
+
+      const systemPrompt = webContext
+        ? `You are Astryon AI, helping users explore ideas in 3D space. You have access to their full conversation universe AND web search results.
+
+When answering, prioritize the universe context first, then supplement with web research for facts, citations, or current information not found in the universe.
+
+WEB RESEARCH RESULTS:
+${webContext}`
+        : 'You are Astryon AI, helping users explore ideas in 3D space. You have access to the full conversation universe context.';
+
+      const response = await safeAICall(anthropic, openai, {
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      }, 'high');
+
+      const textContent = response.content.find((block: any) => block.type === 'text');
+      const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
+
+      console.log('✅ Ask-with-search response:', aiResponse.substring(0, 100) + '...');
+
+      return NextResponse.json({ response: aiResponse });
+    }
+
     // Standard chat mode
     console.log('📤 Sending to Claude API...');
 

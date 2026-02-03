@@ -250,6 +250,20 @@ export default function ReplyModal() {
       setIsLoadingAI(true);
 
       try {
+        // Calculate node depth to decide if we should use web search
+        let replyDepth = 1;
+        let walkReplyId: string | undefined = selectedId || undefined;
+        const nexusIdsForReply = new Set(nexuses.map(n => n.id));
+        if (walkReplyId && !nexusIdsForReply.has(walkReplyId) && nodes[walkReplyId]) {
+          walkReplyId = nodes[walkReplyId].parentId;
+          while (walkReplyId && !nexusIdsForReply.has(walkReplyId) && nodes[walkReplyId]) {
+            replyDepth++;
+            walkReplyId = nodes[walkReplyId].parentId;
+          }
+        }
+        const useSearch = replyDepth >= 2;
+        console.log(`🔍 Reply AI: node depth=${replyDepth}, useSearch=${useSearch}`);
+
         // Build full universe context so AI can search across all nodes
         const universeContext: string[] = [];
         nexuses.forEach(nex => {
@@ -278,9 +292,9 @@ ${selectedContent}
 === USER QUESTION ===
 ${content}
 
-Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.`
+Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.${useSearch ? ' If the universe lacks sufficient information, use web search results to supplement your answer with real-world facts, citations, or current developments.' : ''}`
             }],
-            mode: 'reply'
+            mode: useSearch ? 'ask-with-search' : 'reply'
           }),
         });
 
