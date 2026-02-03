@@ -1,12 +1,12 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { Suspense, useRef, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CanvasScene from '@/components/CanvasScene';
 import SectionNavigator from '@/components/SectionNavigator';
 import { useCanvasStore } from '@/lib/store';
 
-export default function ExplorePage() {
+function ExploreContent() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const loadAcademicPaperFromData = useCanvasStore((state) => state.loadAcademicPaperFromData);
   const loadConversationFromData = useCanvasStore((state) => state.loadConversationFromData);
@@ -221,5 +221,13 @@ export default function ExplorePage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ExplorePage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ExploreContent />
+    </Suspense>
   );
 }
