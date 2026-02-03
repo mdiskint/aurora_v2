@@ -83,28 +83,4 @@ export async function callGeminiWithFileAPI(
     return response.text || '';
 }
 
-// Text-only generation with Google Search grounding (for node enrichment)
-export async function callGeminiWithSearch(
-    prompt: string,
-    systemPrompt?: string
-): Promise<string> {
-    const contents: any[] = [];
-
-    if (systemPrompt) {
-        contents.push(`System: ${systemPrompt}\n\n`);
-    }
-
-    contents.push(prompt);
-
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: createUserContent(contents),
-        config: {
-            tools: [{ googleSearch: {} }],
-        },
-    });
-
-    return response.text || '';
-}
-
 export { genAI, ai };

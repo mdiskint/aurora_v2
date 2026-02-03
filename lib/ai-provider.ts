@@ -38,7 +38,7 @@ async function callAnthropic(params: any, messages: any[], system?: string) {
     console.log('🔄 Falling back to Anthropic...');
     try {
         const response = await anthropic.messages.create({
-            model: params.model || 'claude-3-5-sonnet-20240620',
+            model: params.model || 'claude-sonnet-4-5-20250929',
             max_tokens: params.max_tokens || 4096,
             system: system,
             messages: messages,

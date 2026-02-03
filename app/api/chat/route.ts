@@ -1,23 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { callGemini, callGeminiWithSearch } from '@/lib/gemini';
+import { callGemini } from '@/lib/gemini';
+import { searchWeb } from '@/lib/search';
 
 export const maxDuration = 300;
 
 const MODEL_CONFIG = {
-  high: {
-    anthropic: 'claude-sonnet-4-20250514',
-    openai: 'gpt-4o',
-  },
-  low: {
-    anthropic: 'claude-3-5-haiku-20241022',
-    openai: 'gpt-4o-mini',
-  }
+  high: { anthropic: 'claude-opus-4-5-20251101', openai: 'gpt-4o' },
+  mid:  { anthropic: 'claude-sonnet-4-5-20250929', openai: 'gpt-4o' },
+  low:  { anthropic: 'claude-haiku-4-5-20251001', openai: 'gpt-4o-mini' },
 };
 
-async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'low' = 'high') {
-  const modelToUse = complexity === 'high' ? MODEL_CONFIG.high : MODEL_CONFIG.low;
+async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
+  const modelToUse = MODEL_CONFIG[complexity];
   const currentParams = { ...params, model: modelToUse.anthropic };
 
   if (process.env.ANTHROPIC_API_KEY) {
@@ -151,39 +147,34 @@ export async function POST(request: NextRequest) {
         console.log('🏛️ Nexus section (index 0):', nexus);
         console.log('📦 Node sections (index 1+):', nodeContents);
 
-        // Enrich each node — L1 uses context only, L2+ uses Google Search grounding
+        // Enrich each node — L1 uses raw content, L2+ uses Tavily search + Claude enrichment
         const enrichDepth = typeof nodeDepth === 'number' ? nodeDepth : 1;
-        console.log(`🔍 Enriching nodes (depth=${enrichDepth}, webSearch=${enrichDepth >= 2})...`);
+        const useWebSearch = enrichDepth >= 2;
+        console.log(`🔍 Enriching nodes (depth=${enrichDepth}, webSearch=${useWebSearch})...`);
 
         const enrichedNodes = await Promise.all(
           nodeContents.map(async (content, idx) => {
+            // L1: raw content, no AI processing
+            if (nodeDepth <= 1) {
+              console.log(`   ⏭️ Node ${idx + 1} skipped (L1 raw content)`);
+              return { content };
+            }
+
             const siblingContext = nodeContents
               .filter((_, i) => i !== idx)
               .map(s => `- ${s.substring(0, 150)}`)
               .join('\n');
 
-            const depth = typeof nodeDepth === 'number' ? nodeDepth : 1;
-            const useWebSearch = depth >= 2;
+            // L2+: Tavily search for web context, then Claude enrichment
+            let webContext = '';
+            if (useWebSearch) {
+              const searchQuery = content.substring(0, 200) + ' ' + nexus;
+              console.log(`   🔎 Node ${idx + 1} searching:`, searchQuery.substring(0, 80));
+              webContext = await searchWeb(searchQuery);
+              console.log(`   📄 Node ${idx + 1} search returned ${webContext.length} chars`);
+            }
 
-            const enrichPrompt = useWebSearch
-              ? `You are enriching a node in a learning universe.
-
-Universe Topic: "${nexus}"
-
-THIS NODE's raw content:
-"${content}"
-
-SIBLING NODES in the same universe:
-${siblingContext}
-
-Your task: Expand and enrich this node's content by:
-1. Adding depth and detail to the core concept (2-3 paragraphs)
-2. Referencing connections to sibling nodes where relevant
-3. Including any current real-world context or recent developments (use your search capability)
-4. Adding concrete examples or applications
-
-Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`
-              : `You are enriching a node in a learning universe.
+            const enrichPrompt = `You are enriching a node in a learning universe.
 
 Universe Topic: "${nexus}"
 
@@ -192,26 +183,24 @@ THIS NODE's raw content:
 
 SIBLING NODES in the same universe:
 ${siblingContext}
-
+${webContext ? `\nWEB RESEARCH (use to ground your enrichment with current, real-world context):\n${webContext}\n` : ''}
 Your task: Expand and enrich this node's content by:
 1. Adding depth and detail to the core concept (2-3 paragraphs)
 2. Referencing connections to sibling nodes where relevant
-3. Adding concrete examples or applications
-
-Do NOT use web search or external sources. Generate content purely from the conversation context and the user's input.
+${webContext ? '3. Incorporating relevant findings from the web research above\n4. Adding concrete examples or applications' : '3. Adding concrete examples or applications'}
 
 Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`;
 
-            const systemPrompt = useWebSearch
-              ? 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and current real-world context using web search. Be concise but substantive.'
-              : 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and concrete examples. Do NOT use web search or external sources. Generate content purely from the provided context. Be concise but substantive.';
-
             try {
-              const enriched = nodeDepth <= 1
-                ? content  // L1: raw content, no AI processing
-                : useWebSearch
-                  ? await callGeminiWithSearch(enrichPrompt, systemPrompt)
-                  : await callGemini(enrichPrompt, systemPrompt);
+              const response = await safeAICall(anthropic, openai, {
+                max_tokens: 1500,
+                messages: [{ role: 'user', content: enrichPrompt }],
+                system: 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and concrete examples. Be concise but substantive.',
+              }, 'high');
+
+              const enriched = response.content?.[0]?.type === 'text'
+                ? response.content[0].text
+                : content;
               console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars)`);
               return { content: enriched || content };
             } catch (error: any) {
@@ -229,7 +218,7 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
 
         console.log('✅ Parsed and enriched manual structure:');
         console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
-        console.log(`   - Nodes: ${spatialData.nodes.length} (Gemini-enriched with Google Search grounding)`);
+        console.log(`   - Nodes: ${spatialData.nodes.length} (Tavily + Claude enriched)`);
 
         return NextResponse.json({
           response: `Created manual universe with ${spatialData.nodes.length} enriched nodes`,
@@ -291,11 +280,11 @@ IMPORTANT:
       console.log('📤 Sending spatial universe generation prompt...');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 8192, // Increased to handle atomized children
         system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
-      }, 'low');
+      }, 'mid');
 
       console.log('✅ Got response from Claude');
 
@@ -392,7 +381,7 @@ IMPORTANT:
       console.log('📤 Sending break-off universe generation prompt...');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: 'You are Astryon AI, a universe architect. Generate structured spatial knowledge graphs that explore content deeply. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: breakOffPrompt }],
@@ -488,11 +477,11 @@ Question types to use:
 CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 400,
         system: 'You are a Socratic teacher who guides deep exploration through progressively deeper questions. Each question should build on what came before.',
         messages: [{ role: 'user', content: deepThinkingQuestionPrompt }],
-      });
+      }, 'high');
 
       const textContent = response.content.find((block) => block.type === 'text');
       const question = textContent && 'text' in textContent ? textContent.text.trim() : 'Unable to generate question.';
@@ -564,11 +553,11 @@ Format your response exactly like this:
 Keep it conversational and Socratic - you're exploring ideas together, not testing them.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 800,
         system: 'You are a Socratic teacher who engages deeply with student thinking. Build on their insights and guide discovery through thoughtful questions.',
         messages: [{ role: 'user', content: deepThinkingPrompt }],
-      });
+      }, 'high');
 
       const textContent = response.content.find((block) => block.type === 'text');
       const fullResponse = textContent && 'text' in textContent ? textContent.text : 'Unable to continue exploration.';
@@ -665,7 +654,7 @@ Example BAD output:
 Now ask your question (QUESTION ONLY, NO ANSWER):`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: hasCompletedCycle ? 500 : 300,  // More tokens for completion message
         system: hasCompletedCycle
           ? 'You are a supportive teacher acknowledging quiz completion. Be warm and encouraging.'
@@ -816,7 +805,7 @@ IMPORTANT:
       console.log('📤 Sending MC quiz generation prompt...');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 6144,
         system: `You are an expert exam question writer creating UWorld-style multiple choice questions for law students. You excel at creating questions with varied difficulty levels (easy, medium, hard) following UWorld's progressive challenge model. Your questions test understanding through application, with appropriately complex fact patterns and clear explanations. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
         messages: [{ role: 'user', content: mcQuizPrompt }],
@@ -866,7 +855,7 @@ IMPORTANT:
       console.log('📤 Sending short answer generation prompt...');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: `You are an expert exam question writer creating thoughtful short answer questions for students. You excel at creating questions that test deep understanding and require explanation rather than simple recall. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
         messages: [{ role: 'user', content: shortAnswerPrompt }],
@@ -915,11 +904,11 @@ Content to analyze:
 ${userContent}`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 8096,
         system: 'You are a legal education expert who analyzes and categorizes legal content. Always return ONLY valid JSON with no additional text.',
         messages: [{ role: 'user', content: analyzePrompt }],
-      });
+      }, 'low');
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('🔬 Analysis complete');
@@ -950,7 +939,7 @@ Return ONLY valid JSON in this exact format:
 }`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: 'You are a law professor creating practice scenarios. Always return ONLY valid JSON with no additional text.',
         messages: [{ role: 'user', content: scenarioPrompt }],
@@ -982,11 +971,11 @@ Provide constructive feedback that:
 Format your feedback in a clear, structured way (but NOT as JSON - just formatted text with paragraphs and bullet points if needed).`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: 'You are a supportive law professor providing detailed, constructive feedback on legal analysis.',
         messages: [{ role: 'user', content: gradingPrompt }],
-      });
+      }, 'high');
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('🎯 Grading complete');
@@ -1028,7 +1017,7 @@ Return ONLY this exact JSON structure:
 Your entire response must be valid, parseable JSON starting with { and ending with }. Nothing else.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 6000,
         system: 'You are an experienced law professor creating comprehensive assessments. CRITICAL: Your response must be ONLY valid, parseable JSON with no markdown code blocks, no explanation text, and no additional formatting. Start with { and end with }. Nothing else.',
         messages: [{ role: 'user', content: essayPrompt }],
@@ -1061,11 +1050,11 @@ Provide comprehensive feedback that:
 Format your feedback in clear, structured paragraphs with headers. Be constructive, specific, and encouraging while maintaining academic rigor.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 6000,
         system: 'You are an experienced law professor providing detailed, constructive feedback on application essays. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
         messages: [{ role: 'user', content: gradingPrompt }],
-      });
+      }, 'high');
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('📊 Essay graded successfully');
@@ -1094,11 +1083,11 @@ Provide comprehensive feedback that:
 Format your feedback in clear, structured paragraphs with headers. Be constructive, specific, and encouraging while maintaining academic rigor.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 6000,
         system: 'You are an experienced law professor providing detailed, constructive feedback on application essays. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
         messages: [{ role: 'user', content: gradingPrompt }],
-      });
+      }, 'high');
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('📊 Essay graded successfully (basic mode)');
@@ -1141,7 +1130,7 @@ EXAMPLES OF WHAT NOT TO DO:
 DO NOT include answer guidance, rubrics, or discussion of issues - ONLY the fact pattern and question.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 2048,
         system: 'You are an experienced law professor who writes realistic law school exam questions. Your questions always include detailed fact patterns with specific scenarios that require students to spot issues, apply legal rules to facts, and analyze outcomes - NOT academic essays asking students to explain doctrines in the abstract.',
         messages: [{ role: 'user', content: essayPrompt }],
@@ -1192,7 +1181,7 @@ Make the options represent genuinely different perspectives, not just variations
 Return ONLY valid JSON, no other text.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 1024,
         system: 'You are a thoughtful legal educator who creates engaging questions that help students connect emotionally and morally with legal doctrines. Your questions should provoke genuine reflection about justice, fairness, and values. Return only valid JSON.',
         messages: [{ role: 'user', content: intuitionPrompt }],
@@ -1228,7 +1217,7 @@ Return ONLY valid JSON, no other text.`;
       const summaryPrompt = `${userMessage}`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: `You are an expert learning scientist creating personalized "What You've Learned" summaries.
 
@@ -1258,7 +1247,7 @@ Write in a warm, encouraging tone that celebrates the student's progress while b
       const labPrompt = `${userMessage}`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 8192,
         system: `You are an expert learning scientist creating personalized Application Labs that help students apply what they've learned.
 
@@ -1308,7 +1297,7 @@ Remember: Return ONLY the JSON object, nothing else.`,
       const contentToAtomize = `${userMessage}`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 16000,
         system: `You are an expert educational designer who atomizes content into structured learning experiences using the Leopold Teaching Doctrines.
 
@@ -1437,7 +1426,7 @@ Analyze the provided educational content and produce a JSON blueprint for atomiz
       console.log('🎓 LEOPOLD-PRACTICE MODE: Generating targeted practice steps');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4000,
         system: `You are a Leopold Teaching Doctrine architect. Your task is to generate a high-quality, 5-step guided practice sequence for the provided content.
 
@@ -1550,7 +1539,7 @@ The Complete Answer:
 Would you like another question?`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 1000,
         system: 'You are a supportive law professor providing quiz feedback. Be encouraging but honest. Always teach what the correct answer is so students learn from their mistakes.',
         messages: [{ role: 'user', content: gradingPrompt }],
@@ -1644,7 +1633,7 @@ Respond in VALID JSON format:
 IMPORTANT: Return ONLY the JSON, no other text.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 1024,
         system: 'You are a graph-aware AI analyzer. Assess whether questions should be answered in parallel or as a single response.',
         messages: [{ role: 'user', content: analyzePrompt }],
@@ -1731,7 +1720,7 @@ ${activatedGraphs && activatedGraphs.length > 0 ? 'IMPORTANT: You have access to
 Write naturally and substantively. This will become a node in the graph.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 2048,
         system: 'You are a graph-aware AI exploring specific aspects of knowledge. Provide deep, contextual insights.',
         messages: [{ role: 'user', content: parallelPrompt }],
@@ -1806,11 +1795,11 @@ IMPORTANT:
       console.log('📤 Sending synthesis universe generation prompt...');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: 'You are Astryon AI, a universe synthesis architect. You create new knowledge structures that synthesize insights from multiple source universes. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: synthesisPrompt }],
-      });
+      }, 'high');
 
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
@@ -1929,7 +1918,7 @@ ${activatedGraphs && activatedGraphs.length > 0 ? 'IMPORTANT: You have access to
 Write naturally (3-6 paragraphs). This will become a node in the graph.`;
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 2048,
         system: 'You are a graph-aware AI that provides contextual, synthesized responses based on the entire knowledge structure.',
         messages: [{ role: 'user', content: singlePrompt }],
@@ -1948,7 +1937,7 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
       console.log('⚖️ DOCTRINE MODE ACTIVATED - Generating doctrinal map');
 
       const response = await safeAICall(anthropic, openai, {
-        model: 'claude-sonnet-4-20250514',
+
         max_tokens: 4096,
         system: 'You are a legal research assistant. Generate comprehensive doctrinal analysis in valid JSON format with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: userMessage }],
@@ -1973,7 +1962,6 @@ Write naturally (3-6 paragraphs). This will become a node in the graph.`;
     console.log('🤖 Using Anthropic Claude');
 
     const response = await safeAICall(anthropic, openai, {
-      model: 'claude-sonnet-4-20250514',
       max_tokens: 2048,
       system: systemMessage,
       messages: [{ role: 'user', content: userMessage }],
