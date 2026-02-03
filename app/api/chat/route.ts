@@ -151,8 +151,9 @@ export async function POST(request: NextRequest) {
         console.log('🏛️ Nexus section (index 0):', nexus);
         console.log('📦 Node sections (index 1+):', nodeContents);
 
-        // Enrich each node with Gemini + Google Search grounding
-        console.log('🔍 Enriching nodes with cross-references and Google Search grounding...');
+        // Enrich each node — L1 uses context only, L2+ uses Google Search grounding
+        const enrichDepth = typeof nodeDepth === 'number' ? nodeDepth : 1;
+        console.log(`🔍 Enriching nodes (depth=${enrichDepth}, webSearch=${enrichDepth >= 2})...`);
 
         const enrichedNodes = await Promise.all(
           nodeContents.map(async (content, idx) => {
@@ -206,10 +207,9 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
               : 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and concrete examples. Do NOT use web search or external sources. Generate content purely from the provided context. Be concise but substantive.';
 
             try {
-              const enriched = await callGeminiWithSearch(
-                enrichPrompt,
-                systemPrompt
-              );
+              const enriched = useWebSearch
+                ? await callGeminiWithSearch(enrichPrompt, systemPrompt)
+                : await callGemini(enrichPrompt, systemPrompt);
               console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars)`);
               return { content: enriched || content };
             } catch (error: any) {
