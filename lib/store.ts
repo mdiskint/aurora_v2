@@ -424,6 +424,7 @@ interface CanvasStore {
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   exportToWordDoc: () => void;
   addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => string;
+  addNodes: (nodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => string[];
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -1713,6 +1714,203 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
 
     return newNodeId;
+  },
+
+  addNodes: (batchNodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => {
+    if (batchNodes.length === 0) return [];
+
+    const timestamp = Date.now();
+    const newNodeIds: string[] = [];
+
+    set((state) => {
+      const updatedNodes = { ...state.nodes };
+
+      // Track how many siblings we've added per parent within this batch
+      const batchSiblingCounts: Record<string, number> = {};
+
+      for (let i = 0; i < batchNodes.length; i++) {
+        const { content, parentId, quotedText, nodeType } = batchNodes[i];
+        const newNodeId = `node-${timestamp}-${i}`;
+        newNodeIds.push(newNodeId);
+
+        // Count existing siblings + siblings already added in this batch
+        const existingSiblings = Object.values(state.nodes).filter(n => n.parentId === parentId).length;
+        const batchAdded = batchSiblingCounts[parentId] || 0;
+        const siblingIndex = existingSiblings + batchAdded;
+        batchSiblingCounts[parentId] = batchAdded + 1;
+
+        const parentNode = updatedNodes[parentId] || state.nodes[parentId];
+        const isConnectionNodeParent = parentNode?.isConnectionNode || false;
+
+        let position: [number, number, number];
+
+        // SPECIAL CASE: Meta-inspiration node (vertical spiral positioning)
+        if (parentNode && parentNode.id.startsWith('meta-inspiration')) {
+          const metaPos = parentNode.position;
+          const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+          const baseRadius = 2.0;
+          const radiusIncrement = 0.3;
+          const radius = baseRadius + (siblingIndex * radiusIncrement);
+          const yIncrement = 1.5;
+          const y = metaPos[1] + (siblingIndex * yIncrement);
+          const angle = siblingIndex * goldenAngle;
+          const x = metaPos[0] - Math.cos(angle) * radius;
+          const z = metaPos[2] + Math.sin(angle) * radius;
+          position = [x, y, z];
+        } else {
+          const parentNexus = state.nexuses.find(n => n.id === parentId);
+
+          if (parentNexus) {
+            const nexusPos = parentNexus.position;
+            const baseRadius = 6;
+            const radiusIncrement = 0.4;
+            const radius = baseRadius + (siblingIndex * radiusIncrement);
+            const nodesPerRing = 6;
+            const ringIndex = Math.floor(siblingIndex / nodesPerRing);
+            const positionInRing = siblingIndex % nodesPerRing;
+            const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+            const ringRotationOffset = ringIndex * goldenAngle;
+            const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
+            let y = 0;
+            if (ringIndex > 0) {
+              const step = Math.ceil(ringIndex / 2);
+              const direction = ringIndex % 2 === 1 ? 1 : -1;
+              y = step * 2.5 * direction;
+            }
+            const x = nexusPos[0] - radius * Math.cos(angle);
+            const z = nexusPos[2] + radius * Math.sin(angle);
+            position = [x, y, z];
+          } else {
+            const pNode = updatedNodes[parentId] || state.nodes[parentId];
+            if (!pNode) continue;
+
+            const nexus = get().getNexusForNode(parentId);
+            if (!nexus) continue;
+
+            const nexusPos = nexus.position;
+            const directionX = pNode.position[0] - nexusPos[0];
+            const directionY = pNode.position[1] - nexusPos[1];
+            const directionZ = pNode.position[2] - nexusPos[2];
+            const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
+
+            if (dirLength < 0.001) {
+              position = [
+                pNode.position[0] + 2,
+                pNode.position[1] + 1,
+                pNode.position[2] + 2
+              ];
+            } else {
+              const normDirX = directionX / dirLength;
+              const normDirY = directionY / dirLength;
+              const normDirZ = directionZ / dirLength;
+              const baseDistance = 3;
+              const distanceIncrement = 0.8;
+              const distance = baseDistance + (siblingIndex * distanceIncrement);
+              const turnsPerNode = 0.3;
+              const helixRadius = 1.5;
+              const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
+              const upX = 0, upY = 1, upZ = 0;
+              let rightX = normDirY * upZ - normDirZ * upY;
+              let rightY = normDirZ * upX - normDirX * upZ;
+              let rightZ = normDirX * upY - normDirY * upX;
+              const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
+
+              if (rightLength < 0.001) {
+                rightX = 1; rightY = 0; rightZ = 0;
+              } else {
+                rightX /= rightLength; rightY /= rightLength; rightZ /= rightLength;
+              }
+
+              const upPerpX = normDirY * rightZ - normDirZ * rightY;
+              const upPerpY = normDirZ * rightX - normDirX * rightZ;
+              const upPerpZ = normDirX * rightY - normDirY * rightX;
+              const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
+              const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
+              const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
+              const x = pNode.position[0] + (normDirX * distance) + helixOffsetX;
+              const y = pNode.position[1] + (normDirY * distance) + helixOffsetY;
+              const z = pNode.position[2] + (normDirZ * distance) + helixOffsetZ;
+              position = [x, y, z];
+            }
+          }
+        }
+
+        // Validate position for NaN values
+        if (isNaN(position[0]) || isNaN(position[1]) || isNaN(position[2])) {
+          const pNode = updatedNodes[parentId] || state.nodes[parentId];
+          if (pNode && !isNaN(pNode.position[0])) {
+            position = [pNode.position[0] + 2, pNode.position[1] + 1, pNode.position[2] + 2];
+          } else {
+            position = [0, 1, 0];
+          }
+        }
+
+        const newNode: Node = {
+          id: newNodeId,
+          position,
+          title: `Reply ${new Date().toLocaleTimeString()}`,
+          content,
+          quotedText,
+          parentId,
+          children: [],
+          nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'),
+        };
+
+        updatedNodes[newNodeId] = newNode;
+
+        // Update parent's children array
+        if (updatedNodes[parentId]) {
+          updatedNodes[parentId] = {
+            ...updatedNodes[parentId],
+            children: [...updatedNodes[parentId].children, newNodeId],
+          };
+        }
+      }
+
+      return { nodes: updatedNodes };
+    });
+
+    // Broadcast all node creations to WebSocket
+    const socket = (window as any).socket;
+    if (socket) {
+      for (const nodeId of newNodeIds) {
+        const newNode = get().nodes[nodeId];
+        if (newNode) {
+          socket.emit('create_node', {
+            portalId: 'default-portal',
+            id: newNode.id,
+            position: newNode.position,
+            title: newNode.title,
+            content: newNode.content,
+            parentId: newNode.parentId,
+          });
+        }
+      }
+    }
+
+    // Generate semantic titles in batch (async, non-blocking)
+    const nodeContents = newNodeIds.map(id => get().nodes[id]?.content).filter(Boolean) as string[];
+    if (nodeContents.length > 0) {
+      generateSemanticTitles(nodeContents)
+        .then((semanticTitles) => {
+          const state = get();
+          const updatedNodes = { ...state.nodes };
+          newNodeIds.forEach((nodeId, index) => {
+            if (updatedNodes[nodeId] && semanticTitles[index]) {
+              updatedNodes[nodeId] = {
+                ...updatedNodes[nodeId],
+                semanticTitle: semanticTitles[index],
+              };
+            }
+          });
+          set({ nodes: updatedNodes });
+        })
+        .catch((error) => {
+          console.error('❌ Failed to generate batch semantic titles for addNodes:', error);
+        });
+    }
+
+    return newNodeIds;
   },
 
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => {

@@ -393,6 +393,7 @@ export default function UnifiedNodeModal() {
   const updateNode = useCanvasStore((state) => state.updateNode);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const addNode = useCanvasStore((state) => state.addNode);
+  const addNodes = useCanvasStore((state) => state.addNodes);
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
   const quotedText = useCanvasStore((state) => state.quotedText);
   const createMetaInspirationNode = useCanvasStore((state) => state.createMetaInspirationNode);
@@ -686,16 +687,12 @@ export default function UnifiedNodeModal() {
       if (data.spatialData && data.spatialData.nodes) {
         console.log(`✨ Generated ${data.spatialData.nodes.length} atomized nodes`);
 
-        // Create nodes under the current node
-        for (const newNode of data.spatialData.nodes) {
-          addNode(
-            newNode.content,
-            node.id,
-            undefined,
-            newNode.nodeType || 'ai-response'
-          );
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // Create all nodes in a single batch (no sequential delays)
+        addNodes(data.spatialData.nodes.map((n: any) => ({
+          content: n.content,
+          parentId: node.id,
+          nodeType: n.nodeType || 'ai-response',
+        })));
 
         showToastNotification(`✨ Successfully atomized into ${data.spatialData.nodes.length} nodes!`);
       } else {
