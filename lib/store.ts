@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Node, NodeType, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
+import { transformConversation } from './conversationTransformer';
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
@@ -416,6 +417,7 @@ interface CanvasStore {
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
+  loadConversationFromData: (data: any) => string | null;
   updateNodeContent: (nodeId: string, newContent: string) => void;
   updateNexusContent: (nexusId: string, newContent: string) => void;
   updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
@@ -1278,6 +1280,33 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         console.error('❌ Failed to generate batch semantic titles:', error);
         // Fallback is already handled in generateSemanticTitles function
       });
+  },
+
+  loadConversationFromData: (data: any) => {
+    console.log('💬 Loading conversation from imported data');
+
+    // Save current universe before loading conversation
+    const currentState = get();
+    if (currentState.nexuses.length > 0) {
+      console.log('🌌 Saving current universe before loading conversation...');
+      get().saveCurrentUniverse();
+    }
+
+    // Clear canvas for new conversation
+    console.log('🌌 Clearing canvas for conversation...');
+    get().clearCanvas();
+
+    const { nexuses, nodes, highlightNodeId } = transformConversation(data);
+
+    set({ nexuses, nodes });
+
+    // Auto-save the new conversation universe to library
+    console.log('🌌 Auto-saving conversation universe to library...');
+    get().saveCurrentUniverse();
+
+    console.log(`✅ Loaded conversation: ${data.title} with ${data.messages.length} messages`);
+
+    return highlightNodeId || null;
   },
 
   updateNodeContent: (nodeId: string, newContent: string) => {

@@ -353,6 +353,7 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
                 messages: messagesForAPI,
                 mode: isSpatialMode ? 'spatial' : 'standard',
                 conversationContext: fullContext,
+                nodeDepth: 1,
             }),
         });
 

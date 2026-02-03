@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
@@ -161,7 +161,11 @@ export async function POST(request: NextRequest) {
               .map(s => `- ${s.substring(0, 150)}`)
               .join('\n');
 
-            const enrichPrompt = `You are enriching a node in a learning universe.
+            const depth = typeof nodeDepth === 'number' ? nodeDepth : 1;
+            const useWebSearch = depth >= 2;
+
+            const enrichPrompt = useWebSearch
+              ? `You are enriching a node in a learning universe.
 
 Universe Topic: "${nexus}"
 
@@ -177,12 +181,34 @@ Your task: Expand and enrich this node's content by:
 3. Including any current real-world context or recent developments (use your search capability)
 4. Adding concrete examples or applications
 
+Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`
+              : `You are enriching a node in a learning universe.
+
+Universe Topic: "${nexus}"
+
+THIS NODE's raw content:
+"${content}"
+
+SIBLING NODES in the same universe:
+${siblingContext}
+
+Your task: Expand and enrich this node's content by:
+1. Adding depth and detail to the core concept (2-3 paragraphs)
+2. Referencing connections to sibling nodes where relevant
+3. Adding concrete examples or applications
+
+Do NOT use web search or external sources. Generate content purely from the conversation context and the user's input.
+
 Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`;
+
+            const systemPrompt = useWebSearch
+              ? 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and current real-world context using web search. Be concise but substantive.'
+              : 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and concrete examples. Do NOT use web search or external sources. Generate content purely from the provided context. Be concise but substantive.';
 
             try {
               const enriched = await callGeminiWithSearch(
                 enrichPrompt,
-                'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and current real-world context using web search. Be concise but substantive.'
+                systemPrompt
               );
               console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars)`);
               return { content: enriched || content };

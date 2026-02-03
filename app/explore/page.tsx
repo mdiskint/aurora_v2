@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import CanvasScene from '@/components/CanvasScene';
 import SectionNavigator from '@/components/SectionNavigator';
 import { useCanvasStore } from '@/lib/store';
@@ -8,20 +9,64 @@ import { useCanvasStore } from '@/lib/store';
 export default function ExplorePage() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const loadAcademicPaperFromData = useCanvasStore((state) => state.loadAcademicPaperFromData);
+  const loadConversationFromData = useCanvasStore((state) => state.loadConversationFromData);
+  const selectNode = useCanvasStore((state) => state.selectNode);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
 
-  // 🚀 BLANK CANVAS ON STARTUP - Universes load on demand from Memories
+  // Handle ?import=conversation from extension
   useEffect(() => {
-    console.log('🚀 [EXPLORE PAGE] Starting with blank canvas - no auto-load');
-    // loadFromLocalStorage(); // ← Removed: Canvas should start EMPTY
+    if (searchParams.get('import') !== 'conversation') return;
+
+    function tryImport() {
+      const raw = localStorage.getItem('astryon_import');
+      if (!raw) return false;
+
+      try {
+        const data = JSON.parse(raw);
+        if (data && Array.isArray(data.messages) && data.messages.length > 0) {
+          console.log('💬 Importing conversation from extension:', data.title);
+          const highlightNodeId = loadConversationFromData(data);
+          localStorage.removeItem('astryon_import');
+
+          // Auto-focus the highlighted node if the user had text selected
+          if (highlightNodeId) {
+            // Small delay to let the 3D scene render the new nodes
+            setTimeout(() => selectNode(highlightNodeId, true), 300);
+          }
+
+          return true;
+        }
+      } catch (e) {
+        console.error('Failed to parse astryon_import:', e);
+      }
+      return false;
+    }
+
+    // Try immediately (data may already be in localStorage)
+    if (tryImport()) return;
+
+    // Otherwise listen for the storage event dispatched by the extension
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'astryon_import' && e.newValue) {
+        tryImport();
+      }
+    }
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [searchParams, loadConversationFromData, selectNode]);
+
+  // Blank canvas on startup
+  useEffect(() => {
+    console.log('[EXPLORE PAGE] Starting with blank canvas - no auto-load');
   }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check if it's a JSON file
     if (!file.name.endsWith('.json')) {
       alert('Please upload a JSON file (.json)');
       return;
@@ -30,21 +75,24 @@ export default function ExplorePage() {
     setIsUploading(true);
 
     try {
-      // Read the JSON file directly in the browser
       const fileContent = await file.text();
       const data = JSON.parse(fileContent);
-      
-      console.log('📄 Loaded JSON data:', data);
 
-      // Load the paper into Aurora
-      loadAcademicPaperFromData(data);
-      console.log('✅ Paper loaded into Aurora!');
+      console.log('Loaded JSON data:', data);
+
+      // Detect conversation vs paper from data shape
+      if (Array.isArray(data.messages)) {
+        loadConversationFromData(data);
+        console.log('Conversation loaded into Astryon!');
+      } else {
+        loadAcademicPaperFromData(data);
+        console.log('Paper loaded into Astryon!');
+      }
     } catch (error) {
-      console.error('Error loading paper:', error);
-      alert('Failed to load paper. Make sure it\'s a valid JSON file with the correct format.');
+      console.error('Error loading file:', error);
+      alert('Failed to load file. Make sure it\'s a valid JSON file with the correct format.');
     } finally {
       setIsUploading(false);
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -78,9 +126,9 @@ export default function ExplorePage() {
               <h2 className="text-2xl font-semibold text-cyan-400">
                 Upload Your Academic Paper
               </h2>
-              
+
               <p className="text-gray-300">
-                Upload a JSON file with your parsed academic paper to visualize it as an interactive 3D conversation space. 
+                Upload a JSON file with your parsed academic paper to visualize it as an interactive 3D conversation space.
                 Your paper sections will appear as nodes that you can navigate, edit, and explore spatially.
               </p>
 
@@ -97,8 +145,8 @@ export default function ExplorePage() {
               <button
                 onClick={handleUploadClick}
                 disabled={isUploading}
-                className="w-full px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 
-                         text-white font-semibold rounded-xl transition-all duration-200 
+                className="w-full px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400
+                         text-white font-semibold rounded-xl transition-all duration-200
                          disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-lg shadow-cyan-500/20"
               >
                 {isUploading ? (
@@ -129,7 +177,7 @@ export default function ExplorePage() {
               <h3 className="text-lg font-semibold text-cyan-400">
                 JSON Format Expected
               </h3>
-              
+
               <p className="text-gray-300 text-sm">
                 Your JSON file should have this structure:
               </p>

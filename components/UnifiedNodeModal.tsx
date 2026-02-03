@@ -657,12 +657,24 @@ export default function UnifiedNodeModal() {
     console.log(`⚛️ Triggering Atomization for node: ${node.id}`);
 
     try {
+      // Calculate node depth by walking parentId chain up to a nexus
+      let depth = 1;
+      let walkId: string | undefined = node.parentId;
+      const nexusIds = new Set(nexuses.map(n => n.id));
+      while (walkId && !nexusIds.has(walkId) && nodes[walkId]) {
+        depth++;
+        walkId = nodes[walkId].parentId;
+      }
+      // Atomized children will be one level deeper
+      const childDepth = depth + 1;
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'spatial',
-          messages: [{ role: 'user', content: node.content }]
+          messages: [{ role: 'user', content: node.content }],
+          nodeDepth: childDepth,
         }),
       });
 

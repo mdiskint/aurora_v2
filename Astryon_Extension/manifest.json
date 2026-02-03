@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Astryon — AI Conversation Importer",
+  "version": "1.1.0",
+  "description": "Scrape ChatGPT and Claude conversations and import them into Astryon for 3D spatial visualization.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*", "http://localhost:3000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Import AI conversation to Astryon",
+    "default_icon": {
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
