@@ -1,0 +1,22 @@
+
+> aurora-v2@0.1.0 dev
+> next dev
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/michaeldiskint/package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /Users/michaeldiskint/Dropbox/APPS/aurora-v2/package-lock.json
+
+ ⨯ Failed to start server
+Error: listen EPERM: operation not permitted 0.0.0.0:3000
+    at <unknown> (Error: listen EPERM: operation not permitted 0.0.0.0:3000)
+    at new Promise (<anonymous>) {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3000
+}
+[?25h

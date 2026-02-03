@@ -141,31 +141,39 @@ export async function POST(request: NextRequest) {
 
         // First section = Nexus ONLY
         const nexus = sections[0].trim();
-        // Remaining sections = Nodes ONLY (excludes first section)
-        const nodeContents = sections.slice(1).map(s => s.trim());
+        // Remaining sections = Nodes ONLY — parse dash prefixes for per-node depth
+        // - Topic = depth 1 (L1, raw content, no enrichment)
+        // -- Subtopic = depth 2 (L2, Tavily search + Opus enrichment)
+        // --- Deep = depth 3 (L3, same as L2)
+        // No dashes = depth 1 (default)
+        const parsedNodes = sections.slice(1).map(s => {
+          const trimmed = s.trim();
+          const dashMatch = trimmed.match(/^(-{1,3})\s+/);
+          const depth = dashMatch ? dashMatch[1].length : 1;
+          const content = dashMatch ? trimmed.slice(dashMatch[0].length) : trimmed;
+          return { content, depth };
+        });
 
         console.log('🏛️ Nexus section (index 0):', nexus);
-        console.log('📦 Node sections (index 1+):', nodeContents);
+        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i + 1}: depth=${n.depth}, content="${n.content.substring(0, 60)}"`));
 
-        // Enrich each node — L1 uses raw content, L2+ uses Tavily search + Claude enrichment
-        const enrichDepth = typeof nodeDepth === 'number' ? nodeDepth : 1;
-        const useWebSearch = enrichDepth >= 2;
-        console.log(`🔍 Enriching nodes (depth=${enrichDepth}, webSearch=${useWebSearch})...`);
+        console.log('🔍 Enriching nodes with per-node depth...');
 
         const enrichedNodes = await Promise.all(
-          nodeContents.map(async (content, idx) => {
+          parsedNodes.map(async ({ content, depth: perNodeDepth }, idx) => {
             // L1: raw content, no AI processing
-            if (nodeDepth <= 1) {
-              console.log(`   ⏭️ Node ${idx + 1} skipped (L1 raw content)`);
+            if (perNodeDepth <= 1) {
+              console.log(`   ⏭️ Node ${idx + 1} skipped (L1 raw content, depth=${perNodeDepth})`);
               return { content };
             }
 
-            const siblingContext = nodeContents
+            const siblingContext = parsedNodes
               .filter((_, i) => i !== idx)
-              .map(s => `- ${s.substring(0, 150)}`)
+              .map(n => `- ${n.content.substring(0, 150)}`)
               .join('\n');
 
             // L2+: Tavily search for web context, then Claude enrichment
+            const useWebSearch = perNodeDepth >= 2;
             let webContext = '';
             if (useWebSearch) {
               const searchQuery = content.substring(0, 200) + ' ' + nexus;
