@@ -127,8 +127,12 @@ export async function POST(request: NextRequest) {
       function parseBulletUniverse(input: string): { nexusTitle: string; nodes: { content: string; depth: number }[] } | null {
         const lines = input.split('\n');
 
-        // Count top-level bullets (lines starting with '- ' at column 0)
-        const topLevelBullets = lines.filter(line => line.match(/^- /));
+        // Bullet patterns: -, •, ➢, ▪, ○ followed by space at column 0
+        const topLevelBulletRegex = /^[-•➢▪○]\s/;
+        const subBulletRegex = /^\s+[-•➢▪○]\s/;
+
+        // Count top-level bullets (lines starting with bullet char at column 0)
+        const topLevelBullets = lines.filter(line => topLevelBulletRegex.test(line));
 
         // Need at least 2 top-level bullets for bullet mode
         if (topLevelBullets.length < 2) {
@@ -136,7 +140,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Find the first bullet line index
-        const firstBulletIdx = lines.findIndex(line => line.match(/^- /));
+        const firstBulletIdx = lines.findIndex(line => topLevelBulletRegex.test(line));
 
         // Everything before first bullet is the nexus title
         let nexusTitle = lines.slice(0, firstBulletIdx).join('\n').trim();
@@ -148,15 +152,15 @@ export async function POST(request: NextRequest) {
         for (let i = firstBulletIdx; i < lines.length; i++) {
           const line = lines[i];
 
-          if (line.match(/^- /)) {
+          if (topLevelBulletRegex.test(line)) {
             // Top-level bullet: save previous node if exists, start new one
             if (currentNodeContent.length > 0) {
               nodes.push({ content: currentNodeContent.join('\n'), depth: 1 });
             }
-            // Start new node with bullet text (strip the '- ' prefix)
-            currentNodeContent = [line.substring(2)];
-          } else if (line.match(/^\s+- /)) {
-            // Sub-bullet (2+ leading spaces then '- '): append to current node
+            // Start new node with bullet text (strip the bullet + space prefix)
+            currentNodeContent = [line.replace(/^[-•➢▪○]\s/, '')];
+          } else if (subBulletRegex.test(line)) {
+            // Sub-bullet (leading whitespace then bullet): append to current node
             currentNodeContent.push(line);
           } else {
             // Non-bullet line after a bullet: append to current node
