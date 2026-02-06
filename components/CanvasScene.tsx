@@ -502,6 +502,18 @@ function ConnectionLines() {
 
   const nodeArray = Object.values(nodes);
 
+  // Precompute L1 index per nexus for golden-angle coloring
+  const nexusIds = new Set(nexuses.map(n => n.id));
+  const l1IndexMap: { [nodeId: string]: number } = {};
+  const l1Counters: { [nexusId: string]: number } = {};
+  for (const node of nodeArray) {
+    if (nexusIds.has(node.parentId)) {
+      const count = l1Counters[node.parentId] || 0;
+      l1IndexMap[node.id] = count;
+      l1Counters[node.parentId] = count + 1;
+    }
+  }
+
   return (
     <>
       {nodeArray.map((node, idx) => {
@@ -641,8 +653,16 @@ function ConnectionLines() {
         const pulseY = parentPosition[1] + (node.position[1] - parentPosition[1]) * pulseProgress;
         const pulseZ = parentPosition[2] + (node.position[2] - parentPosition[2]) * pulseProgress;
 
-        const hue = (pulseProgress + idx * 0.15) % 1;
-        const rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
+        // L1 nodes (direct nexus children) use golden-angle color spacing
+        const isL1 = node.id in l1IndexMap;
+        let rainbowColor: THREE.Color;
+        if (isL1) {
+          const l1Hue = ((l1IndexMap[node.id] * 137.5) % 360) / 360;
+          rainbowColor = new THREE.Color().setHSL(l1Hue, 0.8, 0.6);
+        } else {
+          const hue = (pulseProgress + idx * 0.15) % 1;
+          rainbowColor = new THREE.Color().setHSL(hue, 1, 0.6);
+        }
 
         return (
           <group key={node.id}>

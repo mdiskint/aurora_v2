@@ -1,4 +1,5 @@
 import { Node, NodeType } from './types';
+import { fibonacciSpiralPosition } from './fibonacciLayout';
 
 interface ConversationMessage {
   role: 'user' | 'assistant';
@@ -11,6 +12,18 @@ interface ConversationData {
   title: string;
   messages: ConversationMessage[];
   highlightText?: string | null;
+}
+
+export interface HighlightImportData {
+  source: string;
+  title: string;
+  fullConversation: ConversationMessage[];
+  highlightedSection: string;
+}
+
+export interface HighlightTransformResult {
+  nexus: Nexus;
+  l1Node: Node;
 }
 
 interface Nexus {
@@ -195,4 +208,44 @@ export function transformConversation(data: ConversationData): TransformResult {
   });
 
   return { nexuses: [nexus], nodes, highlightNodeId };
+}
+
+// ── Highlight-first import transformer ──────────────────────────
+
+export function transformHighlightImport(
+  data: HighlightImportData,
+  existingL1Count: number
+): HighlightTransformResult {
+  const nexusId = `conversation-${data.title.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+
+  // Nexus holds the full conversation as content (ambient LLM context)
+  const fullConversationText = data.fullConversation
+    .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+    .join('\n\n---\n\n');
+
+  const nexus: Nexus = {
+    id: nexusId,
+    position: [0, 0, 0],
+    title: data.title,
+    content: fullConversationText,
+    type: 'social',
+  };
+
+  // L1 node holds just the highlighted section
+  const l1Id = `${nexusId}-highlight-${existingL1Count}`;
+  const position = fibonacciSpiralPosition(existingL1Count);
+  const title = generateSmartTitle(data.highlightedSection, 'user');
+
+  const l1Node: Node = {
+    id: l1Id,
+    position,
+    title,
+    content: data.highlightedSection,
+    parentId: nexusId,
+    children: [],
+    isAI: false,
+    nodeType: 'user-reply' as NodeType,
+  };
+
+  return { nexus, l1Node };
 }

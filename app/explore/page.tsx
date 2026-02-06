@@ -10,6 +10,7 @@ function ExploreContent() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const loadAcademicPaperFromData = useCanvasStore((state) => state.loadAcademicPaperFromData);
   const loadConversationFromData = useCanvasStore((state) => state.loadConversationFromData);
+  const addHighlightToUniverse = useCanvasStore((state) => state.addHighlightToUniverse);
   const selectNode = useCanvasStore((state) => state.selectNode);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +58,42 @@ function ExploreContent() {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, [searchParams, loadConversationFromData, selectNode]);
+
+  // Handle ?import=highlight from extension (highlight-first mode)
+  useEffect(() => {
+    if (searchParams.get('import') !== 'highlight') return;
+
+    function tryHighlightImport() {
+      const raw = localStorage.getItem('astryon_highlight_import');
+      if (!raw) return false;
+
+      try {
+        const data = JSON.parse(raw);
+        if (data && data.highlightedSection && Array.isArray(data.fullConversation)) {
+          console.log('🔦 Importing highlight from extension:', data.title);
+          addHighlightToUniverse(data);
+          localStorage.removeItem('astryon_highlight_import');
+          return true;
+        }
+      } catch (e) {
+        console.error('Failed to parse astryon_highlight_import:', e);
+      }
+      return false;
+    }
+
+    // Try immediately (data may already be in localStorage)
+    if (tryHighlightImport()) return;
+
+    // Otherwise listen for the storage event dispatched by the extension
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'astryon_highlight_import' && e.newValue) {
+        tryHighlightImport();
+      }
+    }
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [searchParams, addHighlightToUniverse]);
 
   // Blank canvas on startup
   useEffect(() => {

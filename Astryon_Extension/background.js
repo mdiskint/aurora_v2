@@ -34,8 +34,11 @@ chrome.action.onClicked.addListener(async (tab) => {
     setTimeout(() => chrome.action.setBadgeText({ text: '' }), 3000);
 
     // Open Astryon import page, then inject data into its localStorage
-    const astroyonUrl = 'http://localhost:3000/explore?import=conversation';
+    const importMode = data.highlightedSection ? 'highlight' : 'conversation';
+    const astroyonUrl = `http://localhost:3000/explore?import=${importMode}`;
     const newTab = await chrome.tabs.create({ url: astroyonUrl });
+
+    const storageKey = importMode === 'highlight' ? 'astryon_highlight_import' : 'astryon_import';
 
     // Wait for the Astryon page to finish loading, then write to its localStorage
     chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
@@ -45,15 +48,15 @@ chrome.action.onClicked.addListener(async (tab) => {
         // Inject a script that writes the data to the page's localStorage
         chrome.scripting.executeScript({
           target: { tabId: newTab.id },
-          func: (jsonData) => {
-            localStorage.setItem('astryon_import', JSON.stringify(jsonData));
+          func: (jsonData, key) => {
+            localStorage.setItem(key, JSON.stringify(jsonData));
             // Dispatch a storage event so the React app can detect it
             window.dispatchEvent(new StorageEvent('storage', {
-              key: 'astryon_import',
+              key: key,
               newValue: JSON.stringify(jsonData)
             }));
           },
-          args: [data]
+          args: [data, storageKey]
         });
       }
     });

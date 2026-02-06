@@ -136,7 +136,15 @@
     });
 
     const messages = filterMessages(rawMessages);
-    return { source: 'chatgpt', title, messages, highlightText };
+    return {
+      source: 'chatgpt',
+      title,
+      fullConversation: messages,
+      highlightedSection: highlightText || '',
+      // Legacy fields for backwards compatibility
+      messages,
+      highlightText,
+    };
   }
 
   // ── Claude scraper ───────────────────────────────────────────────
@@ -214,7 +222,15 @@
     }
 
     const messages = filterMessages(rawMessages);
-    return { source: 'claude', title, messages, highlightText };
+    return {
+      source: 'claude',
+      title,
+      fullConversation: messages,
+      highlightedSection: highlightText || '',
+      // Legacy fields for backwards compatibility
+      messages,
+      highlightText,
+    };
   }
 
   // ── Dispatch ─────────────────────────────────────────────────────

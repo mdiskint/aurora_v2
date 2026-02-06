@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Node, NodeType, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
-import { transformConversation } from './conversationTransformer';
+import { transformConversation, transformHighlightImport, HighlightImportData } from './conversationTransformer';
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
@@ -418,6 +418,7 @@ interface CanvasStore {
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
   loadConversationFromData: (data: any) => string | null;
+  addHighlightToUniverse: (data: HighlightImportData) => string | null;
   updateNodeContent: (nodeId: string, newContent: string) => void;
   updateNexusContent: (nexusId: string, newContent: string) => void;
   updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
@@ -1308,6 +1309,56 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log(`✅ Loaded conversation: ${data.title} with ${data.messages.length} messages`);
 
     return highlightNodeId || null;
+  },
+
+  addHighlightToUniverse: (data: HighlightImportData) => {
+    console.log('🔦 Adding highlight to universe:', data.title);
+
+    const state = get();
+
+    // Check if a nexus already exists for this conversation title
+    const existingNexus = state.nexuses.find(
+      (n) => n.title === data.title
+    );
+
+    if (existingNexus) {
+      // Count existing L1 nodes (direct children of this nexus)
+      const existingL1Count = Object.values(state.nodes).filter(
+        (node) => node.parentId === existingNexus.id
+      ).length;
+
+      const { l1Node } = transformHighlightImport(data, existingL1Count);
+
+      // Override parentId to point to the existing nexus
+      l1Node.parentId = existingNexus.id;
+
+      // Add only the new L1 node
+      set((s) => ({
+        nodes: { ...s.nodes, [l1Node.id]: l1Node },
+      }));
+
+      console.log(`✅ Added highlight L1 node to existing nexus "${existingNexus.title}" (L1 #${existingL1Count})`);
+
+      get().saveCurrentUniverse();
+      get().selectNode(l1Node.id, true);
+
+      return l1Node.id;
+    }
+
+    // No existing nexus — create both nexus and L1
+    const { nexus, l1Node } = transformHighlightImport(data, 0);
+
+    set((s) => ({
+      nexuses: [...s.nexuses, nexus],
+      nodes: { ...s.nodes, [l1Node.id]: l1Node },
+    }));
+
+    console.log(`✅ Created new nexus "${nexus.title}" with highlight L1 node`);
+
+    get().saveCurrentUniverse();
+    get().selectNode(l1Node.id, true);
+
+    return l1Node.id;
   },
 
   updateNodeContent: (nodeId: string, newContent: string) => {
