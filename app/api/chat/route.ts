@@ -127,40 +127,43 @@ export async function POST(request: NextRequest) {
       function parseBulletUniverse(input: string): { nexusTitle: string; nodes: { content: string; depth: number }[] } | null {
         const lines = input.split('\n');
 
-        // Bullet patterns: -, •, ➢, ▪, ○ followed by space at column 0
-        const topLevelBulletRegex = /^[-•➢▪○]\s/;
-        const subBulletRegex = /^\s+[-•➢▪○]\s/;
+        // List patterns at column 0:
+        // - Bullets: -, •, ➢, ▪, ○ followed by space
+        // - Numbers: 1., 2., 10. etc. followed by space
+        // - Letters: A., B., a., b. etc. followed by space
+        const topLevelListRegex = /^([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/;
+        const subListRegex = /^\s+([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/;
 
-        // Count top-level bullets (lines starting with bullet char at column 0)
-        const topLevelBullets = lines.filter(line => topLevelBulletRegex.test(line));
+        // Count top-level list items (lines starting with list marker at column 0)
+        const topLevelItems = lines.filter(line => topLevelListRegex.test(line));
 
-        // Need at least 2 top-level bullets for bullet mode
-        if (topLevelBullets.length < 2) {
+        // Need at least 2 top-level items for list mode
+        if (topLevelItems.length < 2) {
           return null;
         }
 
-        // Find the first bullet line index
-        const firstBulletIdx = lines.findIndex(line => topLevelBulletRegex.test(line));
+        // Find the first list item index
+        const firstItemIdx = lines.findIndex(line => topLevelListRegex.test(line));
 
-        // Everything before first bullet is the nexus title
-        let nexusTitle = lines.slice(0, firstBulletIdx).join('\n').trim();
+        // Everything before first list item is the nexus title
+        let nexusTitle = lines.slice(0, firstItemIdx).join('\n').trim();
 
-        // Parse nodes from bullets
+        // Parse nodes from list items
         const nodes: { content: string; depth: number }[] = [];
         let currentNodeContent: string[] = [];
 
-        for (let i = firstBulletIdx; i < lines.length; i++) {
+        for (let i = firstItemIdx; i < lines.length; i++) {
           const line = lines[i];
 
-          if (topLevelBulletRegex.test(line)) {
-            // Top-level bullet: save previous node if exists, start new one
+          if (topLevelListRegex.test(line)) {
+            // Top-level item: save previous node if exists, start new one
             if (currentNodeContent.length > 0) {
               nodes.push({ content: currentNodeContent.join('\n'), depth: 1 });
             }
-            // Start new node with bullet text (strip the bullet + space prefix)
-            currentNodeContent = [line.replace(/^[-•➢▪○]\s/, '')];
-          } else if (subBulletRegex.test(line)) {
-            // Sub-bullet (leading whitespace then bullet): append to current node
+            // Start new node with item text (strip the list marker prefix)
+            currentNodeContent = [line.replace(/^([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/, '')];
+          } else if (subListRegex.test(line)) {
+            // Sub-item (leading whitespace then list marker): append to current node
             currentNodeContent.push(line);
           } else {
             // Non-bullet line after a bullet: append to current node
@@ -300,30 +303,30 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
         });
       }
 
-      // 🔍 CHECK FOR BULLET MODE: User provided bullet-point structure
-      const bulletParsed = parseBulletUniverse(userTopic);
-      if (bulletParsed) {
-        console.log('[BULLET PARSE] Detected bullet universe:', { nexusTitle: bulletParsed.nexusTitle, nodeCount: bulletParsed.nodes.length });
+      // 🔍 CHECK FOR LIST MODE: User provided bullet/numbered/lettered list structure
+      const listParsed = parseBulletUniverse(userTopic);
+      if (listParsed) {
+        console.log('[LIST PARSE] Detected list universe:', { nexusTitle: listParsed.nexusTitle, nodeCount: listParsed.nodes.length });
 
-        bulletParsed.nodes.forEach((node, i) => {
-          console.log(`[BULLET PARSE] Node ${i}:`, { contentPreview: node.content.substring(0, 80) });
+        listParsed.nodes.forEach((node, i) => {
+          console.log(`[LIST PARSE] Node ${i}:`, { contentPreview: node.content.substring(0, 80) });
         });
 
-        // All bullet nodes are L1 (depth 1) - no enrichment, raw content
-        const enrichedNodes = bulletParsed.nodes.map(({ content }) => ({ content }));
+        // All list nodes are L1 (depth 1) - no enrichment, raw content
+        const enrichedNodes = listParsed.nodes.map(({ content }) => ({ content }));
 
         const spatialData = {
-          nexusTitle: bulletParsed.nexusTitle.substring(0, 50),
-          nexusContent: bulletParsed.nexusTitle,
+          nexusTitle: listParsed.nexusTitle.substring(0, 50),
+          nexusContent: listParsed.nexusTitle,
           nodes: enrichedNodes
         };
 
-        console.log('✅ Parsed bullet structure:');
+        console.log('✅ Parsed list structure:');
         console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
         console.log(`   - Nodes: ${spatialData.nodes.length} (L1 raw content)`);
 
         return NextResponse.json({
-          response: `Created bullet universe with ${spatialData.nodes.length} nodes`,
+          response: `Created list universe with ${spatialData.nodes.length} nodes`,
           spatialData
         });
       }
