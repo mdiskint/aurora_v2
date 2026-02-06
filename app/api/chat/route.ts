@@ -306,7 +306,8 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
 
         return NextResponse.json({
           response: `Created manual universe with ${spatialData.nodes.length} enriched nodes`,
-          spatialData
+          spatialData,
+          parseMode: 'manual-**'
         });
       }
 
@@ -334,12 +335,13 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
 
         return NextResponse.json({
           response: `Created list universe with ${spatialData.nodes.length} nodes`,
-          spatialData
+          spatialData,
+          parseMode: 'list'
         });
       }
 
       // 🤖 AI MODE: Generate structure automatically
-      console.log('🤖 AI MODE: Generating universe structure');
+      console.log('🤖 AI MODE: Generating universe structure - no ** or list patterns detected');
 
       const spatialPrompt = `User wants to explore: "${userTopic}"
 

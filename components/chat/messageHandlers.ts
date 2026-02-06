@@ -373,6 +373,12 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
 
         const data = await response.json();
 
+        console.log('🌌 [SPATIAL MODE] API Response:', {
+            parseMode: data.parseMode || 'ai-generated',
+            response: data.response,
+            nodeCount: data.spatialData?.nodes?.length || 0
+        });
+
         if (data.spatialData) {
             const { nexusTitle, nexusContent, nodes: spatialNodes } = data.spatialData;
 
