@@ -123,6 +123,68 @@ export async function POST(request: NextRequest) {
       console.log('🎯 Topic for universe:', userTopic);
 
 
+      // 📝 BULLET UNIVERSE PARSER: Detect and parse bullet-point format
+      function parseBulletUniverse(input: string): { nexusTitle: string; nodes: { content: string; depth: number }[] } | null {
+        const lines = input.split('\n');
+
+        // Count top-level bullets (lines starting with '- ' at column 0)
+        const topLevelBullets = lines.filter(line => line.match(/^- /));
+
+        // Need at least 2 top-level bullets for bullet mode
+        if (topLevelBullets.length < 2) {
+          return null;
+        }
+
+        // Find the first bullet line index
+        const firstBulletIdx = lines.findIndex(line => line.match(/^- /));
+
+        // Everything before first bullet is the nexus title
+        let nexusTitle = lines.slice(0, firstBulletIdx).join('\n').trim();
+
+        // Parse nodes from bullets
+        const nodes: { content: string; depth: number }[] = [];
+        let currentNodeContent: string[] = [];
+
+        for (let i = firstBulletIdx; i < lines.length; i++) {
+          const line = lines[i];
+
+          if (line.match(/^- /)) {
+            // Top-level bullet: save previous node if exists, start new one
+            if (currentNodeContent.length > 0) {
+              nodes.push({ content: currentNodeContent.join('\n'), depth: 1 });
+            }
+            // Start new node with bullet text (strip the '- ' prefix)
+            currentNodeContent = [line.substring(2)];
+          } else if (line.match(/^\s+- /)) {
+            // Sub-bullet (2+ leading spaces then '- '): append to current node
+            currentNodeContent.push(line);
+          } else {
+            // Non-bullet line after a bullet: append to current node
+            if (currentNodeContent.length > 0) {
+              currentNodeContent.push(line);
+            }
+          }
+        }
+
+        // Don't forget the last node
+        if (currentNodeContent.length > 0) {
+          nodes.push({ content: currentNodeContent.join('\n'), depth: 1 });
+        }
+
+        // If no nexus title before bullets, use first bullet as title
+        if (!nexusTitle && nodes.length > 0) {
+          nexusTitle = nodes[0].content.split('\n')[0]; // First line of first bullet
+          nodes.shift(); // Remove first node (now used as title)
+        }
+
+        // Must have at least 1 node after determining nexus
+        if (nodes.length < 1) {
+          return null;
+        }
+
+        return { nexusTitle, nodes };
+      }
+
       // 🔍 CHECK FOR MANUAL MODE: User provided ** structure
       if (userTopic.includes('**')) {
         console.log('✋ MANUAL MODE: Parsing ** delimiters');
@@ -230,6 +292,34 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
 
         return NextResponse.json({
           response: `Created manual universe with ${spatialData.nodes.length} enriched nodes`,
+          spatialData
+        });
+      }
+
+      // 🔍 CHECK FOR BULLET MODE: User provided bullet-point structure
+      const bulletParsed = parseBulletUniverse(userTopic);
+      if (bulletParsed) {
+        console.log('[BULLET PARSE] Detected bullet universe:', { nexusTitle: bulletParsed.nexusTitle, nodeCount: bulletParsed.nodes.length });
+
+        bulletParsed.nodes.forEach((node, i) => {
+          console.log(`[BULLET PARSE] Node ${i}:`, { contentPreview: node.content.substring(0, 80) });
+        });
+
+        // All bullet nodes are L1 (depth 1) - no enrichment, raw content
+        const enrichedNodes = bulletParsed.nodes.map(({ content }) => ({ content }));
+
+        const spatialData = {
+          nexusTitle: bulletParsed.nexusTitle.substring(0, 50),
+          nexusContent: bulletParsed.nexusTitle,
+          nodes: enrichedNodes
+        };
+
+        console.log('✅ Parsed bullet structure:');
+        console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
+        console.log(`   - Nodes: ${spatialData.nodes.length} (L1 raw content)`);
+
+        return NextResponse.json({
+          response: `Created bullet universe with ${spatialData.nodes.length} nodes`,
           spatialData
         });
       }
