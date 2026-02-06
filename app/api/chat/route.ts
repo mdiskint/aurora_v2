@@ -127,6 +127,9 @@ export async function POST(request: NextRequest) {
       function parseBulletUniverse(input: string): { nexusTitle: string; nodes: { content: string; depth: number }[] } | null {
         const lines = input.split('\n');
 
+        console.log('[LIST PARSE DEBUG] Total lines:', lines.length);
+        console.log('[LIST PARSE DEBUG] First 10 lines:', lines.slice(0, 10).map((l, i) => `${i}: "${l.substring(0, 60)}"`));
+
         // List patterns at column 0:
         // - Bullets: -, •, ➢, ▪, ○ followed by space
         // - Numbers: 1., 2., 10. etc. followed by space
@@ -137,8 +140,12 @@ export async function POST(request: NextRequest) {
         // Count top-level list items (lines starting with list marker at column 0)
         const topLevelItems = lines.filter(line => topLevelListRegex.test(line));
 
+        console.log('[LIST PARSE DEBUG] Top-level items found:', topLevelItems.length);
+        console.log('[LIST PARSE DEBUG] Matching lines:', topLevelItems.slice(0, 5).map(l => `"${l.substring(0, 50)}"`));
+
         // Need at least 2 top-level items for list mode
         if (topLevelItems.length < 2) {
+          console.log('[LIST PARSE DEBUG] Not enough top-level items, returning null');
           return null;
         }
 
