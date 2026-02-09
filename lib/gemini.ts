@@ -83,4 +83,21 @@ export async function callGeminiWithFileAPI(
     return response.text || '';
 }
 
+// Fast preprocessing with Gemini Flash for structured text conversion
+export async function callGeminiFlash(prompt: string, systemPrompt?: string): Promise<string> {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    const parts: any[] = [];
+
+    if (systemPrompt) {
+        parts.push({ text: `System: ${systemPrompt}\n\n` });
+    }
+
+    parts.push({ text: prompt });
+
+    const result = await model.generateContent(parts);
+    const response = await result.response;
+    return response.text();
+}
+
 export { genAI, ai };

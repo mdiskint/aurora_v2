@@ -1,33 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/route';
 import { callGeminiWithFileAPI } from '@/lib/gemini';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { del } from '@vercel/blob';
 
-export const maxDuration = 300; // 5 minutes for upload + processing + analysis
+export const maxDuration = 300; // 5 minutes for fetch + processing + analysis
 
 export async function POST(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let blobUrl: string | null = null;
+
     try {
-        const formData = await request.formData();
-        const file = formData.get('file') as File;
+        const body = await request.json();
+        blobUrl = body.blobUrl;
 
-        if (!file) {
+        if (!blobUrl || typeof blobUrl !== 'string') {
             return NextResponse.json(
-                { error: 'No file uploaded' },
+                { error: 'Missing blobUrl in request body' },
                 { status: 400 }
             );
         }
 
-        // 2GB is the Gemini File API max; cap at 500MB for practical serverless limits
-        const MAX_FILE_SIZE = 500 * 1024 * 1024;
-        if (file.size > MAX_FILE_SIZE) {
-            return NextResponse.json(
-                { error: 'File too large. Please upload a video smaller than 500MB.' },
-                { status: 400 }
-            );
-        }
-
-        console.log(`🎥 Received video: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`🎥 Fetching video from blob URL: ${blobUrl}`);
 
         if (!process.env.GEMINI_API_KEY) {
             console.error('❌ GEMINI_API_KEY is not configured');
@@ -39,12 +40,35 @@ export async function POST(request: NextRequest) {
 
         console.log('✅ GEMINI_API_KEY is configured');
 
-        // Write file to temp directory for Gemini File API upload
-        const mimeType = file.type || 'video/mp4';
-        const tempPath = join(tmpdir(), `gemini-upload-${Date.now()}-${file.name}`);
+        // Fetch video from blob URL (internal CDN traffic, not billed as function bandwidth)
+        const videoResponse = await fetch(blobUrl);
+        if (!videoResponse.ok) {
+            console.error(`❌ Failed to fetch video from blob: ${videoResponse.status}`);
+            return NextResponse.json(
+                { error: `Failed to fetch video from storage: ${videoResponse.status}` },
+                { status: 400 }
+            );
+        }
+
+        const contentType = videoResponse.headers.get('content-type');
+        const contentLength = videoResponse.headers.get('content-length');
+        const fileSizeBytes = contentLength ? parseInt(contentLength, 10) : 0;
+
+        console.log(`📦 Video fetched: ${(fileSizeBytes / 1024 / 1024).toFixed(2)} MB, type: ${contentType}`);
+
+        // Determine mime type from content-type header or URL
+        let mimeType = contentType || 'video/mp4';
+        if (mimeType.includes(';')) {
+            mimeType = mimeType.split(';')[0].trim();
+        }
+
+        // Extract filename from URL for temp file
+        const urlPath = new URL(blobUrl).pathname;
+        const fileName = urlPath.split('/').pop() || `video-${Date.now()}.mp4`;
+        const tempPath = join(tmpdir(), `gemini-upload-${Date.now()}-${fileName}`);
 
         try {
-            const arrayBuffer = await file.arrayBuffer();
+            const arrayBuffer = await videoResponse.arrayBuffer();
             await writeFile(tempPath, Buffer.from(arrayBuffer));
             console.log(`📁 Temp file written: ${tempPath}`);
 
@@ -116,5 +140,15 @@ export async function POST(request: NextRequest) {
             { error: error.message || 'Failed to analyze video' },
             { status: 500 }
         );
+    } finally {
+        // Clean up the temporary blob from Vercel Blob storage
+        if (blobUrl) {
+            try {
+                await del(blobUrl);
+                console.log('🧹 Blob cleaned up from storage');
+            } catch (e) {
+                console.warn('⚠️ Blob cleanup failed:', e);
+            }
+        }
     }
 }

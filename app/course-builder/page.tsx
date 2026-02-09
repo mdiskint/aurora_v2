@@ -235,29 +235,22 @@ export default function CourseBuilderPage() {
 
       console.log('✅ Video uploaded to Vercel Blob:', blob.url);
 
-      // 2. Analyze video with Gemini (Only if < 20MB)
-      // Note: We skip analysis for large files due to serverless limits, but the video is still saved!
+      // 2. Analyze video with Gemini using the blob URL
+      // The API fetches from the blob URL (internal CDN traffic) instead of receiving the file again
       let aiData: any = {}; // Use 'any' for now to easily assign properties
 
-      if (selectedFile.size < 20 * 1024 * 1024) {
-        console.log('🤖 Analyzing video with Gemini...');
-        const formData = new FormData();
-        formData.append('file', selectedFile);
+      console.log('🤖 Analyzing video with Gemini via blob URL...');
+      const response = await fetch('/api/analyze-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blobUrl: blob.url }),
+      });
 
-        const response = await fetch('/api/analyze-video', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (response.ok) {
-          aiData = await response.json();
-          console.log('✅ Video analysis complete:', aiData);
-        } else {
-          console.warn('⚠️ Video analysis failed (skipping):', await response.text());
-        }
+      if (response.ok) {
+        aiData = await response.json();
+        console.log('✅ Video analysis complete:', aiData);
       } else {
-        console.log('ℹ️ Video is too large for AI analysis (>20MB). Skipping analysis but keeping video.');
-        alert('Video uploaded successfully! Note: AI analysis was skipped because the file is larger than 20MB.');
+        console.warn('⚠️ Video analysis failed (skipping):', await response.text());
       }
 
       // Update course data with AI-generated content (if any) AND store the video URL

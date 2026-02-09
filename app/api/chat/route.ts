@@ -1,15 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { callGemini } from '@/lib/gemini';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/route';
+import { callGeminiFlash } from '@/lib/gemini';
 import { searchWeb } from '@/lib/search';
 
 export const maxDuration = 300;
 
 const MODEL_CONFIG = {
   high: { anthropic: 'claude-opus-4-5-20251101', openai: 'gpt-4o' },
-  mid:  { anthropic: 'claude-sonnet-4-5-20250929', openai: 'gpt-4o' },
-  low:  { anthropic: 'claude-haiku-4-5-20251001', openai: 'gpt-4o-mini' },
+  mid: { anthropic: 'claude-sonnet-4-5-20250929', openai: 'gpt-4o' },
+  low: { anthropic: 'claude-haiku-4-5-20251001', openai: 'gpt-4o-mini' },
 };
 
 async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
@@ -48,6 +50,11 @@ async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, com
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     // Force rebuild
     if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
@@ -117,89 +124,86 @@ export async function POST(request: NextRequest) {
     if (isSpatialMode) {
       console.log('🌌 SPATIAL MODE ACTIVATED - Generating universe structure');
 
-      // Use full message for topic
-      const userTopic = userMessage;
-
-      console.log('🎯 Topic for universe:', userTopic);
-
-
-      // 📝 BULLET UNIVERSE PARSER: Detect and parse bullet-point format
-      function parseBulletUniverse(input: string): { nexusTitle: string; nodes: { content: string; depth: number }[] } | null {
-        const lines = input.split('\n');
-
-        console.log('[LIST PARSE DEBUG] Total lines:', lines.length);
-        console.log('[LIST PARSE DEBUG] First 10 lines:', lines.slice(0, 10).map((l, i) => `${i}: "${l.substring(0, 60)}"`));
-
-        // List patterns at column 0:
-        // - Bullets: -, •, ➢, ▪, ○ followed by space
-        // - Numbers: 1., 2., 10. etc. followed by space
-        // - Letters: A., B., a., b. etc. followed by space
-        const topLevelListRegex = /^([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/;
-        const subListRegex = /^\s+([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/;
-
-        // Count top-level list items (lines starting with list marker at column 0)
-        const topLevelItems = lines.filter(line => topLevelListRegex.test(line));
-
-        console.log('[LIST PARSE DEBUG] Top-level items found:', topLevelItems.length);
-        console.log('[LIST PARSE DEBUG] Matching lines:', topLevelItems.slice(0, 5).map(l => `"${l.substring(0, 50)}"`));
-
-        // Need at least 2 top-level items for list mode
-        if (topLevelItems.length < 2) {
-          console.log('[LIST PARSE DEBUG] Not enough top-level items, returning null');
-          return null;
+      // 🧠 SMART PASTE: Preprocess structured text without ** markers into ** format
+      async function preprocessStructuredInput(input: string): Promise<string> {
+        // If already has ** markers, return as-is
+        if (input.includes('**')) {
+          console.log('[Smart Paste] Input already has ** markers, skipping preprocessing');
+          return input;
         }
 
-        // Find the first list item index
-        const firstItemIdx = lines.findIndex(line => topLevelListRegex.test(line));
+        // Detect structured content: bullets, numbered lists, lettered lists
+        const structurePatterns = [
+          /^[-•➢▪○]\s/m,           // Bullet at start of line
+          /^\d+\.\s/m,              // Numbered list (1., 2., etc.)
+          /^[A-Za-z]\.\s/m,         // Lettered list (A., B., etc.)
+          /^\s+[-•➢▪○o]\s/m,        // Indented bullets/sub-bullets
+        ];
 
-        // Everything before first list item is the nexus title
-        let nexusTitle = lines.slice(0, firstItemIdx).join('\n').trim();
+        const hasStructure = structurePatterns.some(pattern => pattern.test(input));
 
-        // Parse nodes from list items
-        const nodes: { content: string; depth: number }[] = [];
-        let currentNodeContent: string[] = [];
+        if (!hasStructure) {
+          console.log('[Smart Paste] No structured content detected, skipping preprocessing');
+          return input;
+        }
 
-        for (let i = firstItemIdx; i < lines.length; i++) {
-          const line = lines[i];
+        console.log('[Smart Paste] Detected structured input, preprocessing with Gemini Flash...');
 
-          if (topLevelListRegex.test(line)) {
-            // Top-level item: save previous node if exists, start new one
-            if (currentNodeContent.length > 0) {
-              nodes.push({ content: currentNodeContent.join('\n'), depth: 1 });
-            }
-            // Start new node with item text (strip the list marker prefix)
-            currentNodeContent = [line.replace(/^([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/, '')];
-          } else if (subListRegex.test(line)) {
-            // Sub-item (leading whitespace then list marker): append to current node
-            currentNodeContent.push(line);
+        const preprocessPrompt = `You are a document structure extractor. Given the following text, identify the major sections and convert them into ** delimited format.
+
+RULES:
+1. Each ** section should be a major topic/header (like case names, chapter titles, or main concepts)
+2. Include the section's content (bullet points, sub-points, explanations) as text after the ** title line
+3. Do NOT add any information — only reorganize what's there
+4. Preserve all bullet points, sub-bullets, and indentation within each section
+5. Output ONLY the ** formatted text, nothing else (no explanations, no markdown code blocks)
+
+EXAMPLE INPUT:
+Loving v. Virginia (1967)
+• Issue: Can Virginia prohibit interracial marriage?
+• Holding: No, this violates Equal Protection
+
+Brown v. Board (1954)
+• Issue: Is school segregation constitutional?
+• Holding: Separate is inherently unequal
+
+EXAMPLE OUTPUT:
+**Loving v. Virginia (1967)
+• Issue: Can Virginia prohibit interracial marriage?
+• Holding: No, this violates Equal Protection
+
+**Brown v. Board (1954)
+• Issue: Is school segregation constitutional?
+• Holding: Separate is inherently unequal
+
+NOW PROCESS THIS TEXT:
+${input}`;
+
+        try {
+          const formatted = await callGeminiFlash(preprocessPrompt);
+          console.log('[Smart Paste] Gemini Flash returned:', formatted.substring(0, 200) + '...');
+
+          // Validate output has ** markers
+          if (formatted.includes('**')) {
+            console.log('[Smart Paste] ✅ Preprocessing successful');
+            return formatted.trim();
           } else {
-            // Non-bullet line after a bullet: append to current node
-            if (currentNodeContent.length > 0) {
-              currentNodeContent.push(line);
-            }
+            console.log('[Smart Paste] ⚠️ Output missing ** markers, using original input');
+            return input;
           }
+        } catch (error: any) {
+          console.error('[Smart Paste] ❌ Gemini Flash failed:', error.message);
+          return input; // Fall back to original input
         }
-
-        // Don't forget the last node
-        if (currentNodeContent.length > 0) {
-          nodes.push({ content: currentNodeContent.join('\n'), depth: 1 });
-        }
-
-        // If no nexus title before bullets, use first bullet as title
-        if (!nexusTitle && nodes.length > 0) {
-          nexusTitle = nodes[0].content.split('\n')[0]; // First line of first bullet
-          nodes.shift(); // Remove first node (now used as title)
-        }
-
-        // Must have at least 1 node after determining nexus
-        if (nodes.length < 1) {
-          return null;
-        }
-
-        return { nexusTitle, nodes };
       }
 
-      // 🔍 CHECK FOR MANUAL MODE: User provided ** structure
+      // Preprocess the input before parsing
+      let userTopic = await preprocessStructuredInput(userMessage);
+
+      console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
+
+
+      // 🔍 CHECK FOR MANUAL MODE: User provided ** structure (or Smart Paste converted to **)
       if (userTopic.includes('**')) {
         console.log('✋ MANUAL MODE: Parsing ** delimiters');
         console.log('📝 Raw input:', userTopic);
@@ -233,31 +237,62 @@ export async function POST(request: NextRequest) {
         console.log('🏛️ Nexus section (index 0):', nexus);
         parsedNodes.forEach((n, i) => console.log(`📦 Node ${i + 1}: depth=${n.depth}, content="${n.content.substring(0, 60)}"`));
 
-        console.log('🔍 Enriching nodes with per-node depth...');
+        console.log('🔍 Smart enriching nodes (universe-first, web-fallback)...');
+
+        // Build universe context from conversation context + sibling nodes
+        const universeContext = conversationContext || '';
+        const siblingContext = parsedNodes
+          .map(n => `- ${n.content.substring(0, 200)}`)
+          .join('\n');
 
         const enrichedNodes = await Promise.all(
           parsedNodes.map(async ({ content, depth: perNodeDepth }, idx) => {
-            // L1: raw content, no AI processing
+            // L1 with no dash prefix: raw content, no enrichment
             if (perNodeDepth <= 1) {
               console.log(`   ⏭️ Node ${idx + 1} skipped (L1 raw content, depth=${perNodeDepth})`);
               return { content };
             }
 
-            const siblingContext = parsedNodes
-              .filter((_, i) => i !== idx)
-              .map(n => `- ${n.content.substring(0, 150)}`)
-              .join('\n');
+            // L2+: Smart enrichment - check universe first, web search as fallback
+            console.log(`   🧠 Node ${idx + 1}: Checking if universe has sufficient info...`);
 
-            // L2+: Tavily search for web context, then Claude enrichment
-            const useWebSearch = perNodeDepth >= 2;
+            // Ask Gemini Flash if universe context is sufficient
+            let needsWebSearch = false;
+            try {
+              const checkPrompt = `You are checking if existing knowledge is sufficient to explain a topic.
+
+TOPIC TO EXPLAIN: "${content}"
+
+AVAILABLE UNIVERSE KNOWLEDGE:
+${universeContext.substring(0, 3000)}
+
+SIBLING TOPICS:
+${siblingContext}
+
+Question: Does the universe knowledge above contain SUFFICIENT information to thoroughly explain "${content.substring(0, 100)}"?
+
+Answer with ONLY one word: YES or NO
+- YES = universe has enough info (definitions, examples, context)
+- NO = need external web search for more information`;
+
+              const checkResult = await callGeminiFlash(checkPrompt);
+              needsWebSearch = checkResult.trim().toUpperCase().includes('NO');
+              console.log(`   🧠 Node ${idx + 1}: Universe sufficient? ${needsWebSearch ? 'NO → web search' : 'YES → universe only'}`);
+            } catch (error: any) {
+              console.log(`   ⚠️ Node ${idx + 1}: Check failed, defaulting to web search`);
+              needsWebSearch = true;
+            }
+
+            // Fetch web context if needed
             let webContext = '';
-            if (useWebSearch) {
+            if (needsWebSearch) {
               const searchQuery = content.substring(0, 200) + ' ' + nexus;
               console.log(`   🔎 Node ${idx + 1} searching:`, searchQuery.substring(0, 80));
               webContext = await searchWeb(searchQuery);
               console.log(`   📄 Node ${idx + 1} search returned ${webContext.length} chars`);
             }
 
+            // Build enrichment prompt
             const enrichPrompt = `You are enriching a node in a learning universe.
 
 Universe Topic: "${nexus}"
@@ -265,13 +300,17 @@ Universe Topic: "${nexus}"
 THIS NODE's raw content:
 "${content}"
 
+UNIVERSE KNOWLEDGE (PRIMARY SOURCE - use this first):
+${universeContext.substring(0, 2000)}
+
 SIBLING NODES in the same universe:
 ${siblingContext}
-${webContext ? `\nWEB RESEARCH (use to ground your enrichment with current, real-world context):\n${webContext}\n` : ''}
+${webContext ? `\nWEB RESEARCH (SECONDARY SOURCE - use to fill gaps not covered by universe knowledge):\n${webContext}\n` : ''}
 Your task: Expand and enrich this node's content by:
 1. Adding depth and detail to the core concept (2-3 paragraphs)
 2. Referencing connections to sibling nodes where relevant
-${webContext ? '3. Incorporating relevant findings from the web research above\n4. Adding concrete examples or applications' : '3. Adding concrete examples or applications'}
+3. ${webContext ? 'Incorporating web research ONLY for info not in universe knowledge' : 'Using universe knowledge as your primary source'}
+4. Adding concrete examples or applications
 
 Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`;
 
@@ -279,13 +318,13 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
               const response = await safeAICall(anthropic, openai, {
                 max_tokens: 1500,
                 messages: [{ role: 'user', content: enrichPrompt }],
-                system: 'You are an expert educator enriching learning content. Add depth, cross-references to sibling topics, and concrete examples. Be concise but substantive.',
+                system: 'You are an expert educator enriching learning content. Prioritize universe knowledge over web sources. Add depth, cross-references to sibling topics, and concrete examples. Be concise but substantive.',
               }, 'high');
 
               const enriched = response.content?.[0]?.type === 'text'
                 ? response.content[0].text
                 : content;
-              console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars)`);
+              console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars, web=${needsWebSearch})`);
               return { content: enriched || content };
             } catch (error: any) {
               console.error(`   ❌ Node ${idx + 1} enrichment failed:`, error.message);
@@ -311,37 +350,8 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
         });
       }
 
-      // 🔍 CHECK FOR LIST MODE: User provided bullet/numbered/lettered list structure
-      const listParsed = parseBulletUniverse(userTopic);
-      if (listParsed) {
-        console.log('[LIST PARSE] Detected list universe:', { nexusTitle: listParsed.nexusTitle, nodeCount: listParsed.nodes.length });
-
-        listParsed.nodes.forEach((node, i) => {
-          console.log(`[LIST PARSE] Node ${i}:`, { contentPreview: node.content.substring(0, 80) });
-        });
-
-        // All list nodes are L1 (depth 1) - no enrichment, raw content
-        const enrichedNodes = listParsed.nodes.map(({ content }) => ({ content }));
-
-        const spatialData = {
-          nexusTitle: listParsed.nexusTitle.substring(0, 50),
-          nexusContent: listParsed.nexusTitle,
-          nodes: enrichedNodes
-        };
-
-        console.log('✅ Parsed list structure:');
-        console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
-        console.log(`   - Nodes: ${spatialData.nodes.length} (L1 raw content)`);
-
-        return NextResponse.json({
-          response: `Created list universe with ${spatialData.nodes.length} nodes`,
-          spatialData,
-          parseMode: 'list'
-        });
-      }
-
-      // 🤖 AI MODE: Generate structure automatically
-      console.log('🤖 AI MODE: Generating universe structure - no ** or list patterns detected');
+      // 🤖 AI MODE: Generate structure automatically (Smart Paste handles bullets → **)
+      console.log('🤖 AI MODE: Generating universe structure - no ** patterns detected');
 
       const spatialPrompt = `User wants to explore: "${userTopic}"
 

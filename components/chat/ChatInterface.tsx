@@ -118,7 +118,18 @@ export default function ChatInterface() {
     if (!message.trim()) return;
 
     const userMessage = message.trim();
-    const isSpatialMode = userMessage.includes('**');
+
+    // Detect spatial mode: either ** markers OR bullet/numbered list with 2+ items
+    const hasManualMarkers = userMessage.includes('**');
+    const hasBulletList = (() => {
+      const lines = userMessage.split('\n');
+      // List patterns at column 0: -, •, ➢, ▪, ○, or 1., 2., A., B. etc.
+      const topLevelListRegex = /^([-•➢▪○]|\d+\.|[A-Za-z]\.)\s/;
+      const topLevelItems = lines.filter(line => topLevelListRegex.test(line));
+      return topLevelItems.length >= 2;
+    })();
+
+    const isSpatialMode = hasManualMarkers || hasBulletList;
     const cleanMessage = userMessage;
 
     setMessage('');

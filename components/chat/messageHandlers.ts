@@ -21,6 +21,7 @@ export async function handleDoctrinalMode({
     nodes,
     createChatNexus,
     addNode,
+    addNodes,
     saveCurrentUniverse,
     setIsLoading,
 }: MessageHandlerArgs & { ruleName: string }) {
@@ -129,13 +130,13 @@ RESPOND WITH ONLY THE JSON OBJECT. NO OTHER TEXT.`;
             throw new Error('Failed to create doctrine nexus');
         }
 
-        for (const caseData of doctrineData.cases) {
-            const caseContent = `${caseData.caseName}\n${caseData.citation}\n\nFacts: ${caseData.facts}\n\nAnalysis: ${caseData.doctrinalAnalysis}\n\nHolding: ${caseData.holding}\n\nSignificance: ${caseData.significance}`;
-            addNode(caseContent, chatNexus.id, caseData.caseName, 'ai-response');
-            await new Promise(resolve => setTimeout(resolve, 50));
-        }
+        // Batch create all case nodes in parallel
+        addNodes(doctrineData.cases.map((caseData: any) => ({
+            content: `${caseData.caseName}\n${caseData.citation}\n\nFacts: ${caseData.facts}\n\nAnalysis: ${caseData.doctrinalAnalysis}\n\nHolding: ${caseData.holding}\n\nSignificance: ${caseData.significance}`,
+            parentId: chatNexus.id,
+            nodeType: 'ai-response' as const,
+        })));
 
-        await new Promise(resolve => setTimeout(resolve, 100));
         saveCurrentUniverse();
 
         setDoctrinalStage('complete');
@@ -164,6 +165,7 @@ export async function handleGapMode(args: MessageHandlerArgs) {
         createChatNexus,
         setIsFirstMessage,
         addNode,
+        addNodes,
         saveCurrentUniverse,
         setParallelTasks,
         setPlanningReasoning,
@@ -215,12 +217,13 @@ export async function handleGapMode(args: MessageHandlerArgs) {
                     throw new Error('Failed to create synthesis nexus');
                 }
 
-                for (let i = 0; i < spatialNodes.length; i++) {
-                    addNode(spatialNodes[i].content, chatNexus.id, undefined, 'ai-response');
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
+                // Batch create all synthesis nodes in parallel
+                addNodes(spatialNodes.map((node: any) => ({
+                    content: node.content,
+                    parentId: chatNexus.id,
+                    nodeType: 'ai-response' as const,
+                })));
 
-                await new Promise(resolve => setTimeout(resolve, 100));
                 saveCurrentUniverse();
 
                 setIsLoading(false);
@@ -310,6 +313,7 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
         selectNode,
         saveCurrentUniverse,
         addNode,
+        addNodes,
         updateNode,
         activeUniverseId,
         createSnapshot,
@@ -393,25 +397,22 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
                 throw new Error('Nexus creation failed');
             }
 
-            for (let i = 0; i < spatialNodes.length; i++) {
-                const node = spatialNodes[i];
-                const doctrineId = addNode(
-                    node.content,
-                    chatNexus.id,
-                    undefined,
-                    node.nodeType || 'doctrine'
-                );
+            // Batch create all nodes in parallel (no sequential delays)
+            const newNodeIds = addNodes(spatialNodes.map((node: any) => ({
+                content: node.content,
+                parentId: chatNexus.id,
+                nodeType: node.nodeType || 'doctrine',
+            })));
 
-                if (node.children && Array.isArray(node.children)) {
-                    updateNode(doctrineId, {
+            // Update practiceSteps for nodes that have children
+            spatialNodes.forEach((node: any, i: number) => {
+                if (node.children && Array.isArray(node.children) && newNodeIds[i]) {
+                    updateNode(newNodeIds[i], {
                         practiceSteps: node.children
                     });
                 }
+            });
 
-                await new Promise(resolve => setTimeout(resolve, 50));
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 100));
             saveCurrentUniverse();
 
             if (activeUniverseId) {

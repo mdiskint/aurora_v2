@@ -2,26 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  // Temporarily disabled - using NextAuth instead
+  // NextAuth handles authentication via session tokens
   return NextResponse.next();
-
-  // // Check if user is authenticated
-  // const authCookie = request.cookies.get('aurora-auth');
-  // 
-  // // Allow access to login page and auth API routes
-  // if (
-  //   request.nextUrl.pathname.startsWith('/login') ||
-  //   request.nextUrl.pathname.startsWith('/api/auth')
-  // ) {
-  //   return NextResponse.next();
-  // }
-  // 
-  // // Redirect to login if not authenticated
-  // if (!authCookie) {
-  //   return NextResponse.redirect(new URL('/login', request.url));
-  // }
-  // 
-  // return NextResponse.next();
 }
 
 export const config = {

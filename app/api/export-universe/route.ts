@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/route';
 
 interface ExportNode {
   id: string;
@@ -24,6 +26,11 @@ interface ExportRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error('❌ ANTHROPIC_API_KEY is not defined');
@@ -239,7 +246,7 @@ function parseMarkdownToStructured(markdown: string, title: string) {
   let summary = '';
 
   // Find everything after the main title but before the first section
-  const afterTitleIndex = titleMatch ? titleMatch.index + titleMatch[0].length : 0;
+  const afterTitleIndex = titleMatch ? (titleMatch.index ?? 0) + titleMatch[0].length : 0;
   const firstSectionMatch = sectionRegex.exec(markdown);
   sectionRegex.lastIndex = 0; // Reset for the main loop
 
