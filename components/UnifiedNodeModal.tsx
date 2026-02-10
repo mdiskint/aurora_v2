@@ -936,7 +936,7 @@ export default function UnifiedNodeModal() {
 
         return Object.values(nodes)
           .filter(n => n.parentId === parentId)
-          .sort((a, b) => a.id.localeCompare(b.id));
+          .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
       };
 
       // Helper to navigate and show modal
@@ -972,7 +972,7 @@ export default function UnifiedNodeModal() {
       const getSiblings = () => {
         return Object.values(nodes)
           .filter(n => n.parentId === node.parentId)
-          .sort((a, b) => a.id.localeCompare(b.id));
+          .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
       };
 
       // Get parent node or nexus
@@ -2095,7 +2095,7 @@ Be conversational and human, not formulaic.`;
       // Get all sibling nodes (nodes with same parent)
       const siblings = Object.values(nodes)
         .filter(n => n.parentId === node.parentId)
-        .sort((a, b) => a.id.localeCompare(b.id));
+        .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 
       const currentIndex = siblings.findIndex(n => n.id === node.id);
 
