@@ -674,8 +674,9 @@ export default function UnifiedNodeModal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'spatial',
-          messages: [{ role: 'user', content: node.content.replace(/\*\*/g, '') }],
+          messages: [{ role: 'user', content: node.content }],
           nodeDepth: childDepth,
+          atomize: true,
         }),
       });
 

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery, atomize } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
@@ -197,14 +197,15 @@ ${input}`;
         }
       }
 
-      // Preprocess the input before parsing
-      let userTopic = await preprocessStructuredInput(userMessage);
+      // Preprocess the input before parsing (skip for atomize — always use AI mode)
+      let userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
 
       console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
 
 
       // 🔍 CHECK FOR MANUAL MODE: User provided ** structure (or Smart Paste converted to **)
-      if (userTopic.includes('**')) {
+      // Skip manual mode for atomize requests — always use AI to break down content
+      if (!atomize && userTopic.includes('**')) {
         console.log('✋ MANUAL MODE: Parsing ** delimiters');
         console.log('📝 Raw input:', userTopic);
 
