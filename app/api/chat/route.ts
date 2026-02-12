@@ -1601,8 +1601,16 @@ IMPORTANT:
         messages: [{ role: 'user', content: userMessage }],
       });
 
-      const practiceJson = response.content[0].type === 'text' ? response.content[0].text : '';
+      let practiceJson = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('✨ Leopold practice steps generated');
+
+      // Strip markdown code fences if present
+      practiceJson = practiceJson.trim();
+      if (practiceJson.startsWith('```json')) {
+        practiceJson = practiceJson.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
+      } else if (practiceJson.startsWith('```')) {
+        practiceJson = practiceJson.replace(/^```\s*\n/, '').replace(/\n```$/, '');
+      }
 
       try {
         const parsed = JSON.parse(practiceJson);
