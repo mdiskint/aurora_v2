@@ -370,10 +370,22 @@ For EACH doctrine, create 5 atomized practice children following Leopold Teachin
 1. **intuition-example**: A concrete, relatable example to build intuition (2-3 sentences)
 2. **model-answer**: Show the correct reasoning pattern or approach (2-3 sentences)
 3. **imitate**: A practice prompt where students apply the pattern ("Now you try...")
-4. **quiz-mc**: A multiple choice question testing understanding
+4. **quiz-mc**: A multiple choice question testing understanding (see QUIZ DIVERSITY rules below)
 5. **synthesis**: A real-world application scenario that serves as synthesis/reflection (3-4 sentences combining all previous concepts)
 
 NOTE: These children are METADATA for guided practice. They will NOT be created as nodes initially - only when the student completes each practice step.
+
+QUIZ DIVERSITY RULES (CRITICAL):
+Each doctrine's quiz-mc MUST test a DIFFERENT cognitive skill. Cycle through these question types across doctrines:
+- **Definition/Identification**: "Which of the following best describes X?"
+- **Application**: Present a novel scenario and ask which principle applies
+- **Distinction**: "What is the key difference between X and Y?"
+- **Common Misconception**: "Which of the following is a common mistake about X?"
+- **Cause/Effect**: "What would happen if X were changed/removed?"
+- **Edge Case**: "In which scenario would X NOT apply?"
+- **Ordering/Process**: "What is the correct sequence for X?"
+- **Analogy**: "X is most analogous to which of the following?"
+No two quiz-mc questions in the same response should use the same question type or test the same kind of reasoning.
 
 Format your response as VALID JSON (and ONLY JSON, no other text):
 {
@@ -387,7 +399,7 @@ Format your response as VALID JSON (and ONLY JSON, no other text):
         {"content": "Concrete example to build intuition...", "nodeType": "intuition-example"},
         {"content": "Here's the correct reasoning pattern...", "nodeType": "model-answer"},
         {"content": "Now you try: Apply this pattern to...", "nodeType": "imitate"},
-        {"content": "Question: ...", "nodeType": "quiz-mc", "options": ["A", "B", "C", "D"], "correctOption": "B"},
+        {"content": "Question: ...", "nodeType": "quiz-mc", "options": ["A", "B", "C", "D"], "correctOption": "B", "explanation": "Why this is correct."},
         {"content": "Real-world application scenario combining all concepts: ...", "nodeType": "synthesis"}
       ]
     }
@@ -400,14 +412,15 @@ IMPORTANT:
 - Create 2-8 doctrine nodes, each with exactly 5 atomized children
 - Each child must have explicit "nodeType" field
 - DO NOT create one node per line from user input - create your own logical doctrines
-- The "synthesis" step is now the final application scenario that synthesizes all learning`;
+- The "synthesis" step is now the final application scenario that synthesizes all learning
+- Each quiz-mc MUST use a different question type from the QUIZ DIVERSITY list above`;
 
       console.log('📤 Sending spatial universe generation prompt...');
 
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 8192, // Increased to handle atomized children
-        system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). CRITICAL: Each quiz-mc across doctrines must test a DIFFERENT cognitive skill (definition, application, distinction, misconception, cause/effect, edge case, ordering, analogy) — never repeat the same question type. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       }, 'mid');
 
@@ -1536,6 +1549,18 @@ Analyze the provided educational content and produce a JSON blueprint for atomiz
 4. Apply Leopold principles: concept before quiz, intuition before rule, model before imitate, vivid examples
 5. Include applicationLabSuggestion for final evolution
 
+**QUIZ DIVERSITY (CRITICAL):**
+Each doctrine's quiz-mc MUST test a DIFFERENT cognitive skill. Cycle through these question types:
+- Definition/Identification: "Which best describes X?"
+- Application: Present a novel scenario, ask which principle applies
+- Distinction: "What is the key difference between X and Y?"
+- Common Misconception: "Which is a common mistake about X?"
+- Cause/Effect: "What would happen if X were changed?"
+- Edge Case: "In which scenario would X NOT apply?"
+- Ordering/Process: "What is the correct sequence?"
+- Analogy: "X is most analogous to which of the following?"
+No two quiz-mc questions should use the same question type or test the same kind of reasoning. Each quiz must target the SPECIFIC content of its own doctrine, not the general topic.
+
 **IMPORTANT:** Output ONLY valid JSON, nothing else. No markdown, no commentary.`,
         messages: [{ role: 'user', content: contentToAtomize }],
       });
@@ -1582,10 +1607,10 @@ OUTPUT FORMAT (JSON only):
     },
     {
       "nodeType": "quiz-mc",
-      "content": "A multiple-choice question testing the core intuition.",
+      "content": "A multiple-choice question that tests a SPECIFIC detail, distinction, or application from the content — NOT a restatement of the main idea. Pick ONE of: definition, application to a novel scenario, distinguishing two concepts, identifying a common misconception, cause/effect, edge case, or analogy.",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctOption": "A",
-      "explanation": "Why this is the correct intuition."
+      "explanation": "Why this is correct, referencing the specific detail being tested."
     },
     {
       "nodeType": "synthesis",
