@@ -397,21 +397,70 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
                 throw new Error('Nexus creation failed');
             }
 
-            // Batch create all nodes in parallel (no sequential delays)
-            const newNodeIds = addNodes(spatialNodes.map((node: any) => ({
-                content: node.content,
-                parentId: chatNexus.id,
-                nodeType: node.nodeType || 'doctrine',
-            })));
+            // Check if this is hierarchical data (nodes have parentIndex)
+            const isHierarchical = spatialNodes.some((n: any) => n.parentIndex !== undefined);
 
-            // Update practiceSteps for nodes that have children
-            spatialNodes.forEach((node: any, i: number) => {
-                if (node.children && Array.isArray(node.children) && newNodeIds[i]) {
-                    updateNode(newNodeIds[i], {
-                        practiceSteps: node.children
+            if (isHierarchical) {
+                // Hierarchical creation: create nodes level-by-level so parents exist before children
+                const indexToNodeId: Record<number, string> = {};
+                const maxDepth = Math.max(...spatialNodes.map((n: any) => n.depth || 1));
+
+                for (let depth = 1; depth <= maxDepth; depth++) {
+                    const nodesAtDepth: { content: string; parentId: string; nodeType?: string; originalIndex: number }[] = [];
+
+                    spatialNodes.forEach((node: any, idx: number) => {
+                        if ((node.depth || 1) !== depth) return;
+
+                        let parentId: string;
+                        if (node.parentIndex === -1 || node.parentIndex === undefined) {
+                            // Child of nexus
+                            parentId = chatNexus.id;
+                        } else {
+                            // Child of another node — look up its created ID
+                            parentId = indexToNodeId[node.parentIndex] || chatNexus.id;
+                        }
+
+                        nodesAtDepth.push({
+                            content: node.content,
+                            parentId,
+                            nodeType: node.nodeType || 'doctrine',
+                            originalIndex: idx,
+                        });
                     });
+
+                    if (nodesAtDepth.length > 0) {
+                        const newIds = addNodes(nodesAtDepth.map(n => ({
+                            content: n.content,
+                            parentId: n.parentId,
+                            nodeType: (n.nodeType || 'doctrine') as any,
+                        })));
+
+                        // Map created IDs back to original indices
+                        nodesAtDepth.forEach((n, i) => {
+                            indexToNodeId[n.originalIndex] = newIds[i];
+                        });
+
+                        // Wait for state to commit before creating next depth level
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
                 }
-            });
+            } else {
+                // Flat creation path (AI mode, unchanged)
+                const newNodeIds = addNodes(spatialNodes.map((node: any) => ({
+                    content: node.content,
+                    parentId: chatNexus.id,
+                    nodeType: node.nodeType || 'doctrine',
+                })));
+
+                // Update practiceSteps for nodes that have children
+                spatialNodes.forEach((node: any, i: number) => {
+                    if (node.children && Array.isArray(node.children) && newNodeIds[i]) {
+                        updateNode(newNodeIds[i], {
+                            practiceSteps: node.children
+                        });
+                    }
+                });
+            }
 
             saveCurrentUniverse();
 

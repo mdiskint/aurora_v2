@@ -203,40 +203,79 @@ ${input}`;
       console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
 
 
-      // 🔍 CHECK FOR MANUAL MODE: User provided ** structure (or Smart Paste converted to **)
+      // 🔍 CHECK FOR HIERARCHICAL MANUAL MODE: First non-empty line is exactly "**"
       // Skip manual mode for atomize requests — always use AI to break down content
-      if (!atomize && userTopic.includes('**')) {
-        console.log('✋ MANUAL MODE: Parsing ** delimiters');
+      const lines = userTopic.split('\n');
+      const firstNonEmptyLine = lines.find(l => l.trim() !== '')?.trim();
+      const isManualHierarchy = !atomize && firstNonEmptyLine === '**';
+
+      if (isManualHierarchy) {
+        console.log('✋ HIERARCHICAL MANUAL MODE: Parsing * depth lines');
         console.log('📝 Raw input:', userTopic);
 
-        const sections = userTopic.split('**').filter(s => s.trim());
-        console.log('📊 Split sections:', sections.length, sections);
+        // Parse lines after the ** trigger
+        const triggerIndex = lines.findIndex(l => l.trim() === '**');
+        const contentLines = lines.slice(triggerIndex + 1).filter(l => l.trim() !== '');
 
-        if (sections.length < 2) {
-          console.error('❌ Invalid ** format: need at least nexus title and one node');
+        // Parse each line: count leading * characters for depth
+        const parsedLines: { content: string; starCount: number }[] = [];
+        for (const line of contentLines) {
+          const trimmed = line.trim();
+          const starMatch = trimmed.match(/^(\*+)\s*(.*)/);
+          if (!starMatch) continue; // skip lines without * prefix
+          const starCount = starMatch[1].length;
+          const content = starMatch[2].trim();
+          if (!content) continue; // skip lines with only stars
+          parsedLines.push({ content, starCount });
+        }
+
+        if (parsedLines.length < 2) {
+          console.error('❌ Invalid hierarchy: need at least a title (*) and one node');
           return NextResponse.json(
-            { error: 'Manual mode requires at least: **Nexus Title **Node 1 content' },
+            { error: 'Hierarchical mode requires at least: ** (trigger), *Title, *Node1' },
             { status: 400 }
           );
         }
 
-        // First section = Nexus ONLY
-        const nexus = sections[0].trim();
-        // Remaining sections = Nodes ONLY — parse dash prefixes for per-node depth
-        // - Topic = depth 1 (L1, raw content, no enrichment)
-        // -- Subtopic = depth 2 (L2, Tavily search + Opus enrichment)
-        // --- Deep = depth 3 (L3, same as L2)
-        // No dashes = depth 1 (default)
-        const parsedNodes = sections.slice(1).map(s => {
-          const trimmed = s.trim();
-          const dashMatch = trimmed.match(/^(-{1,3})\s+/);
-          const depth = dashMatch ? dashMatch[1].length : 1;
-          const content = dashMatch ? trimmed.slice(dashMatch[0].length) : trimmed;
-          return { content, depth };
-        });
+        // First * line = nexus title
+        const nexusTitle = parsedLines[0].content;
+        const nexusContent = nexusTitle;
+        const nodeLines = parsedLines.slice(1);
 
-        console.log('🏛️ Nexus section (index 0):', nexus);
-        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i + 1}: depth=${n.depth}, content="${n.content.substring(0, 60)}"`));
+        // Build nodes with parentIndex using depthStack
+        // depthStack[starCount] = index into parsedNodes of the most recent node at that star depth
+        const depthStack: Record<number, number> = {};
+        const parsedNodes: { content: string; depth: number; parentIndex: number }[] = [];
+
+        for (const { content, starCount } of nodeLines) {
+          const depth = starCount; // * = 1, ** = 2, *** = 3, etc.
+          let parentIndex = -1; // default: child of nexus
+
+          if (depth >= 2) {
+            // Find closest available parent at depth - 1 (or shallower for graceful degradation)
+            for (let d = depth - 1; d >= 1; d--) {
+              if (depthStack[d] !== undefined) {
+                parentIndex = depthStack[d];
+                break;
+              }
+            }
+            // If no parent found at all, attach to nexus
+          }
+
+          const nodeIndex = parsedNodes.length;
+          parsedNodes.push({ content, depth, parentIndex });
+
+          // Update depthStack: set this depth, clear all deeper levels
+          depthStack[depth] = nodeIndex;
+          for (const key of Object.keys(depthStack)) {
+            if (Number(key) > depth) {
+              delete depthStack[Number(key)];
+            }
+          }
+        }
+
+        console.log('🏛️ Nexus title:', nexusTitle);
+        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i}: depth=${n.depth}, parentIndex=${n.parentIndex}, content="${n.content.substring(0, 60)}"`));
 
         console.log('🔍 Smart enriching nodes (universe-first, web-fallback)...');
 
@@ -247,15 +286,15 @@ ${input}`;
           .join('\n');
 
         const enrichedNodes = await Promise.all(
-          parsedNodes.map(async ({ content, depth: perNodeDepth }, idx) => {
-            // L1 with no dash prefix: raw content, no enrichment
+          parsedNodes.map(async ({ content, depth: perNodeDepth, parentIndex }, idx) => {
+            // L1 nodes (depth 1): raw content, no enrichment
             if (perNodeDepth <= 1) {
-              console.log(`   ⏭️ Node ${idx + 1} skipped (L1 raw content, depth=${perNodeDepth})`);
-              return { content };
+              console.log(`   ⏭️ Node ${idx}: skipped (L1 raw content, depth=${perNodeDepth})`);
+              return { content, depth: perNodeDepth, parentIndex };
             }
 
             // L2+: Smart enrichment - check universe first, web search as fallback
-            console.log(`   🧠 Node ${idx + 1}: Checking if universe has sufficient info...`);
+            console.log(`   🧠 Node ${idx}: Checking if universe has sufficient info...`);
 
             // Ask Gemini Flash if universe context is sufficient
             let needsWebSearch = false;
@@ -278,25 +317,25 @@ Answer with ONLY one word: YES or NO
 
               const checkResult = await callGeminiFlash(checkPrompt);
               needsWebSearch = checkResult.trim().toUpperCase().includes('NO');
-              console.log(`   🧠 Node ${idx + 1}: Universe sufficient? ${needsWebSearch ? 'NO → web search' : 'YES → universe only'}`);
+              console.log(`   🧠 Node ${idx}: Universe sufficient? ${needsWebSearch ? 'NO → web search' : 'YES → universe only'}`);
             } catch (error: any) {
-              console.log(`   ⚠️ Node ${idx + 1}: Check failed, defaulting to web search`);
+              console.log(`   ⚠️ Node ${idx}: Check failed, defaulting to web search`);
               needsWebSearch = true;
             }
 
             // Fetch web context if needed
             let webContext = '';
             if (needsWebSearch) {
-              const searchQuery = content.substring(0, 200) + ' ' + nexus;
-              console.log(`   🔎 Node ${idx + 1} searching:`, searchQuery.substring(0, 80));
+              const searchQuery = content.substring(0, 200) + ' ' + nexusTitle;
+              console.log(`   🔎 Node ${idx} searching:`, searchQuery.substring(0, 80));
               webContext = await searchWeb(searchQuery);
-              console.log(`   📄 Node ${idx + 1} search returned ${webContext.length} chars`);
+              console.log(`   📄 Node ${idx} search returned ${webContext.length} chars`);
             }
 
             // Build enrichment prompt
             const enrichPrompt = `You are enriching a node in a learning universe.
 
-Universe Topic: "${nexus}"
+Universe Topic: "${nexusTitle}"
 
 THIS NODE's raw content:
 "${content}"
@@ -325,29 +364,29 @@ Return ONLY the enriched content text. No JSON, no formatting instructions, no p
               const enriched = response.content?.[0]?.type === 'text'
                 ? response.content[0].text
                 : content;
-              console.log(`   ✅ Node ${idx + 1} enriched (${enriched.length} chars, web=${needsWebSearch})`);
-              return { content: enriched || content };
+              console.log(`   ✅ Node ${idx} enriched (${enriched.length} chars, web=${needsWebSearch})`);
+              return { content: enriched || content, depth: perNodeDepth, parentIndex };
             } catch (error: any) {
-              console.error(`   ❌ Node ${idx + 1} enrichment failed:`, error.message);
-              return { content };
+              console.error(`   ❌ Node ${idx} enrichment failed:`, error.message);
+              return { content, depth: perNodeDepth, parentIndex };
             }
           })
         );
 
         const spatialData = {
-          nexusTitle: nexus.substring(0, 50),
-          nexusContent: nexus,
+          nexusTitle: nexusTitle.substring(0, 50),
+          nexusContent: nexusContent,
           nodes: enrichedNodes
         };
 
-        console.log('✅ Parsed and enriched manual structure:');
+        console.log('✅ Parsed and enriched hierarchical structure:');
         console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
-        console.log(`   - Nodes: ${spatialData.nodes.length} (Tavily + Claude enriched)`);
+        console.log(`   - Nodes: ${spatialData.nodes.length} (hierarchical, enriched L2+)`);
 
         return NextResponse.json({
-          response: `Created manual universe with ${spatialData.nodes.length} enriched nodes`,
+          response: `Created hierarchical universe with ${spatialData.nodes.length} enriched nodes`,
           spatialData,
-          parseMode: 'manual-**'
+          parseMode: 'manual-hierarchy'
         });
       }
 
