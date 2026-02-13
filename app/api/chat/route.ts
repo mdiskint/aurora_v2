@@ -479,7 +479,7 @@ IMPORTANT:
 
       const response = await safeAICall(anthropic, openai, {
 
-        max_tokens: 8192, // Increased to handle atomized children
+        max_tokens: 16384, // Large enough for atomized children with quiz diversity
         system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). CRITICAL: Each quiz-mc across doctrines must test a DIFFERENT cognitive skill (definition, application, distinction, misconception, cause/effect, edge case, ordering, analogy) — never repeat the same question type. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       }, 'mid');
@@ -540,6 +540,49 @@ IMPORTANT:
       } catch (parseError) {
         console.error('❌ Failed to parse spatial JSON:', parseError);
         console.error('Raw response was:', rawResponse);
+
+        // Attempt to salvage truncated JSON by extracting complete nodes
+        try {
+          console.log('🔧 Attempting to salvage truncated JSON...');
+          let salvaged = rawResponse.trim();
+          if (salvaged.startsWith('```json')) {
+            salvaged = salvaged.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
+          } else if (salvaged.startsWith('```')) {
+            salvaged = salvaged.replace(/^```\s*\n/, '').replace(/\n```$/, '');
+          }
+
+          // Extract nexusTitle and nexusContent
+          const titleMatch = salvaged.match(/"nexusTitle"\s*:\s*"([^"]+)"/);
+          const contentMatch = salvaged.match(/"nexusContent"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+          const nexusTitle = titleMatch ? titleMatch[1] : 'Generated Universe';
+          const nexusContent = contentMatch ? contentMatch[1] : nexusTitle;
+
+          // Extract all complete top-level node objects from the "nodes" array
+          const nodesStart = salvaged.indexOf('"nodes"');
+          if (nodesStart === -1) throw new Error('No nodes array found');
+
+          // Find complete doctrine-level objects: {"content": ..., "nodeType": "doctrine", "children": [...]}
+          const completeNodes: any[] = [];
+          const nodeRegex = /\{"content"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"nodeType"\s*:\s*"doctrine"\s*,\s*"children"\s*:\s*\[(?:[^\[\]]*|\[(?:[^\[\]]*|\[[^\[\]]*\])*\])*\]\s*\}/g;
+          let match;
+          while ((match = nodeRegex.exec(salvaged)) !== null) {
+            try {
+              const parsed = JSON.parse(match[0]);
+              completeNodes.push(parsed);
+            } catch { /* skip incomplete */ }
+          }
+
+          if (completeNodes.length > 0) {
+            console.log(`🔧 Salvaged ${completeNodes.length} complete doctrine nodes from truncated response`);
+            return NextResponse.json({
+              response: `Generated universe for: ${userTopic} (${completeNodes.length} doctrines recovered from truncated response)`,
+              spatialData: { nexusTitle, nexusContent, nodes: completeNodes }
+            });
+          }
+        } catch (salvageError) {
+          console.error('🔧 Salvage also failed:', salvageError);
+        }
+
         return NextResponse.json(
           { error: 'Failed to parse universe structure from AI' },
           { status: 500 }
