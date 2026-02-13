@@ -165,6 +165,7 @@ export default function ChatInterface() {
       ...canvasStore,
     };
 
+    console.log('📨 [handleSendMessage] Routing:', { isDoctrinalMode, gapModeEnabled, isSpatialMode, isFirstMessage });
     if (isDoctrinalMode) {
       handleDoctrinalMode({ ...messageHandlerArgs, ruleName });
     } else if (gapModeEnabled && !isSpatialMode) {

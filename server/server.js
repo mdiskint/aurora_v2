@@ -22,7 +22,7 @@ const io = socketIo(server, {
   }
 });
 
-app.use(cors());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 const anthropic = new Anthropic({

@@ -348,6 +348,7 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
         : messagesForAPI;
 
     try {
+        console.log('🚀 [handleStandardMode] Sending fetch to /api/chat...', { isSpatialMode, isFirstMessage });
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {
@@ -503,7 +504,8 @@ export async function handleStandardMode(args: MessageHandlerArgs) {
                 selectNode(newNodeId, true);
             }
         }
-    } catch {
+    } catch (err) {
+        console.error('❌ [handleStandardMode] Error:', err);
         setError('Failed to send message. Make sure the server is running.');
     } finally {
         setIsLoading(false);

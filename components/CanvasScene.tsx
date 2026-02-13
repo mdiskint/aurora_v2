@@ -1863,7 +1863,7 @@ export default function CanvasScene() {
 
   useEffect(() => {
     console.log('🔵 useEffect running, attempting connection...');
-    const socket = io('http://localhost:3001');
+    const socket = io(process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001');
 
     socket.on('connect', () => {
       console.log('🟢 Connected to WebSocket server');
