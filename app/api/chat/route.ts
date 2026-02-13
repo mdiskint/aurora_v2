@@ -298,101 +298,14 @@ ${input}`;
         console.log('🏛️ Nexus title:', nexusTitle);
         parsedNodes.forEach((n, i) => console.log(`📦 Node ${i}: depth=${n.depth}, parentIndex=${n.parentIndex}, content="${n.content.substring(0, 60)}"`));
 
-        console.log('🔍 Smart enriching nodes (universe-first, web-fallback)...');
+        console.log('📦 Manual hierarchy mode — using raw content for all nodes (no enrichment)');
 
-        // Build universe context from conversation context + sibling nodes
-        const universeContext = conversationContext || '';
-        const siblingContext = parsedNodes
-          .map(n => `- ${n.content.substring(0, 200)}`)
-          .join('\n');
+        const enrichedNodes = parsedNodes.map(({ content, depth: perNodeDepth, parentIndex }, idx) => {
+          console.log(`   ✅ Node ${idx}: depth=${perNodeDepth}, parentIndex=${parentIndex}, raw content`);
+          return { content, depth: perNodeDepth, parentIndex };
+        });
 
-        const enrichedNodes = await Promise.all(
-          parsedNodes.map(async ({ content, depth: perNodeDepth, parentIndex }, idx) => {
-            // L1 nodes (depth 1): raw content, no enrichment
-            if (perNodeDepth <= 1) {
-              console.log(`   ⏭️ Node ${idx}: skipped (L1 raw content, depth=${perNodeDepth})`);
-              return { content, depth: perNodeDepth, parentIndex };
-            }
-
-            // L2+: Smart enrichment - check universe first, web search as fallback
-            console.log(`   🧠 Node ${idx}: Checking if universe has sufficient info...`);
-
-            // Ask Gemini Flash if universe context is sufficient
-            let needsWebSearch = false;
-            try {
-              const checkPrompt = `You are checking if existing knowledge is sufficient to explain a topic.
-
-TOPIC TO EXPLAIN: "${content}"
-
-AVAILABLE UNIVERSE KNOWLEDGE:
-${universeContext.substring(0, 3000)}
-
-SIBLING TOPICS:
-${siblingContext}
-
-Question: Does the universe knowledge above contain SUFFICIENT information to thoroughly explain "${content.substring(0, 100)}"?
-
-Answer with ONLY one word: YES or NO
-- YES = universe has enough info (definitions, examples, context)
-- NO = need external web search for more information`;
-
-              const checkResult = await callGeminiFlash(checkPrompt);
-              needsWebSearch = checkResult.trim().toUpperCase().includes('NO');
-              console.log(`   🧠 Node ${idx}: Universe sufficient? ${needsWebSearch ? 'NO → web search' : 'YES → universe only'}`);
-            } catch (error: any) {
-              console.log(`   ⚠️ Node ${idx}: Check failed, defaulting to web search`);
-              needsWebSearch = true;
-            }
-
-            // Fetch web context if needed
-            let webContext = '';
-            if (needsWebSearch) {
-              const searchQuery = content.substring(0, 200) + ' ' + nexusTitle;
-              console.log(`   🔎 Node ${idx} searching:`, searchQuery.substring(0, 80));
-              webContext = await searchWeb(searchQuery);
-              console.log(`   📄 Node ${idx} search returned ${webContext.length} chars`);
-            }
-
-            // Build enrichment prompt
-            const enrichPrompt = `You are enriching a node in a learning universe.
-
-Universe Topic: "${nexusTitle}"
-
-THIS NODE's raw content:
-"${content}"
-
-UNIVERSE KNOWLEDGE (PRIMARY SOURCE - use this first):
-${universeContext.substring(0, 2000)}
-
-SIBLING NODES in the same universe:
-${siblingContext}
-${webContext ? `\nWEB RESEARCH (SECONDARY SOURCE - use to fill gaps not covered by universe knowledge):\n${webContext}\n` : ''}
-Your task: Expand and enrich this node's content by:
-1. Adding depth and detail to the core concept (2-3 paragraphs)
-2. Referencing connections to sibling nodes where relevant
-3. ${webContext ? 'Incorporating web research ONLY for info not in universe knowledge' : 'Using universe knowledge as your primary source'}
-4. Adding concrete examples or applications
-
-Return ONLY the enriched content text. No JSON, no formatting instructions, no preamble.`;
-
-            try {
-              const response = await safeAICall(anthropic, openai, {
-                max_tokens: 1500,
-                messages: [{ role: 'user', content: enrichPrompt }],
-                system: 'You are an expert educator enriching learning content. Prioritize universe knowledge over web sources. Add depth, cross-references to sibling topics, and concrete examples. Be concise but substantive.',
-              }, 'high');
-
-              const enriched = response.content?.[0]?.type === 'text'
-                ? response.content[0].text
-                : content;
-              console.log(`   ✅ Node ${idx} enriched (${enriched.length} chars, web=${needsWebSearch})`);
-              return { content: enriched || content, depth: perNodeDepth, parentIndex };
-            } catch (error: any) {
-              console.error(`   ❌ Node ${idx} enrichment failed:`, error.message);
-              return { content, depth: perNodeDepth, parentIndex };
-            }
-          })
-        );
+        // No enrichment for manual mode — user provided the content directly
 
         const spatialData = {
           nexusTitle: nexusTitle.substring(0, 50),
