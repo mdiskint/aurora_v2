@@ -151,14 +151,16 @@ export async function POST(request: NextRequest) {
 
         console.log('[Smart Paste] Detected structured input, preprocessing with Gemini Flash...');
 
-        const preprocessPrompt = `You are a document structure extractor. Given the following text, identify the major sections and convert them into ** delimited format.
+        const preprocessPrompt = `You are a document structure extractor. Given the following text, identify the major sections and convert them into * delimited hierarchical format.
 
 RULES:
-1. Each ** section should be a major topic/header (like case names, chapter titles, or main concepts)
-2. Include the section's content (bullet points, sub-points, explanations) as text after the ** title line
-3. Do NOT add any information — only reorganize what's there
-4. Preserve all bullet points, sub-bullets, and indentation within each section
-5. Output ONLY the ** formatted text, nothing else (no explanations, no markdown code blocks)
+1. First line must be exactly: **
+2. Second line: *Overall Title (the broad topic)
+3. Each major section: *Section Name
+4. Sub-sections use more stars: **Sub-topic, ***Deep detail
+5. Do NOT add any information — only reorganize what's there
+6. Preserve all bullet points, sub-points, and explanations within each section
+7. Output ONLY the formatted text, nothing else (no explanations, no markdown code blocks)
 
 EXAMPLE INPUT:
 Loving v. Virginia (1967)
@@ -170,13 +172,14 @@ Brown v. Board (1954)
 • Holding: Separate is inherently unequal
 
 EXAMPLE OUTPUT:
-**Loving v. Virginia (1967)
-• Issue: Can Virginia prohibit interracial marriage?
-• Holding: No, this violates Equal Protection
-
-**Brown v. Board (1954)
-• Issue: Is school segregation constitutional?
-• Holding: Separate is inherently unequal
+**
+*Landmark Civil Rights Cases
+*Loving v. Virginia (1967)
+**Issue: Can Virginia prohibit interracial marriage?
+**Holding: No, this violates Equal Protection
+*Brown v. Board (1954)
+**Issue: Is school segregation constitutional?
+**Holding: Separate is inherently unequal
 
 NOW PROCESS THIS TEXT:
 ${input}`;
@@ -185,12 +188,12 @@ ${input}`;
           const formatted = await callGeminiFlash(preprocessPrompt);
           console.log('[Smart Paste] Gemini Flash returned:', formatted.substring(0, 200) + '...');
 
-          // Validate output has ** markers
-          if (formatted.includes('**')) {
+          // Validate output has * markers (new hierarchical format or legacy **)
+          if (formatted.includes('*')) {
             console.log('[Smart Paste] ✅ Preprocessing successful');
             return formatted.trim();
           } else {
-            console.log('[Smart Paste] ⚠️ Output missing ** markers, using original input');
+            console.log('[Smart Paste] ⚠️ Output missing * markers, using original input');
             return input;
           }
         } catch (error: any) {
@@ -205,19 +208,35 @@ ${input}`;
       console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
 
 
-      // 🔍 CHECK FOR HIERARCHICAL MANUAL MODE: First non-empty line is exactly "**"
+      // 🔍 CHECK FOR MANUAL MODE: Either new hierarchical (**\n*Title) or legacy flat (**Title)
       // Skip manual mode for atomize requests — always use AI to break down content
       const lines = userTopic.split('\n');
       const firstNonEmptyLine = lines.find(l => l.trim() !== '')?.trim();
       const isManualHierarchy = !atomize && firstNonEmptyLine === '**';
+      const isLegacyManual = !atomize && !isManualHierarchy && firstNonEmptyLine?.startsWith('**');
+      const isManualMode = isManualHierarchy || isLegacyManual;
 
-      if (isManualHierarchy) {
-        console.log('✋ HIERARCHICAL MANUAL MODE: Parsing * depth lines');
+      if (isManualMode) {
+        console.log(`✋ MANUAL MODE (${isLegacyManual ? 'legacy **Topic' : 'hierarchical *depth'}): Parsing`);
         console.log('📝 Raw input:', userTopic);
 
-        // Parse lines after the ** trigger
-        const triggerIndex = lines.findIndex(l => l.trim() === '**');
-        const contentLines = lines.slice(triggerIndex + 1).filter(l => l.trim() !== '');
+        let contentLines: string[];
+        if (isManualHierarchy) {
+          // New format: ** trigger line, then *depth lines
+          const triggerIndex = lines.findIndex(l => l.trim() === '**');
+          contentLines = lines.slice(triggerIndex + 1).filter(l => l.trim() !== '');
+        } else {
+          // Legacy format: **Topic1\n**Topic2 — convert to *Topic (depth 1 each)
+          contentLines = lines
+            .filter(l => l.trim() !== '')
+            .map(l => {
+              const trimmed = l.trim();
+              if (trimmed.startsWith('**')) {
+                return '*' + trimmed.slice(2); // **Topic → *Topic (depth 1)
+              }
+              return l;
+            });
+        }
 
         // Parse each line: count leading * characters for depth
         const parsedLines: { content: string; starCount: number }[] = [];
