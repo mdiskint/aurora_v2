@@ -135,9 +135,10 @@ export async function POST(request: NextRequest) {
 
       // 🧠 SMART PASTE: Preprocess structured text without ** markers into ** format
       async function preprocessStructuredInput(input: string): Promise<string> {
-        // If already has ** markers, return as-is
-        if (input.includes('**')) {
-          console.log('[Smart Paste] Input already has ** markers, skipping preprocessing');
+        // If first line starts with * (manual hierarchy mode), skip preprocessing
+        const firstLine = input.split('\n').find(l => l.trim() !== '')?.trim() || '';
+        if (/^\*+\S/.test(firstLine)) {
+          console.log('[Smart Paste] Input has * manual markers, skipping preprocessing');
           return input;
         }
 
@@ -215,46 +216,31 @@ ${input}`;
       console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
 
 
-      // 🔍 CHECK FOR MANUAL MODE: Either new hierarchical (**\n*Title) or legacy flat (**Title)
-      // Skip manual mode for atomize requests — always use AI to break down content
+      // 🔍 CHECK FOR MANUAL MODE: First non-empty line starts with *Title
+      // First * line = nexus title, subsequent * = L1, ** = L2, *** = L3
+      // Non-* lines between markers = content for the preceding node
       const lines = userTopic.split('\n');
-      const firstNonEmptyLine = lines.find(l => l.trim() !== '')?.trim();
-      const isManualHierarchy = !atomize && firstNonEmptyLine === '**';
-      const isLegacyManual = !atomize && !isManualHierarchy && firstNonEmptyLine?.startsWith('**');
-      const isManualMode = isManualHierarchy || isLegacyManual;
+      const firstNonEmptyLine = lines.find(l => l.trim() !== '')?.trim() || '';
+      const isManualMode = !atomize && /^\*+\S/.test(firstNonEmptyLine);
 
       if (isManualMode) {
-        console.log(`✋ MANUAL MODE (${isLegacyManual ? 'legacy **Topic' : 'hierarchical *depth'}): Parsing`);
-        console.log('📝 Raw input:', userTopic);
+        console.log('✋ MANUAL MODE: Parsing * hierarchy');
+        console.log('📝 Raw input (first 500):', userTopic.substring(0, 500));
 
-        let contentLines: string[];
-        if (isManualHierarchy) {
-          // New format: ** trigger line, then *depth lines
-          const triggerIndex = lines.findIndex(l => l.trim() === '**');
-          contentLines = lines.slice(triggerIndex + 1).filter(l => l.trim() !== '');
-        } else {
-          // Legacy format: **Topic1\n**Topic2 — convert to *Topic (depth 1 each)
-          contentLines = lines
-            .filter(l => l.trim() !== '')
-            .map(l => {
-              const trimmed = l.trim();
-              if (trimmed.startsWith('**')) {
-                return '*' + trimmed.slice(2); // **Topic → *Topic (depth 1)
-              }
-              return l;
-            });
-        }
-
-        // Parse each line: count leading * characters for depth
-        const parsedLines: { content: string; starCount: number }[] = [];
-        for (const line of contentLines) {
+        // Parse lines: *-prefixed lines start new nodes, other lines append as content
+        const parsedLines: { title: string; content: string; starCount: number }[] = [];
+        for (const line of lines) {
           const trimmed = line.trim();
-          const starMatch = trimmed.match(/^(\*+)\s*(.*)/);
-          if (!starMatch) continue; // skip lines without * prefix
-          const starCount = starMatch[1].length;
-          const content = starMatch[2].trim();
-          if (!content) continue; // skip lines with only stars
-          parsedLines.push({ content, starCount });
+          const starMatch = trimmed.match(/^(\*+)(\S.*)/);
+          if (starMatch) {
+            // New node boundary
+            const starCount = starMatch[1].length;
+            const title = starMatch[2].trim();
+            parsedLines.push({ title, content: title, starCount });
+          } else if (parsedLines.length > 0 && trimmed !== '') {
+            // Append to current node's content
+            parsedLines[parsedLines.length - 1].content += '\n' + trimmed;
+          }
         }
 
         if (parsedLines.length < 2) {
@@ -266,8 +252,8 @@ ${input}`;
         }
 
         // First * line = nexus title
-        const nexusTitle = parsedLines[0].content;
-        const nexusContent = nexusTitle;
+        const nexusTitle = parsedLines[0].title;
+        const nexusContent = parsedLines[0].content;
         const nodeLines = parsedLines.slice(1);
 
         // Build nodes with parentIndex using depthStack

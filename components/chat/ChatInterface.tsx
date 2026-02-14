@@ -119,8 +119,8 @@ export default function ChatInterface() {
 
     const userMessage = message.trim();
 
-    // Detect spatial mode: either ** markers OR bullet/numbered list with 2+ items
-    const hasManualMarkers = userMessage.split('\n').find(l => l.trim() !== '')?.trim() === '**';
+    // Detect spatial mode: first line starts with *Title (manual hierarchy — first * = nexus title) OR bullet list
+    const hasManualMarkers = /^\*+\S/.test(userMessage.split('\n').find(l => l.trim() !== '')?.trim() || '');
     const hasBulletList = (() => {
       const lines = userMessage.split('\n');
       // List patterns at column 0: -, •, ➢, ▪, ○, or 1., 2., A., B. etc.
