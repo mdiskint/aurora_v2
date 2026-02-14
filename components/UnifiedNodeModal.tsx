@@ -1833,6 +1833,30 @@ Be conversational and human, not formulaic.`;
   };
 
   // 📝 MULTIPLE CHOICE QUIZ
+  // Gather all descendant content from a nexus or connection node
+  const gatherUniverseContent = (rootId: string): string => {
+    const parts: string[] = [];
+    const visited = new Set<string>();
+
+    const collectChildren = (nodeId: string) => {
+      if (visited.has(nodeId)) return;
+      visited.add(nodeId);
+      const n = nodes[nodeId];
+      if (!n) return;
+      if (n.content) parts.push(n.content);
+      if (n.children) n.children.forEach(collectChildren);
+    };
+
+    // Collect from all nodes whose parentId matches rootId
+    Object.values(nodes).forEach(n => {
+      if (n.parentId === rootId && !visited.has(n.id)) {
+        collectChildren(n.id);
+      }
+    });
+
+    return parts.join('\n\n---\n\n');
+  };
+
   const handleStartMultipleChoice = async () => {
     if (!selectedId) return;
 
@@ -1841,7 +1865,17 @@ Be conversational and human, not formulaic.`;
     setIsLoadingAI(true);
 
     try {
-      const contextContent = displayContent;
+      // Nexus or connection node → quiz on all children; regular node → quiz on just that node
+      let contextContent: string;
+      if (nexus) {
+        console.log('📝 Quiz from NEXUS — gathering all child content');
+        contextContent = gatherUniverseContent(nexus.id);
+      } else if (node?.isConnectionNode) {
+        console.log('📝 Quiz from CONNECTION NODE — gathering all connected content');
+        contextContent = displayContent || '';
+      } else {
+        contextContent = displayContent || '';
+      }
 
       // 🚀 OPTIMIZATION: Generate first question immediately, then queue the rest
       const generateQuestion = async (questionNumber: number) => {
