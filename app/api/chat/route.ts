@@ -51,9 +51,16 @@ async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, com
 
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    console.log('🔐 Checking auth session...');
+    try {
+      const session = await getServerSession(authOptions);
+      console.log('🔐 Session result:', session ? 'authenticated' : 'no session');
+      if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    } catch (authError: any) {
+      console.error('🔐 Auth check failed:', authError.message);
+      return NextResponse.json({ error: 'Auth check failed' }, { status: 500 });
     }
   }
 
