@@ -190,10 +190,10 @@ app.post('/api/chat', async (req, res) => {
         }
       }
 
-      console.log('🔄 Trying Anthropic (claude-opus-4-5-20251101)...');
+      console.log('🔄 Trying Anthropic (claude-opus-4-7)...');
       try {
         response = await anthropic.messages.create({
-          model: 'claude-opus-4-5-20251101',
+          model: 'claude-opus-4-7',
           max_tokens: 1024,
           system: systemPrompt,
           messages: messages

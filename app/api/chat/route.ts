@@ -9,19 +9,31 @@ import { searchWeb } from '@/lib/search';
 export const maxDuration = 300;
 
 const MODEL_CONFIG = {
-  high: { anthropic: 'claude-opus-4-5-20251101', openai: 'gpt-4o' },
-  mid: { anthropic: 'claude-sonnet-4-5-20250929', openai: 'gpt-4o' },
-  low: { anthropic: 'claude-haiku-4-5-20251001', openai: 'gpt-4o-mini' },
+  high: { anthropic: 'claude-opus-4-7', openai: 'gpt-4o' },
+  mid: { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o' },
+  low: { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' },
 };
 
 async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
   const modelToUse = MODEL_CONFIG[complexity];
-  const currentParams = { ...params, model: modelToUse.anthropic };
+
+  // Cache the system prompt — stable across requests in each mode, so repeat
+  // calls with the same mode read instead of re-paying full input cost.
+  // Silently no-ops when the prefix is below the model's cache minimum.
+  const systemBlocks = typeof params.system === 'string'
+    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
+    : params.system;
+
+  const currentParams = { ...params, system: systemBlocks, model: modelToUse.anthropic };
 
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       console.log(`🤖 Attempting Anthropic call (${complexity} tier: ${modelToUse.anthropic})...`);
-      return await anthropic.messages.create(currentParams);
+      const response = await anthropic.messages.create(currentParams);
+      if (response.usage) {
+        console.log(`💾 Cache: read=${response.usage.cache_read_input_tokens ?? 0} write=${response.usage.cache_creation_input_tokens ?? 0} input=${response.usage.input_tokens}`);
+      }
+      return response;
     } catch (error: any) {
       console.error('❌ Anthropic failed:', error.message);
       if (!process.env.OPENAI_API_KEY) throw error;
