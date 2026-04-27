@@ -31,7 +31,7 @@ async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, com
       console.log(`🤖 Attempting Anthropic call (${complexity} tier: ${modelToUse.anthropic})...`);
       const response = await anthropic.messages.create(currentParams);
       if (response.usage) {
-        console.log(`💾 Cache: read=${response.usage.cache_read_input_tokens ?? 0} write=${response.usage.cache_creation_input_tokens ?? 0} input=${response.usage.input_tokens}`);
+        console.log(`💾 Cache: read=${response.usage.cache_read_input_tokens ?? 0} write=${response.usage.cache_creation_input_tokens ?? 0} input=${response.usage.input_tokens} output=${response.usage.output_tokens}`);
       }
       return response;
     } catch (error: any) {
