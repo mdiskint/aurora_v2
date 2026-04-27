@@ -1,15 +1,29 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleGenAI, createUserContent, createPartFromUri } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 
-// Legacy SDK client (used by callGemini for inline data)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+let _genAI: GoogleGenerativeAI | null = null;
+let _ai: GoogleGenAI | null = null;
 
-// New SDK client (used by File API)
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+function getGenAI(): GoogleGenerativeAI {
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not set');
+    }
+    if (!_genAI) _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    return _genAI;
+}
+
+function getAi(): GoogleGenAI {
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not set');
+    }
+    if (!_ai) _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    return _ai;
+}
 
 // Legacy: inline base64 data (kept for backward compatibility with small files)
 export async function callGemini(prompt: string, systemPrompt?: string, mediaData?: { mimeType: string; data: string }) {
-    const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' });
+    const model = getGenAI().getGenerativeModel({ model: 'gemini-3-pro-preview' });
 
     const parts: any[] = [];
 
@@ -42,6 +56,7 @@ export async function callGeminiWithFileAPI(
 ): Promise<string> {
     // 1. Upload file to Gemini File API
     console.log('📤 Uploading file to Gemini File API...');
+    const ai = getAi();
     const uploadedFile = await ai.files.upload({
         file: filePath,
         config: { mimeType },
@@ -83,21 +98,30 @@ export async function callGeminiWithFileAPI(
     return response.text || '';
 }
 
-// Fast preprocessing with Gemini Flash for structured text conversion
+// Fast preprocessing for structured text conversion. Uses Gemini Flash if a
+// GEMINI_API_KEY is set; otherwise falls back to Anthropic Haiku so the app
+// works on Anthropic alone.
 export async function callGeminiFlash(prompt: string, systemPrompt?: string): Promise<string> {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-    const parts: any[] = [];
-
-    if (systemPrompt) {
-        parts.push({ text: `System: ${systemPrompt}\n\n` });
+    if (process.env.GEMINI_API_KEY) {
+        const model = getGenAI().getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const parts: any[] = [];
+        if (systemPrompt) parts.push({ text: `System: ${systemPrompt}\n\n` });
+        parts.push({ text: prompt });
+        const result = await model.generateContent(parts);
+        const response = await result.response;
+        return response.text();
     }
 
-    parts.push({ text: prompt });
-
-    const result = await model.generateContent(parts);
-    const response = await result.response;
-    return response.text();
+    if (!process.env.ANTHROPIC_API_KEY) {
+        throw new Error('Neither GEMINI_API_KEY nor ANTHROPIC_API_KEY is set');
+    }
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages: [{ role: 'user', content: prompt }],
+    });
+    const block = message.content[0];
+    return block.type === 'text' ? block.text : '';
 }
-
-export { genAI, ai };
