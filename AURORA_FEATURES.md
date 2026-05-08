@@ -37,7 +37,6 @@ AURORA V2 - COMPREHENSIVE FEATURE AND CAPABILITIES LIST
    - Universe deletion and renaming
    - Backup and recovery functionality
    - Folder creation, renaming, deletion
-   - Universe activation for GAP mode analysis
    - "Atomize" feature to break universes into individual nodes
    - Universe sharing metadata tracking
 
@@ -66,10 +65,6 @@ AURORA V2 - COMPREHENSIVE FEATURE AND CAPABILITIES LIST
    - **grade-application-essay**: Grade submitted essays
    - **grade-essay-basic**: Simple essay grading
    - **essay-question**: Generate essay questions
-   - **gap-analyze**: Graph Analysis Protocol - analyze single universe
-   - **gap-parallel**: GAP - parallel analysis of multiple topics
-   - **gap-single**: GAP - single focused analysis
-   - **gap-synthesize**: GAP - cross-universe synthesis
    - **doctrine**: Generate legal doctrine analysis
    - Manual spatial mode with ** delimiter syntax
 
@@ -115,15 +110,6 @@ AURORA V2 - COMPREHENSIVE FEATURE AND CAPABILITIES LIST
 **Application Lab**:
 - isApplicationLabMode: boolean
 - applicationLabAnalysis: detailed analysis object
-
-**Memory Palace**:
-- isMemoryPalaceMode: boolean
-- memoryPalaceIndex: current node index
-- isTransitioning: animation state
-
-**GAP Mode** (Graph Analysis Protocol):
-- activatedUniverseIds: string[] (max 5 universes for synthesis)
-- maxActivatedUniverses: number
 
 **Collaboration**:
 - activatedConversations: Nexus[]
@@ -222,19 +208,6 @@ AURORA V2 - COMPREHENSIVE FEATURE AND CAPABILITIES LIST
 ### Snapshots & Reverting
 - **createSnapshot(universeId)**: Save current state as snapshot
 - **revertToOriginal(universeId)**: Restore to original creation state
-
-### GAP Mode (Graph Analysis Protocol)
-- **activateUniverse(universeId)**: Activate universe for cross-analysis (max 5)
-- **deactivateUniverse(universeId)**: Remove from active analysis set
-- **clearActivatedUniverses()**: Reset activated set
-- **isUniverseActivated(universeId)**: Check if universe is active
-
-### Memory Palace (Mnemonic Method)
-- **toggleMemoryPalaceMode()**: Enter/exit spatial memory palace mode
-- **navigateToNextNode()**: Walk to next node in sequence
-- **navigateToPreviousNode()**: Walk to previous node
-- **setMemoryPalaceIndex(index)**: Jump to specific node
-- **setIsTransitioning(isTransitioning)**: Track walk animation
 
 ### Application Lab
 - **enableApplicationLabMode()**: Enter application scenario testing
@@ -381,14 +354,6 @@ AURORA V2 - COMPREHENSIVE FEATURE AND CAPABILITIES LIST
 - Scenario-based learning
 - Essay submission and grading
 - Rubric-based evaluation
-
-**Graph Analysis Protocol (GAP)**:
-- **gap-analyze**: Single universe deep analysis
-- **gap-parallel**: Parallel analysis of multiple topics
-- **gap-single**: Focused single-axis analysis
-- **gap-synthesize**: Cross-universe connection finding
-- Supports up to 5 activated universes simultaneously
-- Compression of node data for efficiency
 
 **Specialized Modes**:
 - **doctrine**: Legal doctrine generation and case law mapping
@@ -563,22 +528,6 @@ Each node can have quizProgress object:
 - Universe metadata tracking
 - Archive vs active state
 
-### Memory Palace (Mnemonic Method)
-
-**Layout Generation** (memoryPalaceLayout.ts):
-- Traverses conversation tree in depth-first order
-- Creates "house" with connected rooms
-- Each node = room center point
-- Path-following snake pattern layout
-- Room types: small, compact, medium, large, grand, long, wide
-- Colored walls per room with doorways
-
-**Navigation**:
-- Forward/backward traversal through sequence
-- Smooth walking transitions
-- Visual markers and signposts
-- Mnemonic encoding of information
-
 ### Backup & Recovery
 
 **Backup System**:
@@ -675,12 +624,6 @@ Each node can have quizProgress object:
 - getDisplayTitle(): Safe title with fallback
 - Node type icons and colors
 
-### Memory Palace Layout (lib/memoryPalaceLayout.ts)
-- generateMemoryPalaceLayout(): Create palace structure
-- traverseTree(): Depth-first node ordering
-- Fibonacci sphere distribution
-- Seeded random for reproducible layouts
-
 ### Database Functions (lib/db.ts)
 - listBackups(): Get all backup metadata
 - restoreBackup(id): Restore backup data
@@ -719,12 +662,6 @@ Each node can have quizProgress object:
   - Revert to original option
 
 ### Special Modes
-- **MemoryPalaceScene.tsx** (629 lines): Mnemonic palace visualization
-  - House room rendering
-  - Wall visualization
-  - Walking navigation
-  - Room transitions
-
 - **ApplicationLabScene.tsx** (929 lines): Learning scenario mode
   - Scenario analysis
   - Essay generation and grading
@@ -750,7 +687,6 @@ Each node can have quizProgress object:
 
 - **ChatInterface.tsx** (1301 lines): Main chat UI
   - Message input and sending
-  - GAP mode integration
   - Doctrinal generation
   - Spatial navigation
   - Conversation history
@@ -775,30 +711,9 @@ Each node can have quizProgress object:
   - JSON file input
   - Paper loading
 
-- **MemoryPalaceTransition.tsx** (238 lines): Walking animations
-  - Scene transitions
-  - Room entry/exit effects
-  - Smooth navigation
-
 ---
 
 ## SPECIAL FEATURES & ADVANCED MODES
-
-### Graph Analysis Protocol (GAP)
-
-**Purpose**: Deep analysis of complex knowledge domains with optional cross-universe synthesis
-
-**Modes**:
-1. **gap-analyze**: Analyze single loaded universe
-2. **gap-parallel**: Parallel analysis of multiple selected topics
-3. **gap-single**: Focused single-axis analysis
-4. **gap-synthesize**: Cross-universe connection synthesis (requires 2+ universes)
-
-**Capabilities**:
-- Supports up to 5 simultaneously activated universes
-- Full node data (no compression) for cross-universe analysis
-- Synthesis mode detects non-obvious connections
-- Generates new synthesis universe connecting insights
 
 ### Doctrinal Generation (Legal Analysis)
 

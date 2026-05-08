@@ -525,16 +525,6 @@ interface CanvasStore {
 
   getL1Nodes: (universeId: string) => Node[];
 
-  // 🏛️ MEMORY PALACE MODE
-  isMemoryPalaceMode: boolean;
-  memoryPalaceCurrentIndex: number;
-  isTransitioning: boolean;
-  toggleMemoryPalaceMode: () => void;
-  navigateToNextNode: () => void;
-  navigateToPreviousNode: () => void;
-  setMemoryPalaceIndex: (index: number) => void;
-  setIsTransitioning: (isTransitioning: boolean) => void;
-
   // 🔬 APPLICATION LAB MODE
   isApplicationLabMode: boolean;
   toggleApplicationLabMode: () => void;
@@ -563,11 +553,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   // 📸 ORIGINAL SNAPSHOTS - Start with no snapshots
   originalSnapshots: {},
-
-  // 🏛️ MEMORY PALACE MODE
-  isMemoryPalaceMode: false,
-  memoryPalaceCurrentIndex: 0,
-  isTransitioning: false,
 
   // 🔬 APPLICATION LAB MODE
   isApplicationLabMode: false,
@@ -4563,68 +4548,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
     console.log('🔬 Found', l1Nodes.length, 'L1 nodes in universe', universeId);
     return l1Nodes;
-  },
-
-  // 🏛️ MEMORY PALACE MODE FUNCTIONS
-  toggleMemoryPalaceMode: () => {
-    const state = get();
-    const newMode = !state.isMemoryPalaceMode;
-    console.log(`🏛️ Memory Palace Mode: ${newMode ? 'ENABLED' : 'DISABLED'}`);
-
-    if (newMode) {
-      // Entering Memory Palace: Start transition animation
-      set({ isTransitioning: true });
-
-      // After 2 seconds, complete transition
-      setTimeout(() => {
-        set({
-          isMemoryPalaceMode: true,
-          memoryPalaceCurrentIndex: 0,
-          isTransitioning: false
-        });
-      }, 2000);
-    } else {
-      // Exiting Memory Palace: Instant switch (or could add exit animation)
-      set({
-        isMemoryPalaceMode: false,
-        memoryPalaceCurrentIndex: 0
-      });
-    }
-  },
-
-  setIsTransitioning: (isTransitioning: boolean) => {
-    set({ isTransitioning });
-  },
-
-  navigateToNextNode: () => {
-    const state = get();
-    const totalNodes = Object.keys(state.nodes).length;
-
-    if (totalNodes === 0) return;
-
-    const nextIndex = (state.memoryPalaceCurrentIndex + 1) % totalNodes;
-    console.log(`🏛️ Navigating to next node: ${nextIndex} / ${totalNodes}`);
-
-    set({ memoryPalaceCurrentIndex: nextIndex });
-  },
-
-  navigateToPreviousNode: () => {
-    const state = get();
-    const totalNodes = Object.keys(state.nodes).length;
-
-    if (totalNodes === 0) return;
-
-    const prevIndex = state.memoryPalaceCurrentIndex === 0
-      ? totalNodes - 1
-      : state.memoryPalaceCurrentIndex - 1;
-
-    console.log(`🏛️ Navigating to previous node: ${prevIndex} / ${totalNodes}`);
-
-    set({ memoryPalaceCurrentIndex: prevIndex });
-  },
-
-  setMemoryPalaceIndex: (index: number) => {
-    set({ memoryPalaceCurrentIndex: index });
   },
 
   // 🔬 APPLICATION LAB MODE FUNCTIONS
