@@ -232,19 +232,20 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
         style={{
           backgroundColor: '#1e293b',
           borderRadius: '16px',
-          padding: '32px',
           maxWidth: '500px',
           width: '90%',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          overflowX: 'hidden',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column' as const,
           color: 'white',
           border: '2px solid rgba(147, 51, 234, 0.5)',
+          overflow: 'hidden',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {!exportSuccess ? (
           <>
+            <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '32px', paddingBottom: '16px', flex: 1 }}>
             <h2 style={{ fontSize: '24px', marginBottom: '8px', color: '#FFD700' }}>
               📄 Export Astryon Universe
             </h2>
@@ -441,8 +442,9 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
               </div>
             </div>
 
-            {/* Buttons */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            </div>
+            {/* Buttons — fixed at bottom */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', padding: '16px 32px 32px', borderTop: '1px solid rgba(148, 163, 184, 0.2)', flexShrink: 0 }}>
               <button
                 onClick={onClose}
                 disabled={isExporting}

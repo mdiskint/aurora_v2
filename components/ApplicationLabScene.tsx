@@ -81,11 +81,11 @@ export default function ApplicationLabScene({ children }: ApplicationLabScenePro
 TOPICS:
 ${analysis.topics.map(t => `- ${t.name}: ${t.description}`).join('\n')}
 
-CASES:
-${analysis.cases.map(c => `- ${c.name}: ${c.summary}`).join('\n')}
+EXAMPLES:
+${analysis.examples.map(e => `- ${e.name}: ${e.summary}`).join('\n')}
 
-DOCTRINES:
-${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
+PRINCIPLES:
+${analysis.principles.map(p => `- ${p.name}: ${p.explanation}`).join('\n')}
 `;
 
       const response = await fetch('/api/chat', {
@@ -218,7 +218,7 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
 
     <div class="metadata">
         <strong>Analysis Date:</strong> ${new Date(analysis.analyzedAt || Date.now()).toLocaleString()}<br>
-        <strong>Total Items:</strong> ${analysis.topics.length + analysis.cases.length + analysis.doctrines.length}
+        <strong>Total Items:</strong> ${analysis.topics.length + analysis.examples.length + analysis.principles.length}
     </div>
 
     <h2>📚 Topics <span class="count">${analysis.topics.length}</span></h2>
@@ -229,21 +229,21 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
     </div>
     `).join('') : '<p><em>No topics found</em></p>'}
 
-    <h2>⚖️ Cases <span class="count">${analysis.cases.length}</span></h2>
-    ${analysis.cases.length > 0 ? analysis.cases.map(case_ => `
-    <div class="item case">
-        <div class="item-title">${case_.name}</div>
-        <div class="item-content">${case_.summary}</div>
+    <h2>🔍 Examples <span class="count">${analysis.examples.length}</span></h2>
+    ${analysis.examples.length > 0 ? analysis.examples.map(example => `
+    <div class="item example">
+        <div class="item-title">${example.name}</div>
+        <div class="item-content">${example.summary}</div>
     </div>
-    `).join('') : '<p><em>No cases found</em></p>'}
+    `).join('') : '<p><em>No examples found</em></p>'}
 
-    <h2>📖 Doctrines <span class="count">${analysis.doctrines.length}</span></h2>
-    ${analysis.doctrines.length > 0 ? analysis.doctrines.map(doctrine => `
-    <div class="item doctrine">
-        <div class="item-title">${doctrine.name}</div>
-        <div class="item-content">${doctrine.explanation}</div>
+    <h2>📖 Principles <span class="count">${analysis.principles.length}</span></h2>
+    ${analysis.principles.length > 0 ? analysis.principles.map(principle => `
+    <div class="item principle">
+        <div class="item-title">${principle.name}</div>
+        <div class="item-content">${principle.explanation}</div>
     </div>
-    `).join('') : '<p><em>No doctrines found</em></p>'}
+    `).join('') : '<p><em>No principles found</em></p>'}
 
 </body>
 </html>`;
@@ -573,7 +573,7 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                 </div>
               </div>
 
-              {/* Cases Section */}
+              {/* Examples Section */}
               <div style={{ marginBottom: '24px' }}>
                 <h4 style={{
                   color: '#A78BFA',
@@ -581,12 +581,12 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                   fontWeight: 'bold',
                   marginBottom: '12px'
                 }}>
-                  ⚖️ Cases ({analysis.cases.length})
+                  🔍 Examples ({analysis.examples.length})
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {analysis.cases.map((case_) => (
+                  {analysis.examples.map((example) => (
                     <div
-                      key={case_.id}
+                      key={example.id}
                       style={{
                         padding: '12px',
                         backgroundColor: '#1F2937',
@@ -600,26 +600,26 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                         fontWeight: 'bold',
                         marginBottom: '4px'
                       }}>
-                        {case_.name}
+                        {example.name}
                       </div>
                       <div style={{
                         color: '#9CA3AF',
                         fontSize: '12px',
                         lineHeight: '1.5'
                       }}>
-                        {case_.summary}
+                        {example.summary}
                       </div>
                     </div>
                   ))}
-                  {analysis.cases.length === 0 && (
+                  {analysis.examples.length === 0 && (
                     <div style={{ color: '#6B7280', fontSize: '14px', fontStyle: 'italic' }}>
-                      No cases found
+                      No examples found
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Doctrines Section */}
+              {/* Principles Section */}
               <div style={{ marginBottom: '32px' }}>
                 <h4 style={{
                   color: '#F59E0B',
@@ -627,12 +627,12 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                   fontWeight: 'bold',
                   marginBottom: '12px'
                 }}>
-                  📖 Doctrines ({analysis.doctrines.length})
+                  📖 Principles ({analysis.principles.length})
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {analysis.doctrines.map((doctrine) => (
+                  {analysis.principles.map((principle) => (
                     <div
-                      key={doctrine.id}
+                      key={principle.id}
                       style={{
                         padding: '12px',
                         backgroundColor: '#1F2937',
@@ -646,20 +646,20 @@ ${analysis.doctrines.map(d => `- ${d.name}: ${d.explanation}`).join('\n')}
                         fontWeight: 'bold',
                         marginBottom: '4px'
                       }}>
-                        {doctrine.name}
+                        {principle.name}
                       </div>
                       <div style={{
                         color: '#9CA3AF',
                         fontSize: '12px',
                         lineHeight: '1.5'
                       }}>
-                        {doctrine.explanation}
+                        {principle.explanation}
                       </div>
                     </div>
                   ))}
-                  {analysis.doctrines.length === 0 && (
+                  {analysis.principles.length === 0 && (
                     <div style={{ color: '#6B7280', fontSize: '14px', fontStyle: 'italic' }}>
-                      No doctrines found
+                      No principles found
                     </div>
                   )}
                 </div>

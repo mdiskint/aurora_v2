@@ -180,14 +180,33 @@ function NodeSparkles({ position, opacity = 1 }: { position: [number, number, nu
   );
 }
 
+// Module-level map of animated positions for ConnectionLines to read
+const animatedPositions = new Map<string, [number, number, number]>();
+
 function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerDown, onPointerEnter, onPointerLeave, scale = 1, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const initializedRef = useRef(false);
 
-  // Rotate the mesh every frame (slowed by 1/3)
   useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
-      meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
+      // Initialize position on first frame
+      if (!initializedRef.current) {
+        meshRef.current.position.set(node.position[0], node.position[1], node.position[2]);
+        initializedRef.current = true;
+      }
+      // Lerp toward target position
+      meshRef.current.position.x += (node.position[0] - meshRef.current.position.x) * 0.08;
+      meshRef.current.position.y += (node.position[1] - meshRef.current.position.y) * 0.08;
+      meshRef.current.position.z += (node.position[2] - meshRef.current.position.z) * 0.08;
+      // Write animated position for ConnectionLines
+      animatedPositions.set(node.id, [
+        meshRef.current.position.x,
+        meshRef.current.position.y,
+        meshRef.current.position.z,
+      ]);
+      // Rotate
+      meshRef.current.rotation.y += 0.0067;
+      meshRef.current.rotation.x += 0.0033;
     }
   });
 
@@ -195,10 +214,10 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerDown,
   const finalSize = size * 0.5 * scale;
 
   return (
-    <mesh ref={meshRef} position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+    <mesh ref={meshRef} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <dodecahedronGeometry args={[finalSize, 0]} />
       <meshStandardMaterial
-        color="#B8860B" // Darker vibrant neon gold for connection nodes!
+        color="#B8860B"
         metalness={1.0}
         roughness={0.0}
         emissive="#B8860B"
@@ -214,12 +233,30 @@ function RotatingConnectionNode({ node, size, baseColor, onClick, onPointerDown,
 function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity, roughness = 0.0, onClick, onPointerDown, onPointerEnter, onPointerLeave, opacity = 1, isL2 = false }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
   const edgesRef = useRef<THREE.LineSegments>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const initializedRef = useRef(false);
 
-  // Rotate the mesh every frame (slowed by 1/3)
   useFrame(() => {
+    if (groupRef.current) {
+      // Initialize position on first frame
+      if (!initializedRef.current) {
+        groupRef.current.position.set(node.position[0], node.position[1], node.position[2]);
+        initializedRef.current = true;
+      }
+      // Lerp toward target position
+      groupRef.current.position.x += (node.position[0] - groupRef.current.position.x) * 0.08;
+      groupRef.current.position.y += (node.position[1] - groupRef.current.position.y) * 0.08;
+      groupRef.current.position.z += (node.position[2] - groupRef.current.position.z) * 0.08;
+      // Write animated position for ConnectionLines
+      animatedPositions.set(node.id, [
+        groupRef.current.position.x,
+        groupRef.current.position.y,
+        groupRef.current.position.z,
+      ]);
+    }
     if (meshRef.current) {
-      meshRef.current.rotation.y += 0.0067; // Rotate on Y axis
-      meshRef.current.rotation.x += 0.0033; // Slight X rotation for complexity
+      meshRef.current.rotation.y += 0.0067;
+      meshRef.current.rotation.x += 0.0033;
     }
     // Rotate edges with the mesh
     if (edgesRef.current && meshRef.current) {
@@ -238,7 +275,7 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
   ].includes(node.nodeType || '');
 
   return (
-    <group position={node.position} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+    <group ref={groupRef} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <mesh ref={meshRef} castShadow receiveShadow>
         {geometry}
         {node.nodeType === 'ai-response' || node.nodeType === 'doctrine' ? (
@@ -278,13 +315,29 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
 // NEW: Clean user reply node component
 function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEnter, onPointerLeave, opacity = 1 }: any) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const initializedRef = useRef(false);
 
   // Debug log
   console.log('🟣 RENDERING USER REPLY NODE:', node.id, 'nodeType:', node.nodeType);
 
-  // Rotate the mesh every frame
   useFrame(() => {
     if (meshRef.current) {
+      // Initialize position on first frame
+      if (!initializedRef.current) {
+        meshRef.current.position.set(node.position[0], node.position[1], node.position[2]);
+        initializedRef.current = true;
+      }
+      // Lerp toward target position
+      meshRef.current.position.x += (node.position[0] - meshRef.current.position.x) * 0.08;
+      meshRef.current.position.y += (node.position[1] - meshRef.current.position.y) * 0.08;
+      meshRef.current.position.z += (node.position[2] - meshRef.current.position.z) * 0.08;
+      // Write animated position for ConnectionLines
+      animatedPositions.set(node.id, [
+        meshRef.current.position.x,
+        meshRef.current.position.y,
+        meshRef.current.position.z,
+      ]);
+      // Rotate
       meshRef.current.rotation.y += 0.01;
       meshRef.current.rotation.x += 0.005;
     }
@@ -293,7 +346,6 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
   return (
     <mesh
       ref={meshRef}
-      position={node.position}
       onClick={onClick}
       onPointerDown={onPointerDown}
       onPointerEnter={onPointerEnter}
@@ -469,6 +521,11 @@ function RotatingNexus({ nexus, onClick, onPointerEnter, onPointerLeave, opacity
   );
 }
 
+// Helper to get animated position (from lerping nodes) or fall back to store position
+function getAnimatedPos(id: string, fallback: [number, number, number]): [number, number, number] {
+  return animatedPositions.get(id) || fallback;
+}
+
 function ConnectionLines() {
   const nexuses = useCanvasStore((state) => state.nexuses);
   const nodes = useCanvasStore((state) => state.nodes);
@@ -517,6 +574,8 @@ function ConnectionLines() {
   return (
     <>
       {nodeArray.map((node, idx) => {
+        const nodePos = getAnimatedPos(node.id, node.position);
+
         // Special handling for connection nodes - draw to connected nodes
         if (node.isConnectionNode && node.connectionNodes) {
           const pulseProgress = pulseStates[node.id] || Math.random();
@@ -528,7 +587,7 @@ function ConnectionLines() {
           if (isMetaNode) {
             return (
               <group key={node.id}>
-                {node.connectionNodes.map((connectedId, connIdx) => {
+                {node.connectionNodes.map((connectedId: string, connIdx: number) => {
                   // First item is nexus, rest are nodes
                   const connectedNexus = nexuses.find(n => n.id === connectedId);
                   const connectedNode = nodes[connectedId];
@@ -536,10 +595,12 @@ function ConnectionLines() {
 
                   if (!connectedItem) return null;
 
+                  const connPos = getAnimatedPos(connectedId, connectedItem.position);
+
                   return (
                     <React.Fragment key={`meta-line-${connectedId}`}>
                       <Line
-                        points={[node.position, connectedItem.position]}
+                        points={[nodePos, connPos]}
                         color={rainbowColor}
                         lineWidth={2}
                         transparent
@@ -547,9 +608,9 @@ function ConnectionLines() {
                       />
                       {/* Pulse on some lines */}
                       {connIdx % 3 === 0 && (() => {
-                        const pulseX = node.position[0] + (connectedItem.position[0] - node.position[0]) * pulseProgress;
-                        const pulseY = node.position[1] + (connectedItem.position[1] - node.position[1]) * pulseProgress;
-                        const pulseZ = node.position[2] + (connectedItem.position[2] - node.position[2]) * pulseProgress;
+                        const pulseX = nodePos[0] + (connPos[0] - nodePos[0]) * pulseProgress;
+                        const pulseY = nodePos[1] + (connPos[1] - nodePos[1]) * pulseProgress;
+                        const pulseZ = nodePos[2] + (connPos[2] - nodePos[2]) * pulseProgress;
 
                         return (
                           <mesh position={[pulseX, pulseY, pulseZ]}>
@@ -576,11 +637,14 @@ function ConnectionLines() {
 
           if (!nodeA || !nodeB) return null;
 
+          const posA = getAnimatedPos(nodeAId, nodeA.position);
+          const posB = getAnimatedPos(nodeBId, nodeB.position);
+
           return (
             <group key={node.id}>
               {/* Line from connection node to Node A */}
               <Line
-                points={[node.position, nodeA.position]}
+                points={[nodePos, posA]}
                 color={rainbowColor}
                 lineWidth={2}
                 transparent
@@ -589,7 +653,7 @@ function ConnectionLines() {
 
               {/* Line from connection node to Node B */}
               <Line
-                points={[node.position, nodeB.position]}
+                points={[nodePos, posB]}
                 color={rainbowColor}
                 lineWidth={2}
                 transparent
@@ -598,9 +662,9 @@ function ConnectionLines() {
 
               {/* Pulse on line to Node A */}
               {idx % 2 === 0 && (() => {
-                const pulseX = node.position[0] + (nodeA.position[0] - node.position[0]) * pulseProgress;
-                const pulseY = node.position[1] + (nodeA.position[1] - node.position[1]) * pulseProgress;
-                const pulseZ = node.position[2] + (nodeA.position[2] - node.position[2]) * pulseProgress;
+                const pulseX = nodePos[0] + (posA[0] - nodePos[0]) * pulseProgress;
+                const pulseY = nodePos[1] + (posA[1] - nodePos[1]) * pulseProgress;
+                const pulseZ = nodePos[2] + (posA[2] - nodePos[2]) * pulseProgress;
 
                 return (
                   <mesh position={[pulseX, pulseY, pulseZ]}>
@@ -616,9 +680,9 @@ function ConnectionLines() {
 
               {/* Pulse on line to Node B */}
               {idx % 2 === 1 && (() => {
-                const pulseX = node.position[0] + (nodeB.position[0] - node.position[0]) * pulseProgress;
-                const pulseY = node.position[1] + (nodeB.position[1] - node.position[1]) * pulseProgress;
-                const pulseZ = node.position[2] + (nodeB.position[2] - node.position[2]) * pulseProgress;
+                const pulseX = nodePos[0] + (posB[0] - nodePos[0]) * pulseProgress;
+                const pulseY = nodePos[1] + (posB[1] - nodePos[1]) * pulseProgress;
+                const pulseZ = nodePos[2] + (posB[2] - nodePos[2]) * pulseProgress;
 
                 return (
                   <mesh position={[pulseX, pulseY, pulseZ]}>
@@ -642,16 +706,16 @@ function ConnectionLines() {
         if (parentNexus) {
           parentPosition = parentNexus.position;
         } else if (node.parentId && nodes[node.parentId]) {
-          parentPosition = nodes[node.parentId].position;
+          parentPosition = getAnimatedPos(node.parentId, nodes[node.parentId].position);
         } else {
           return null;
         }
 
         const pulseProgress = pulseStates[node.id] || Math.random();
 
-        const pulseX = parentPosition[0] + (node.position[0] - parentPosition[0]) * pulseProgress;
-        const pulseY = parentPosition[1] + (node.position[1] - parentPosition[1]) * pulseProgress;
-        const pulseZ = parentPosition[2] + (node.position[2] - parentPosition[2]) * pulseProgress;
+        const pulseX = parentPosition[0] + (nodePos[0] - parentPosition[0]) * pulseProgress;
+        const pulseY = parentPosition[1] + (nodePos[1] - parentPosition[1]) * pulseProgress;
+        const pulseZ = parentPosition[2] + (nodePos[2] - parentPosition[2]) * pulseProgress;
 
         // L1 nodes (direct nexus children) use golden-angle color spacing
         const isL1 = node.id in l1IndexMap;
@@ -667,7 +731,7 @@ function ConnectionLines() {
         return (
           <group key={node.id}>
             <Line
-              points={[parentPosition, node.position]}
+              points={[parentPosition, nodePos]}
               color={rainbowColor}
               lineWidth={2}
               transparent

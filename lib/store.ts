@@ -3,6 +3,7 @@ import { Node, NodeType, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
 import { transformConversation, transformHighlightImport, HighlightImportData } from './conversationTransformer';
+import { calculateL1Position, calculateL2Position, calculateMetaPosition, validatePosition } from './nodePositioning';
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
@@ -344,6 +345,8 @@ interface Nexus {
   title: string;
   videoUrl?: string;
   audioUrl?: string;
+  fileUrl?: string;
+  fileName?: string;
   type?: 'academic' | 'social';
   applicationEssay?: ApplicationEssay;  // For course mode: application essay question and rubric
 
@@ -414,7 +417,7 @@ interface CanvasStore {
 
 
   selectedNodesForConnection: string[];
-  createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => void;
+  createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string, fileUrl?: string, fileName?: string) => void;
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
   loadConversationFromData: (data: any) => string | null;
@@ -446,6 +449,7 @@ interface CanvasStore {
   getNodesByParent: (parentId: string | null) => Node[];
   getNodeLevel: (nodeId: string) => number;
   getNexusForNode: (nodeId: string) => Nexus | null;
+  repositionSiblings: (parentId: string) => void;
 
   // 🌱 EVOLVING NEXUS → APPLICATION LAB - Completion heuristics
   getNodesForNexus: (nexusId: string) => Node[];
@@ -519,13 +523,6 @@ interface CanvasStore {
     onProgress?: (current: number, total: number, status: string, errors: string[]) => void
   ) => Promise<{ success: boolean; newUniverseIds: string[]; error?: string; errors: string[] }>;
 
-  // 🧠 UNIVERSE ACTIVATION (for GAP Mode cross-universe analysis)
-  activatedUniverseIds: string[];
-  maxActivatedUniverses: number;
-  activateUniverse: (universeId: string) => boolean; // Returns false if limit reached
-  deactivateUniverse: (universeId: string) => void;
-  clearActivatedUniverses: () => void;
-  isUniverseActivated: (universeId: string) => boolean;
   getL1Nodes: (universeId: string) => Node[];
 
   // 🏛️ MEMORY PALACE MODE
@@ -545,8 +542,8 @@ interface CanvasStore {
   disableApplicationLabMode: () => void;
   applicationLabAnalysis: {
     topics: Array<{ id: string; name: string; description: string; nodeIds: string[] }>;
-    cases: Array<{ id: string; name: string; summary: string; nodeIds: string[] }>;
-    doctrines: Array<{ id: string; name: string; explanation: string; nodeIds: string[] }>;
+    examples: Array<{ id: string; name: string; summary: string; nodeIds: string[] }>;
+    principles: Array<{ id: string; name: string; explanation: string; nodeIds: string[] }>;
     analyzedAt: number | null;
   } | null;
   isAnalyzingUniverse: boolean;
@@ -555,7 +552,6 @@ interface CanvasStore {
   // 🛡️ INITIALIZATION TRACKING
   isStoreInitialized: boolean;
 
-  buildGraphStructure: () => { currentGraph: any; activatedGraphs: any[]; hasMultipleUniverses: boolean } | null;
   buildConversationContext: () => string;
 }
 
@@ -567,10 +563,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   // 📸 ORIGINAL SNAPSHOTS - Start with no snapshots
   originalSnapshots: {},
-
-  // 🧠 UNIVERSE ACTIVATION - For GAP Mode cross-universe analysis
-  activatedUniverseIds: [],
-  maxActivatedUniverses: 5,
 
   // 🏛️ MEMORY PALACE MODE
   isMemoryPalaceMode: false,
@@ -1038,7 +1030,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
-  createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string) => {
+  createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string, fileUrl?: string, fileName?: string) => {
     console.log('🆕 ==========================================');
     console.log('🆕 CREATING NEW UNIVERSE:', new Date().toLocaleTimeString());
     console.log('🆕   Title:', title);
@@ -1074,6 +1066,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         content,
         videoUrl,
         audioUrl,
+        fileUrl,
+        fileName,
         type: 'social',
         // 🌱 Initialize evolution state
         evolutionState: 'seed',
@@ -1540,8 +1534,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((state) => {
       newNodeId = `node-${Date.now()}`;
 
-      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
+      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId && !n.isConnectionNode);
       const siblingIndex = explicitSiblingIndex !== undefined ? explicitSiblingIndex : siblings.length;
+      const totalSiblings = siblings.length + 1; // Include the new node being added
 
       // Check if parent is a connection node (Socratic mode)
       const parentNode = state.nodes[parentId];
@@ -1551,59 +1546,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       // SPECIAL CASE: Meta-inspiration node (vertical spiral positioning)
       if (parentNode && parentNode.id.startsWith('meta-inspiration')) {
-        console.log('🌌 Adding node to meta-inspiration node - using vertical spiral');
-
-        const metaPos = parentNode.position;
-        const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // 137.5 degrees
-
-        // Base parameters for vertical spiral
-        const baseRadius = 2.0;
-        const radiusIncrement = 0.3;
-        const radius = baseRadius + (siblingIndex * radiusIncrement);
-
-        // Vertical spacing
-        const yIncrement = 1.5;
-        const y = metaPos[1] + (siblingIndex * yIncrement);
-
-        // Spiral angle
-        const angle = siblingIndex * goldenAngle;
-
-        // Position in horizontal plane around the meta-star
-        const x = metaPos[0] - Math.cos(angle) * radius; // Flipped: first node on left
-        const z = metaPos[2] + Math.sin(angle) * radius;
-
-        position = [x, y, z];
-        console.log(`🌌 Meta-gyre child ${siblingIndex}: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}], radius: ${radius.toFixed(2)}`);
+        position = calculateMetaPosition(siblingIndex, totalSiblings, parentNode.position);
       } else {
-        // Normal positioning logic
         const parentNexus = state.nexuses.find(n => n.id === parentId);
 
         if (parentNexus) {
-          const nexusPos = parentNexus.position;
-          const baseRadius = 6;
-          const radiusIncrement = 0.4;
-          const radius = baseRadius + (siblingIndex * radiusIncrement);
-
-          const nodesPerRing = 6;
-          const ringIndex = Math.floor(siblingIndex / nodesPerRing);
-          const positionInRing = siblingIndex % nodesPerRing;
-
-          const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-          const ringRotationOffset = ringIndex * goldenAngle;
-          const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-
-          let y = 0;
-          if (ringIndex > 0) {
-            const step = Math.ceil(ringIndex / 2);
-            const direction = ringIndex % 2 === 1 ? 1 : -1;
-            y = step * 2.5 * direction;
-          }
-
-          const x = nexusPos[0] - radius * Math.cos(angle); // Flipped: first node on left
-          const z = nexusPos[2] + radius * Math.sin(angle);
-
-          position = [x, y, z];
-          console.log(`➕ L1 Node: Ring ${ringIndex}, Position ${positionInRing}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+          position = calculateL1Position(siblingIndex, totalSiblings, parentNexus.position);
         } else {
           const parentNode = state.nodes[parentId];
           if (!parentNode) return state;
@@ -1611,94 +1559,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           const nexus = get().getNexusForNode(parentId);
           if (!nexus) return state;
 
-          const nexusPos = nexus.position;
-          const directionX = parentNode.position[0] - nexusPos[0];
-          const directionY = parentNode.position[1] - nexusPos[1];
-          const directionZ = parentNode.position[2] - nexusPos[2];
-
-          const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-
-          // Guard against zero-length direction vector
-          if (dirLength < 0.001) {
-            console.warn('⚠️ addNode: Parent at same position as nexus, using simple offset');
-            position = [
-              parentNode.position[0] + 2,
-              parentNode.position[1] + 1,
-              parentNode.position[2] + 2
-            ];
-          } else {
-            const normDirX = directionX / dirLength;
-            const normDirY = directionY / dirLength;
-            const normDirZ = directionZ / dirLength;
-
-            const baseDistance = 3;
-            const distanceIncrement = 0.8;
-            const distance = baseDistance + (siblingIndex * distanceIncrement);
-
-            const turnsPerNode = 0.3;
-            const helixRadius = 1.5;
-            const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-
-            const upX = 0, upY = 1, upZ = 0;
-
-            let rightX = normDirY * upZ - normDirZ * upY;
-            let rightY = normDirZ * upX - normDirX * upZ;
-            let rightZ = normDirX * upY - normDirY * upX;
-            const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-
-            // Guard against zero-length right vector (happens with vertical directions)
-            if (rightLength < 0.001) {
-              console.warn('⚠️ addNode: Right vector is zero-length, using alternative axis');
-              rightX = 1;
-              rightY = 0;
-              rightZ = 0;
-            } else {
-              rightX /= rightLength;
-              rightY /= rightLength;
-              rightZ /= rightLength;
-            }
-
-            const upPerpX = normDirY * rightZ - normDirZ * rightY;
-            const upPerpY = normDirZ * rightX - normDirX * rightZ;
-            const upPerpZ = normDirX * rightY - normDirY * rightX;
-
-            const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-            const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-            const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-
-            const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-            const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-            const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-
-            position = [x, y, z];
-            console.log(`➕ L${get().getNodeLevel(parentId) + 1} Node: Child ${siblingIndex}, Distance ${distance.toFixed(2)}, [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
-          }
+          position = calculateL2Position(siblingIndex, totalSiblings, parentNode.position, nexus.position);
         }
       }
 
-      // CRITICAL: Validate position for NaN values before creating node
-      if (isNaN(position[0]) || isNaN(position[1]) || isNaN(position[2])) {
-        console.error('❌ CRITICAL: Position contains NaN values!', {
-          position,
-          parentId,
-          siblingIndex,
-          parentNode: state.nodes[parentId]
-        });
-
-        // Use fallback position near parent or at origin
-        const parentNode = state.nodes[parentId];
-        if (parentNode && !isNaN(parentNode.position[0])) {
-          position = [
-            parentNode.position[0] + 2,
-            parentNode.position[1] + 1,
-            parentNode.position[2] + 2
-          ];
-          console.log('🔧 Using fallback position near parent:', position);
-        } else {
-          position = [0, 1, 0];
-          console.log('🔧 Using absolute fallback position:', position);
-        }
-      }
+      // Validate position for NaN values
+      position = validatePosition(position, state.nodes[parentId]?.position);
 
       const newNode: Node = {
         id: newNodeId,
@@ -1722,6 +1588,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       return { nodes: updatedNodes };
     });
+
+    // Reposition all siblings under this parent to accommodate the new node
+    get().repositionSiblings(parentId);
 
     // 💾 NOTE: saveToLocalStorage() removed - now only called by saveCurrentUniverse()
     // This prevents premature saves when universe isn't in library yet
@@ -1785,9 +1654,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         newNodeIds.push(newNodeId);
 
         // Count existing siblings + siblings already added in this batch
-        const existingSiblings = Object.values(state.nodes).filter(n => n.parentId === parentId).length;
+        const existingSiblings = Object.values(state.nodes).filter(n => n.parentId === parentId && !n.isConnectionNode).length;
         const batchAdded = batchSiblingCounts[parentId] || 0;
         const siblingIndex = existingSiblings + batchAdded;
+        const totalSiblings = existingSiblings + batchAdded + 1;
         batchSiblingCounts[parentId] = batchAdded + 1;
 
         const parentNode = updatedNodes[parentId] || state.nodes[parentId];
@@ -1795,42 +1665,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
         let position: [number, number, number];
 
-        // SPECIAL CASE: Meta-inspiration node (vertical spiral positioning)
         if (parentNode && parentNode.id.startsWith('meta-inspiration')) {
-          const metaPos = parentNode.position;
-          const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-          const baseRadius = 2.0;
-          const radiusIncrement = 0.3;
-          const radius = baseRadius + (siblingIndex * radiusIncrement);
-          const yIncrement = 1.5;
-          const y = metaPos[1] + (siblingIndex * yIncrement);
-          const angle = siblingIndex * goldenAngle;
-          const x = metaPos[0] - Math.cos(angle) * radius;
-          const z = metaPos[2] + Math.sin(angle) * radius;
-          position = [x, y, z];
+          position = calculateMetaPosition(siblingIndex, totalSiblings, parentNode.position);
         } else {
           const parentNexus = state.nexuses.find(n => n.id === parentId);
 
           if (parentNexus) {
-            const nexusPos = parentNexus.position;
-            const baseRadius = 6;
-            const radiusIncrement = 0.4;
-            const radius = baseRadius + (siblingIndex * radiusIncrement);
-            const nodesPerRing = 6;
-            const ringIndex = Math.floor(siblingIndex / nodesPerRing);
-            const positionInRing = siblingIndex % nodesPerRing;
-            const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-            const ringRotationOffset = ringIndex * goldenAngle;
-            const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-            let y = 0;
-            if (ringIndex > 0) {
-              const step = Math.ceil(ringIndex / 2);
-              const direction = ringIndex % 2 === 1 ? 1 : -1;
-              y = step * 2.5 * direction;
-            }
-            const x = nexusPos[0] - radius * Math.cos(angle);
-            const z = nexusPos[2] + radius * Math.sin(angle);
-            position = [x, y, z];
+            position = calculateL1Position(siblingIndex, totalSiblings, parentNexus.position);
           } else {
             const pNode = updatedNodes[parentId] || state.nodes[parentId];
             if (!pNode) continue;
@@ -1838,63 +1679,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             const nexus = get().getNexusForNode(parentId);
             if (!nexus) continue;
 
-            const nexusPos = nexus.position;
-            const directionX = pNode.position[0] - nexusPos[0];
-            const directionY = pNode.position[1] - nexusPos[1];
-            const directionZ = pNode.position[2] - nexusPos[2];
-            const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-
-            if (dirLength < 0.001) {
-              position = [
-                pNode.position[0] + 2,
-                pNode.position[1] + 1,
-                pNode.position[2] + 2
-              ];
-            } else {
-              const normDirX = directionX / dirLength;
-              const normDirY = directionY / dirLength;
-              const normDirZ = directionZ / dirLength;
-              const baseDistance = 3;
-              const distanceIncrement = 0.8;
-              const distance = baseDistance + (siblingIndex * distanceIncrement);
-              const turnsPerNode = 0.3;
-              const helixRadius = 1.5;
-              const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-              const upX = 0, upY = 1, upZ = 0;
-              let rightX = normDirY * upZ - normDirZ * upY;
-              let rightY = normDirZ * upX - normDirX * upZ;
-              let rightZ = normDirX * upY - normDirY * upX;
-              const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-
-              if (rightLength < 0.001) {
-                rightX = 1; rightY = 0; rightZ = 0;
-              } else {
-                rightX /= rightLength; rightY /= rightLength; rightZ /= rightLength;
-              }
-
-              const upPerpX = normDirY * rightZ - normDirZ * rightY;
-              const upPerpY = normDirZ * rightX - normDirX * rightZ;
-              const upPerpZ = normDirX * rightY - normDirY * rightX;
-              const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-              const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-              const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-              const x = pNode.position[0] + (normDirX * distance) + helixOffsetX;
-              const y = pNode.position[1] + (normDirY * distance) + helixOffsetY;
-              const z = pNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-              position = [x, y, z];
-            }
+            position = calculateL2Position(siblingIndex, totalSiblings, pNode.position, nexus.position);
           }
         }
 
-        // Validate position for NaN values
-        if (isNaN(position[0]) || isNaN(position[1]) || isNaN(position[2])) {
-          const pNode = updatedNodes[parentId] || state.nodes[parentId];
-          if (pNode && !isNaN(pNode.position[0])) {
-            position = [pNode.position[0] + 2, pNode.position[1] + 1, pNode.position[2] + 2];
-          } else {
-            position = [0, 1, 0];
-          }
-        }
+        position = validatePosition(position, (updatedNodes[parentId] || state.nodes[parentId])?.position);
 
         const newNode: Node = {
           id: newNodeId,
@@ -1920,6 +1709,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       return { nodes: updatedNodes };
     });
+
+    // Reposition siblings for each unique parent
+    const uniqueParentIds = [...new Set(batchNodes.map(n => n.parentId))];
+    for (const pid of uniqueParentIds) {
+      get().repositionSiblings(pid);
+    }
 
     // Broadcast all node creations to WebSocket
     const socket = (window as any).socket;
@@ -2028,9 +1823,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('Active universe is now:', get().activeUniverseId);
     console.log('Nexuses count:', get().nexuses.length);
 
-    // 🔥 REMOVED: Saving now happens in ChatInterface AFTER nodes are created
+    // 🔥 REMOVED: Saving happens after generated nodes are created
     // This prevents saving incomplete universes (nexus without nodes)
-    console.log('ℹ️ Universe will be saved by ChatInterface after nodes are added');
+    console.log('ℹ️ Universe will be saved after nodes are added');
     console.log('═══════════════════════════════════');
 
     // Broadcast nexus creation to WebSocket
@@ -2056,38 +1851,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((state) => {
       newNodeId = `user-${Date.now()}`;
 
-      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
+      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId && !n.isConnectionNode);
       const siblingIndex = siblings.length;
+      const totalSiblings = siblings.length + 1;
 
       let position: [number, number, number];
 
       const parentNexus = state.nexuses.find(n => n.id === parentId);
 
       if (parentNexus) {
-        const nexusPos = parentNexus.position;
-        const baseRadius = 6;
-        const radiusIncrement = 0.4;
-        const radius = baseRadius + (siblingIndex * radiusIncrement);
-
-        const nodesPerRing = 6;
-        const ringIndex = Math.floor(siblingIndex / nodesPerRing);
-        const positionInRing = siblingIndex % nodesPerRing;
-
-        const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-        const ringRotationOffset = ringIndex * goldenAngle;
-        const angle = (positionInRing * 2 * Math.PI) / nodesPerRing + ringRotationOffset;
-
-        let y = 0;
-        if (ringIndex > 0) {
-          const step = Math.ceil(ringIndex / 2);
-          const direction = ringIndex % 2 === 1 ? 1 : -1;
-          y = step * 2.5 * direction;
-        }
-
-        const x = nexusPos[0] - radius * Math.cos(angle); // Flipped: first node on left
-        const z = nexusPos[2] + radius * Math.sin(angle);
-
-        position = [x, y, z];
+        position = calculateL1Position(siblingIndex, totalSiblings, parentNexus.position);
       } else {
         const parentNode = state.nodes[parentId];
         if (!parentNode) return state;
@@ -2095,48 +1868,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         const nexus = get().getNexusForNode(parentId);
         if (!nexus) return state;
 
-        const nexusPos = nexus.position;
-        const directionX = parentNode.position[0] - nexusPos[0];
-        const directionY = parentNode.position[1] - nexusPos[1];
-        const directionZ = parentNode.position[2] - nexusPos[2];
-
-        const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-        const normDirX = directionX / dirLength;
-        const normDirY = directionY / dirLength;
-        const normDirZ = directionZ / dirLength;
-
-        const baseDistance = 3;
-        const distanceIncrement = 0.8;
-        const distance = baseDistance + (siblingIndex * distanceIncrement);
-
-        const turnsPerNode = 0.3;
-        const helixRadius = 1.5;
-        const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-
-        const upX = 0, upY = 1, upZ = 0;
-
-        let rightX = normDirY * upZ - normDirZ * upY;
-        let rightY = normDirZ * upX - normDirX * upZ;
-        let rightZ = normDirX * upY - normDirY * upX;
-        const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-        rightX /= rightLength;
-        rightY /= rightLength;
-        rightZ /= rightLength;
-
-        const upPerpX = normDirY * rightZ - normDirZ * rightY;
-        const upPerpY = normDirZ * rightX - normDirX * rightZ;
-        const upPerpZ = normDirX * rightY - normDirY * rightX;
-
-        const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-        const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-        const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-
-        const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-        const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-        const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-
-        position = [x, y, z];
+        position = calculateL2Position(siblingIndex, totalSiblings, parentNode.position, nexus.position);
       }
+
+      position = validatePosition(position, state.nodes[parentId]?.position);
 
       const newNode: Node = {
         id: newNodeId,
@@ -2162,6 +1897,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return { nodes: updatedNodes, selectedId: newNodeId };
     });
 
+    // Reposition all siblings under this parent
+    get().repositionSiblings(parentId);
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
 
@@ -2175,8 +1913,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((state) => {
       newNodeId = `ai-${Date.now()}`;
 
-      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
+      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId && !n.isConnectionNode);
       const siblingIndex = siblings.length;
+      const totalSiblings = siblings.length + 1;
 
       const parentNode = state.nodes[parentId];
       if (!parentNode) return state;
@@ -2187,47 +1926,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const nexus = get().getNexusForNode(parentId);
       if (!nexus) return state;
 
-      const nexusPos = nexus.position;
-      const directionX = parentNode.position[0] - nexusPos[0];
-      const directionY = parentNode.position[1] - nexusPos[1];
-      const directionZ = parentNode.position[2] - nexusPos[2];
-
-      const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-      const normDirX = directionX / dirLength;
-      const normDirY = directionY / dirLength;
-      const normDirZ = directionZ / dirLength;
-
-      const baseDistance = 3;
-      const distanceIncrement = 0.8;
-      const distance = baseDistance + (siblingIndex * distanceIncrement);
-
-      const turnsPerNode = 0.3;
-      const helixRadius = 1.5;
-      const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-
-      const upX = 0, upY = 1, upZ = 0;
-
-      let rightX = normDirY * upZ - normDirZ * upY;
-      let rightY = normDirZ * upX - normDirX * upZ;
-      let rightZ = normDirX * upY - normDirY * upX;
-      const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-      rightX /= rightLength;
-      rightY /= rightLength;
-      rightZ /= rightLength;
-
-      const upPerpX = normDirY * rightZ - normDirZ * rightY;
-      const upPerpY = normDirZ * rightX - normDirX * rightZ;
-      const upPerpZ = normDirX * rightY - normDirY * rightX;
-
-      const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-      const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-      const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-
-      const x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-      const y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-      const z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-
-      const position: [number, number, number] = [x, y, z];
+      let position = calculateL2Position(siblingIndex, totalSiblings, parentNode.position, nexus.position);
+      position = validatePosition(position, parentNode.position);
 
       const newNode: Node = {
         id: newNodeId,
@@ -2254,6 +1954,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return { nodes: updatedNodes };
     });
 
+    // Reposition all siblings under this parent
+    get().repositionSiblings(parentId);
+
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
 
@@ -2276,8 +1979,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((state) => {
       newNodeId = `synthesis-${Date.now()}`;
 
-      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId);
+      const siblings = Object.values(state.nodes).filter(n => n.parentId === parentId && !n.isConnectionNode);
       const siblingIndex = siblings.length;
+      const totalSiblings = siblings.length + 1;
 
       const parentNode = state.nodes[parentId];
       if (!parentNode) {
@@ -2291,102 +1995,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         return state;
       }
 
-      const nexusPos = nexus.position;
-      const directionX = parentNode.position[0] - nexusPos[0];
-      const directionY = parentNode.position[1] - nexusPos[1];
-      const directionZ = parentNode.position[2] - nexusPos[2];
+      let position = calculateL2Position(siblingIndex, totalSiblings, parentNode.position, nexus.position);
+      position = validatePosition(position, parentNode.position);
 
-      const dirLength = Math.sqrt(directionX * directionX + directionY * directionY + directionZ * directionZ);
-
-      // CRITICAL: Check for zero-length direction vector (parent at same position as nexus)
-      if (dirLength < 0.001) {
-        console.warn('⚠️ Parent node is at same position as nexus, using fallback positioning');
-        // Use simple offset from parent for synthesis node
-        const fallbackX = parentNode.position[0] + 2;
-        const fallbackY = parentNode.position[1] + 1;
-        const fallbackZ = parentNode.position[2] + 2;
-
-        const position: [number, number, number] = [fallbackX, fallbackY, fallbackZ];
-        console.log(`💎 Synthesis node FALLBACK position: [${fallbackX.toFixed(2)}, ${fallbackY.toFixed(2)}, ${fallbackZ.toFixed(2)}]`);
-
-        const newNode: Node = {
-          id: newNodeId,
-          position,
-          title: `💎 Synthesis ${new Date().toLocaleTimeString()}`,
-          content,
-          parentId,
-          children: [],
-          isSynthesis: true,
-          nodeType: 'synthesis',
-        };
-
-        const updatedNodes = { ...state.nodes, [newNodeId]: newNode };
-
-        if (state.nodes[parentId]) {
-          updatedNodes[parentId] = {
-            ...state.nodes[parentId],
-            children: [...state.nodes[parentId].children, newNodeId],
-          };
-        }
-
-        return { nodes: updatedNodes };
-      }
-
-      const normDirX = directionX / dirLength;
-      const normDirY = directionY / dirLength;
-      const normDirZ = directionZ / dirLength;
-
-      const baseDistance = 3;
-      const distanceIncrement = 0.8;
-      const distance = baseDistance + (siblingIndex * distanceIncrement);
-
-      const turnsPerNode = 0.3;
-      const helixRadius = 1.5;
-      const angle = siblingIndex * turnsPerNode * 2 * Math.PI;
-
-      const upX = 0, upY = 1, upZ = 0;
-
-      let rightX = normDirY * upZ - normDirZ * upY;
-      let rightY = normDirZ * upX - normDirX * upZ;
-      let rightZ = normDirX * upY - normDirY * upX;
-      const rightLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-
-      // CRITICAL: Check for zero-length right vector
-      if (rightLength < 0.001) {
-        console.warn('⚠️ Right vector is zero-length, using alternative axis');
-        // Use alternative axis if right vector is degenerate
-        const altX = 1, altY = 0, altZ = 0;
-        rightX = altX;
-        rightY = altY;
-        rightZ = altZ;
-      } else {
-        rightX /= rightLength;
-        rightY /= rightLength;
-        rightZ /= rightLength;
-      }
-
-      const upPerpX = normDirY * rightZ - normDirZ * rightY;
-      const upPerpY = normDirZ * rightX - normDirX * rightZ;
-      const upPerpZ = normDirX * rightY - normDirY * rightX;
-
-      const helixOffsetX = helixRadius * (Math.cos(angle) * rightX + Math.sin(angle) * upPerpX);
-      const helixOffsetY = helixRadius * (Math.cos(angle) * rightY + Math.sin(angle) * upPerpY);
-      const helixOffsetZ = helixRadius * (Math.cos(angle) * rightZ + Math.sin(angle) * upPerpZ);
-
-      let x = parentNode.position[0] + (normDirX * distance) + helixOffsetX;
-      let y = parentNode.position[1] + (normDirY * distance) + helixOffsetY;
-      let z = parentNode.position[2] + (normDirZ * distance) + helixOffsetZ;
-
-      // CRITICAL: Validate final position for NaN
-      if (isNaN(x) || isNaN(y) || isNaN(z)) {
-        console.error('❌ Calculated position contains NaN, using fallback');
-        x = parentNode.position[0] + 2;
-        y = parentNode.position[1] + 1;
-        z = parentNode.position[2] + 2;
-      }
-
-      const position: [number, number, number] = [x, y, z];
-      console.log(`💎 Synthesis node position: [${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`);
+      console.log(`💎 Synthesis node position: [${position[0].toFixed(2)}, ${position[1].toFixed(2)}, ${position[2].toFixed(2)}]`);
 
       const newNode: Node = {
         id: newNodeId,
@@ -2412,6 +2024,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       return { nodes: updatedNodes };
     });
+
+    // Reposition all siblings under this parent
+    get().repositionSiblings(parentId);
 
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
@@ -2837,6 +2452,91 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return null;
   },
 
+  repositionSiblings: (parentId: string) => {
+    const state = get();
+    // Get all non-connection-node children of parentId
+    const siblings = Object.values(state.nodes).filter(
+      n => n.parentId === parentId && !n.isConnectionNode
+    );
+
+    if (siblings.length === 0) return;
+
+    // Sort siblings by their creation order (id contains timestamp)
+    const sortedSiblings = [...siblings].sort((a, b) => {
+      // Extract numeric portion from IDs for stable ordering
+      const aNum = parseInt(a.id.replace(/\D/g, '')) || 0;
+      const bNum = parseInt(b.id.replace(/\D/g, '')) || 0;
+      return aNum - bNum;
+    });
+
+    const totalSiblings = sortedSiblings.length;
+
+    // Determine parent type
+    const parentNode = state.nodes[parentId];
+    const parentNexus = state.nexuses.find(n => n.id === parentId);
+    const isMeta = parentNode && parentNode.id.startsWith('meta-inspiration');
+
+    const updatedNodes: { [id: string]: Node } = {};
+
+    for (let i = 0; i < sortedSiblings.length; i++) {
+      const sibling = sortedSiblings[i];
+      let newPos: [number, number, number];
+
+      if (isMeta && parentNode) {
+        newPos = calculateMetaPosition(i, totalSiblings, parentNode.position);
+      } else if (parentNexus) {
+        newPos = calculateL1Position(i, totalSiblings, parentNexus.position);
+      } else if (parentNode) {
+        const nexus = get().getNexusForNode(parentId);
+        if (!nexus) continue;
+        newPos = calculateL2Position(i, totalSiblings, parentNode.position, nexus.position);
+      } else {
+        continue;
+      }
+
+      newPos = validatePosition(newPos, parentNode?.position || parentNexus?.position);
+
+      // Only update if position changed
+      if (
+        sibling.position[0] !== newPos[0] ||
+        sibling.position[1] !== newPos[1] ||
+        sibling.position[2] !== newPos[2]
+      ) {
+        updatedNodes[sibling.id] = { ...sibling, position: newPos };
+      }
+    }
+
+    if (Object.keys(updatedNodes).length === 0) return;
+
+    // Also update connection nodes that reference any moved siblings
+    const movedIds = new Set(Object.keys(updatedNodes));
+    const allNodes = state.nodes;
+    Object.values(allNodes).forEach(node => {
+      if (node.isConnectionNode && node.connectionNodes) {
+        const refsMovedNode = node.connectionNodes.some(id => movedIds.has(id));
+        if (refsMovedNode) {
+          // Recalculate midpoint position
+          const nodeA = updatedNodes[node.connectionNodes[0]] || allNodes[node.connectionNodes[0]];
+          const nodeB = updatedNodes[node.connectionNodes[1]] || allNodes[node.connectionNodes[1]];
+          if (nodeA && nodeB) {
+            const midX = (nodeA.position[0] + nodeB.position[0]) / 2;
+            const midY = (nodeA.position[1] + nodeB.position[1]) / 2;
+            const midZ = (nodeA.position[2] + nodeB.position[2]) / 2;
+            const upwardOffset = 4;
+            updatedNodes[node.id] = {
+              ...node,
+              position: [midX, midY + upwardOffset, midZ]
+            };
+          }
+        }
+      }
+    });
+
+    set((state) => ({
+      nodes: { ...state.nodes, ...updatedNodes }
+    }));
+  },
+
   // 🌱 EVOLVING NEXUS - Get all nodes belonging to a nexus
   getNodesForNexus: (nexusId: string) => {
     const state = get();
@@ -2987,6 +2687,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       content: data.content,
       videoUrl: data.videoUrl,
       audioUrl: data.audioUrl,
+      fileUrl: data.fileUrl,
+      fileName: data.fileName,
       type: data.type || 'social',
     };
 
@@ -3271,6 +2973,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   deleteNode: (nodeId: string) => {
+    // Capture parentId before deletion
+    const nodeToDelete = get().nodes[nodeId];
+    const deletedParentId = nodeToDelete?.parentId;
+
     set((state) => {
       console.log(`🗑️ Deleting node: ${nodeId}`);
 
@@ -3342,6 +3048,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         showReplyModal: updatedSelectedId === null ? false : state.showReplyModal
       };
     });
+
+    // Reposition remaining siblings after deletion
+    if (deletedParentId) {
+      get().repositionSiblings(deletedParentId);
+    }
 
     // 💾 SAVE TO LOCALSTORAGE
     get().saveToLocalStorage();
@@ -4211,100 +3922,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return context.join('\n');
   },
 
-  buildGraphStructure: () => {
-    const state = get();
-    const { nexuses, nodes, activatedUniverseIds, universeLibrary, selectedId } = state;
-    if (nexuses.length === 0 && activatedUniverseIds.length === 0) {
-      return null;
-    }
-
-    if (nexuses.length === 0 && activatedUniverseIds.length > 0) {
-      // Synthesis mode
-    }
-
-    const buildUniverseGraph = (universeId: string) => {
-      const universe = universeLibrary[universeId];
-      if (!universe) {
-        return null;
-      }
-
-      const nexus = universe.nexuses[0];
-      if (!nexus) return null;
-
-      const universeNodes = Object.values(universe.nodes);
-
-      const fullNodes = universeNodes.map(node => ({
-        id: node.id,
-        type: node.nodeType || 'user-reply',
-        content: node.content,
-        parentId: node.parentId,
-        position: node.position,
-        semanticTitle: node.semanticTitle
-      }));
-
-      const connections = universeNodes.map(node => ({
-        from: node.parentId,
-        to: node.id
-      }));
-
-      return {
-        universeId,
-        nexus: {
-          id: nexus.id,
-          content: nexus.content,
-          title: nexus.title,
-          position: nexus.position
-        },
-        nodes: fullNodes,
-        connections
-      };
-    };
-
-    let currentGraph = null;
-    if (nexuses.length > 0) {
-      const currentNexus = selectedId
-        ? nexuses.find(n => n.id === selectedId) || nexuses[0]
-        : nexuses[0];
-
-      if (currentNexus) {
-        const universeNodes = Object.values(nodes);
-        const fullNodes = universeNodes.map(node => ({
-          id: node.id,
-          type: node.nodeType || 'user-reply',
-          content: node.content,
-          parentId: node.parentId,
-          position: node.position,
-          semanticTitle: node.semanticTitle
-        }));
-
-        const connections = universeNodes.map(node => ({
-          from: node.parentId,
-          to: node.id
-        }));
-
-        currentGraph = {
-          nexus: {
-            id: currentNexus.id,
-            content: currentNexus.content,
-            title: currentNexus.title,
-            position: currentNexus.position
-          },
-          nodes: fullNodes,
-          connections
-        };
-      }
-    }
-
-    const activatedGraphs = activatedUniverseIds
-      .map(universeId => buildUniverseGraph(universeId))
-      .filter(graph => graph !== null);
-
-    return {
-      currentGraph,
-      activatedGraphs,
-      hasMultipleUniverses: activatedGraphs.length > 0
-    };
-  },
   // 🌌 UNIVERSE MANAGEMENT FUNCTIONS
 
   saveCurrentUniverse: (cameraPosition?: [number, number, number]) => {
@@ -4948,65 +4565,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return l1Nodes;
   },
 
-  // 🧠 UNIVERSE ACTIVATION METHODS
-  activateUniverse: (universeId: string): boolean => {
-    const state = get();
-
-    // Check if already activated
-    if (state.activatedUniverseIds.includes(universeId)) {
-      console.log('🧠 Universe already activated:', universeId);
-      return true;
-    }
-
-    // Check limit
-    if (state.activatedUniverseIds.length >= state.maxActivatedUniverses) {
-      console.warn('🧠 Cannot activate universe - limit reached (5 max)');
-      return false;
-    }
-
-    // Check if universe exists
-    if (!state.universeLibrary[universeId]) {
-      console.error('🧠 Cannot activate - universe not found:', universeId);
-      return false;
-    }
-
-    // Activate
-    set({
-      activatedUniverseIds: [...state.activatedUniverseIds, universeId]
-    });
-
-    console.log('🧠 Activated universe:', state.universeLibrary[universeId].title);
-    console.log('🧠 Total activated:', state.activatedUniverseIds.length + 1);
-
-    return true;
-  },
-
-  deactivateUniverse: (universeId: string): void => {
-    const state = get();
-
-    if (!state.activatedUniverseIds.includes(universeId)) {
-      console.log('🧠 Universe not activated:', universeId);
-      return;
-    }
-
-    set({
-      activatedUniverseIds: state.activatedUniverseIds.filter(id => id !== universeId)
-    });
-
-    console.log('🧠 Deactivated universe:', state.universeLibrary[universeId]?.title || universeId);
-    console.log('🧠 Total activated:', get().activatedUniverseIds.length);
-  },
-
-  clearActivatedUniverses: (): void => {
-    const count = get().activatedUniverseIds.length;
-    set({ activatedUniverseIds: [] });
-    console.log('🧠 Cleared all activated universes (', count, ')');
-  },
-
-  isUniverseActivated: (universeId: string): boolean => {
-    return get().activatedUniverseIds.includes(universeId);
-  },
-
   // 🏛️ MEMORY PALACE MODE FUNCTIONS
   toggleMemoryPalaceMode: () => {
     const state = get();
@@ -5159,8 +4717,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       set({
         applicationLabAnalysis: {
           topics: analysisData.topics || [],
-          cases: analysisData.cases || [],
-          doctrines: analysisData.doctrines || [],
+          examples: analysisData.examples || [],
+          principles: analysisData.principles || [],
           analyzedAt: Date.now()
         },
         isAnalyzingUniverse: false

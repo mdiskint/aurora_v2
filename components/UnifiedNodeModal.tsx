@@ -408,6 +408,7 @@ export default function UnifiedNodeModal() {
   // Content editing state
   const [editedContent, setEditedContent] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [selectedContentText, setSelectedContentText] = useState('');
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -419,7 +420,6 @@ export default function UnifiedNodeModal() {
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isLoadingLeopold, setIsLoadingLeopold] = useState(false);
-  const [isLoadingAtomize, setIsLoadingAtomize] = useState(false);
 
   // Loaded video URL from IndexedDB
   const [loadedVideoUrl, setLoadedVideoUrl] = useState<string | null>(null);
@@ -650,62 +650,7 @@ export default function UnifiedNodeModal() {
     }
   };
 
-  // ⚛️ Trigger Atomization (breaking node into multiple children)
-  const handleAtomizeTrigger = async () => {
-    if (!node) return;
-
-    setIsLoadingAtomize(true);
-    console.log(`⚛️ Triggering Atomization for node: ${node.id}`);
-
-    try {
-      // Calculate node depth by walking parentId chain up to a nexus
-      let depth = 1;
-      let walkId: string | undefined = node.parentId;
-      const nexusIds = new Set(nexuses.map(n => n.id));
-      while (walkId && !nexusIds.has(walkId) && nodes[walkId]) {
-        depth++;
-        walkId = nodes[walkId].parentId;
-      }
-      // Atomized children will be one level deeper
-      const childDepth = depth + 1;
-
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'spatial',
-          messages: [{ role: 'user', content: node.content }],
-          nodeDepth: childDepth,
-          atomize: true,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Atomization failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.spatialData && data.spatialData.nodes) {
-        console.log(`✨ Generated ${data.spatialData.nodes.length} atomized nodes`);
-
-        // Create all nodes in a single batch (no sequential delays)
-        addNodes(data.spatialData.nodes.map((n: any) => ({
-          content: n.content,
-          parentId: node.id,
-          nodeType: n.nodeType || 'ai-response',
-        })));
-
-        showToastNotification(`✨ Successfully atomized into ${data.spatialData.nodes.length} nodes!`);
-      } else {
-        throw new Error('No spatial data returned from AI');
-      }
-    } catch (err) {
-      console.error('❌ Atomization failed:', err);
-      showToastNotification(`Failed to atomize: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingAtomize(false);
-    }
-  };
+  // (L1+ node atomize now uses the unified handleAtomizeSelection above)
 
   // Toast notification helper
   const showToastNotification = (message: string) => {
@@ -815,6 +760,7 @@ export default function UnifiedNodeModal() {
       });
       setEditedContent(content);
       setHasUnsavedChanges(false);
+      setSelectedContentText('');
       textareaRef.current.value = content;
       console.log('✅ Textarea value set, length:', textareaRef.current.value.length);
     }
@@ -1072,6 +1018,7 @@ export default function UnifiedNodeModal() {
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setHasUnsavedChanges(true);
+    setSelectedContentText('');
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -1113,6 +1060,29 @@ export default function UnifiedNodeModal() {
     }
 
     selectNode(selectedId, false);
+  };
+
+  const handleTextareaSelection = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setSelectedContentText('');
+      return;
+    }
+
+    const selectedText = textarea.value
+      .slice(textarea.selectionStart, textarea.selectionEnd)
+      .trim();
+    setSelectedContentText(selectedText);
+  };
+
+  const handleAtomizeSelection = () => {
+    if (!selectedContentText.trim()) return;
+    const parentId = node ? node.id : nexus?.id;
+    if (!parentId) return;
+
+    addNode(selectedContentText.trim(), parentId, undefined, 'user-reply');
+    setSelectedContentText('');
+    showToastNotification('⚛️ Selection atomized into a new node');
   };
 
   // 💬 USER REPLY
@@ -2345,6 +2315,9 @@ Be conversational and human, not formulaic.`;
     const selection = window.getSelection();
     const highlightedText = selection?.toString().trim() || '';
 
+    // Track selection for atomize (works for both nexus and nodes)
+    setSelectedContentText(highlightedText);
+
     if (highlightedText && actionMode === 'user-reply') {
       setQuotedText(highlightedText);
       console.log('📝 Quoted text:', highlightedText);
@@ -2454,25 +2427,19 @@ Be conversational and human, not formulaic.`;
                 </div>
               </div>
               <div className="flex items-center">
-                {/* Atomize Button - Replaces Anchor */}
-                {node && !isConnectionNode && !node.id.startsWith('meta-inspiration') && (
+                {/* Atomize Selection — works for both nexus and L1+ nodes */}
+                {!isConnectionNode && !(node?.id.startsWith('meta-inspiration')) && (
                   <div className="flex flex-col items-center mx-2">
                     <button
-                      onClick={handleAtomizeTrigger}
-                      disabled={isLoadingAtomize}
+                      onClick={handleAtomizeSelection}
+                      disabled={!selectedContentText.trim()}
                       className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
-                        ${isLoadingAtomize
-                          ? 'bg-amber-900/40 border-2 border-amber-700 text-amber-500 cursor-not-allowed'
-                          : 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'}`}
+                        ${selectedContentText.trim()
+                          ? 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'
+                          : 'bg-slate-800/40 border-2 border-slate-700 text-slate-500 cursor-not-allowed'}`}
+                      title={selectedContentText.trim() ? 'Create a child node from the highlighted text' : 'Highlight text in the content first'}
                     >
-                      {isLoadingAtomize ? (
-                        <>
-                          <span className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></span>
-                          Atomizing...
-                        </>
-                      ) : (
-                        <>⚛️ Atomize</>
-                      )}
+                      ⚛️ Atomize Selection
                     </button>
                   </div>
                 )}
@@ -2544,7 +2511,9 @@ Be conversational and human, not formulaic.`;
                     ref={textareaRef}
                     defaultValue={displayContent}
                     onChange={handleContentChange}
-                    onMouseUp={handleTextSelection}
+                    onSelect={handleTextareaSelection}
+                    onMouseUp={handleTextareaSelection}
+                    onKeyUp={handleTextareaSelection}
                     className="w-full flex-1 bg-slate-950/50 text-gray-200 border border-cyan-500/20 rounded-lg p-4
                              focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/30
                              resize-none text-base leading-relaxed"
@@ -2553,7 +2522,7 @@ Be conversational and human, not formulaic.`;
                     style={{ minHeight: '300px' }}
                   />
                   <div className="mt-2 text-xs text-gray-500 italic">
-                    💡 Changes auto-save as you type • Ctrl+Z to undo works naturally
+                    💡 Changes auto-save as you type • Highlight text to atomize it into a child node
                   </div>
                 </div>
               ) : (

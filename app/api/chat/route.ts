@@ -107,36 +107,25 @@ export async function POST(request: NextRequest) {
     console.log('📋 Previous questions:', previousQuestions?.length || 0);
     console.log('📚 Conversation history:', conversationHistory?.length || 0);
 
-    // 🧠 GAP modes use different request structure (question + graphStructure)
-    // Skip messages validation for GAP modes
-    const isGapMode = mode === 'gap-analyze' || mode === 'gap-parallel' || mode === 'gap-single' || mode === 'gap-synthesize';
-
     let userMessage: string;
 
-    if (isGapMode) {
-      // GAP modes don't use messages array, skip validation
-      console.log('🧠 GAP mode detected, skipping messages validation');
-      userMessage = ''; // Will be populated by GAP mode handlers
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      userMessage = messages[messages.length - 1].content;
+      console.log('📨 Extracted from messages array:', userMessage);
     } else {
-      // Standard modes require messages array
-      if (messages && Array.isArray(messages) && messages.length > 0) {
-        userMessage = messages[messages.length - 1].content;
-        console.log('📨 Extracted from messages array:', userMessage);
-      } else {
-        console.error('❌ No valid message found in request');
-        return NextResponse.json(
-          { error: 'Message is required' },
-          { status: 400 }
-        );
-      }
+      console.error('❌ No valid message found in request');
+      return NextResponse.json(
+        { error: 'Message is required' },
+        { status: 400 }
+      );
+    }
 
-      if (!userMessage || userMessage.trim() === '') {
-        console.error('❌ Message is empty');
-        return NextResponse.json(
-          { error: 'Message cannot be empty' },
-          { status: 400 }
-        );
-      }
+    if (!userMessage || userMessage.trim() === '') {
+      console.error('❌ Message is empty');
+      return NextResponse.json(
+        { error: 'Message cannot be empty' },
+        { status: 400 }
+      );
     }
 
     // 🌌 SPATIAL MODE: Explicitly triggered by mode parameter
@@ -1028,17 +1017,17 @@ IMPORTANT:
       return NextResponse.json({ content: rawResponse });
     }
 
-    // 🔬 ANALYZE UNIVERSE MODE: Extract topics, cases, and doctrines
+    // 🔬 ANALYZE UNIVERSE MODE: Extract topics, examples, and principles
     if (mode === 'analyze-universe') {
       console.log('🔬 ANALYZE-UNIVERSE MODE: Analyzing universe content');
 
       const userContent = userMessage;
 
-      const analyzePrompt = `You are analyzing a law student's knowledge universe. Extract and categorize the following from all content:
+      const analyzePrompt = `You are analyzing a student's knowledge universe. First, identify the subject domain from the content (e.g., law, philosophy, history, science, business, etc.). Then extract and categorize the following:
 
-1. **Topics**: Broad legal topics or areas of law (e.g., "Constitutional Law", "Dormant Commerce Clause", "Preemption")
-2. **Cases**: Specific legal cases mentioned (e.g., "Youngstown Sheet", "City of Philadelphia v. New Jersey")
-3. **Doctrines**: Legal doctrines, tests, or rules (e.g., "Strict Scrutiny", "Pike Balancing Test", "Field Preemption")
+1. **Topics**: Broad subject areas or themes (e.g., "Constitutional Law", "Epistemology", "Industrial Revolution", "Thermodynamics")
+2. **Examples**: Specific instances, cases, events, experiments, works, or illustrations that demonstrate concepts (e.g., court cases in law, historical events in history, thought experiments in philosophy, landmark studies in science)
+3. **Principles**: Core rules, theories, frameworks, doctrines, or laws that govern the subject (e.g., legal doctrines, philosophical theories, scientific laws, historical theses)
 
 For each item found, provide:
 - A unique ID (lowercase-kebab-case)
@@ -1051,11 +1040,11 @@ Return ONLY valid JSON in this exact format:
   "topics": [
     {"id": "topic-id", "name": "Topic Name", "description": "Brief description", "nodeIds": []}
   ],
-  "cases": [
-    {"id": "case-id", "name": "Case Name", "summary": "Brief summary", "nodeIds": []}
+  "examples": [
+    {"id": "example-id", "name": "Example Name", "summary": "Brief summary", "nodeIds": []}
   ],
-  "doctrines": [
-    {"id": "doctrine-id", "name": "Doctrine Name", "explanation": "Brief explanation", "nodeIds": []}
+  "principles": [
+    {"id": "principle-id", "name": "Principle Name", "explanation": "Brief explanation", "nodeIds": []}
   ]
 }
 
@@ -1065,7 +1054,7 @@ ${userContent}`;
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 8096,
-        system: 'You are a legal education expert who analyzes and categorizes legal content. Always return ONLY valid JSON with no additional text.',
+        system: 'You are an expert educator who analyzes and categorizes academic content across any subject domain. Always return ONLY valid JSON with no additional text.',
         messages: [{ role: 'user', content: analyzePrompt }],
       }, 'low');
 
@@ -1081,26 +1070,26 @@ ${userContent}`;
 
       const userContent = userMessage;
 
-      const scenarioPrompt = `You are a law professor creating a practice scenario for a student. Based on the topics, cases, and doctrines provided, create a NEW hypothetical scenario that requires applying these legal principles.
+      const scenarioPrompt = `You are an expert educator creating a practice scenario for a student. Based on the topics, examples, and principles provided, create a NEW hypothetical scenario that requires applying these concepts.
 
 ${userContent}
 
-Create a realistic hypothetical scenario that:
-1. Is different from any cases mentioned above
-2. Requires applying 2-3 of the doctrines/principles listed
-3. Has factual complexity that mirrors real legal analysis
+Create a realistic scenario that:
+1. Is different from any examples mentioned above
+2. Requires applying 2-3 of the principles listed
+3. Has enough complexity for meaningful analysis
 4. Is 3-5 paragraphs long
 
 Return ONLY valid JSON in this exact format:
 {
-  "focus": "Brief description of what doctrine/principle to apply (e.g., 'Apply the Pike Balancing Test')",
-  "question": "The full hypothetical scenario text (3-5 paragraphs)"
+  "focus": "Brief description of what principle/concept to apply",
+  "question": "The full scenario text (3-5 paragraphs)"
 }`;
 
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 4096,
-        system: 'You are a law professor creating practice scenarios. Always return ONLY valid JSON with no additional text.',
+        system: 'You are an expert educator creating practice scenarios appropriate to the subject domain. Always return ONLY valid JSON with no additional text.',
         messages: [{ role: 'user', content: scenarioPrompt }],
       });
 
@@ -1116,13 +1105,13 @@ Return ONLY valid JSON in this exact format:
 
       const userContent = userMessage;
 
-      const gradingPrompt = `You are a law professor grading a student's application of legal doctrines to a hypothetical scenario.
+      const gradingPrompt = `You are an expert educator grading a student's application of concepts and principles to a scenario.
 
 ${userContent}
 
 Provide constructive feedback that:
-1. Identifies which doctrines/principles the student correctly identified
-2. Evaluates how well they applied those principles to the facts
+1. Identifies which principles/concepts the student correctly identified
+2. Evaluates how well they applied those principles to the scenario
 3. Points out what they missed or got wrong
 4. Explains the correct analysis
 5. Is encouraging but honest
@@ -1132,7 +1121,7 @@ Format your feedback in a clear, structured way (but NOT as JSON - just formatte
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 4096,
-        system: 'You are a supportive law professor providing detailed, constructive feedback on legal analysis.',
+        system: 'You are a supportive educator providing detailed, constructive feedback on student analysis. Adapt your tone and terminology to the subject domain.',
         messages: [{ role: 'user', content: gradingPrompt }],
       }, 'high');
 
@@ -1148,20 +1137,20 @@ Format your feedback in a clear, structured way (but NOT as JSON - just formatte
 
       const userContent = userMessage;
 
-      const essayPrompt = `You are a law professor creating an application essay question for a course. Based on the course content provided, create a comprehensive essay question that requires students to apply the legal doctrines and principles they learned to a new scenario.
+      const essayPrompt = `You are an expert educator creating an application essay question for a course. Based on the course content provided, create a comprehensive essay question that requires students to apply the principles and concepts they learned to a new scenario.
 
 ${userContent}
 
 Create:
 1. A challenging essay question that:
-   - Presents a realistic hypothetical scenario
-   - Requires applying multiple doctrines/principles from the course
-   - Has sufficient factual complexity for in-depth analysis
+   - Presents a realistic scenario appropriate to the subject domain
+   - Requires applying multiple principles/concepts from the course
+   - Has sufficient complexity for in-depth analysis
    - Is appropriate for a final assessment
 
 2. A detailed grading rubric that:
    - Lists the key issues students should identify
-   - Specifies which doctrines/principles should be applied
+   - Specifies which principles/concepts should be applied
    - Outlines the expected analysis steps
    - Provides clear criteria for what constitutes a strong answer
 
@@ -1169,8 +1158,8 @@ CRITICAL: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO e
 Do NOT wrap the JSON in \`\`\`json or \`\`\` markers.
 Return ONLY this exact JSON structure:
 {
-  "question": "The full essay question including the hypothetical scenario (4-6 paragraphs)",
-  "rubric": "Detailed grading rubric with key issues, relevant doctrines, and evaluation criteria (structured with clear sections)"
+  "question": "The full essay question including the scenario (4-6 paragraphs)",
+  "rubric": "Detailed grading rubric with key issues, relevant principles, and evaluation criteria (structured with clear sections)"
 }
 
 Your entire response must be valid, parseable JSON starting with { and ending with }. Nothing else.`;
@@ -1178,7 +1167,7 @@ Your entire response must be valid, parseable JSON starting with { and ending wi
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 6000,
-        system: 'You are an experienced law professor creating comprehensive assessments. CRITICAL: Your response must be ONLY valid, parseable JSON with no markdown code blocks, no explanation text, and no additional formatting. Start with { and end with }. Nothing else.',
+        system: 'You are an experienced educator creating comprehensive assessments appropriate to the subject domain. CRITICAL: Your response must be ONLY valid, parseable JSON with no markdown code blocks, no explanation text, and no additional formatting. Start with { and end with }. Nothing else.',
         messages: [{ role: 'user', content: essayPrompt }],
       });
 
@@ -1194,13 +1183,13 @@ Your entire response must be valid, parseable JSON starting with { and ending wi
 
       const userContent = userMessage;
 
-      const gradingPrompt = `You are a law professor grading a student's application essay. You have the essay question, the grading rubric, and the student's answer.
+      const gradingPrompt = `You are an expert educator grading a student's application essay. You have the essay question, the grading rubric, and the student's answer.
 
 ${userContent}
 
 Provide comprehensive feedback that:
 1. Evaluates the student's answer against each criterion in the rubric
-2. Identifies which legal issues and doctrines they correctly addressed
+2. Identifies which key issues and principles they correctly addressed
 3. Points out what they missed or misunderstood
 4. Explains the correct analysis for any gaps
 5. Provides specific suggestions for improvement
@@ -1211,7 +1200,7 @@ Format your feedback in clear, structured paragraphs with headers. Be constructi
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 6000,
-        system: 'You are an experienced law professor providing detailed, constructive feedback on application essays. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
+        system: 'You are an experienced educator providing detailed, constructive feedback on application essays. Adapt your tone and terminology to the subject domain. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
         messages: [{ role: 'user', content: gradingPrompt }],
       }, 'high');
 
@@ -1227,13 +1216,13 @@ Format your feedback in clear, structured paragraphs with headers. Be constructi
 
       const userContent = userMessage;
 
-      const gradingPrompt = `You are a law professor grading a student's application essay. You have the essay question and the student's answer, but no explicit rubric.
+      const gradingPrompt = `You are an expert educator grading a student's application essay. You have the essay question and the student's answer, but no explicit rubric.
 
 ${userContent}
 
 Provide comprehensive feedback that:
 1. Evaluates whether the student addressed the question thoroughly
-2. Identifies key legal issues, doctrines, or concepts they correctly applied
+2. Identifies key issues, principles, or concepts they correctly applied
 3. Points out what they missed or misunderstood
 4. Explains what a strong answer should include
 5. Provides specific suggestions for improvement
@@ -1244,7 +1233,7 @@ Format your feedback in clear, structured paragraphs with headers. Be constructi
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 6000,
-        system: 'You are an experienced law professor providing detailed, constructive feedback on application essays. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
+        system: 'You are an experienced educator providing detailed, constructive feedback on application essays. Adapt your tone and terminology to the subject domain. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
         messages: [{ role: 'user', content: gradingPrompt }],
       }, 'high');
 
@@ -1733,382 +1722,6 @@ Would you like another question?`;
         response: feedback,
         isQuizFeedback: true
       });
-    }
-
-    // 🧠 GAP MODE: gap-analyze - Analyze query with graph structure (MULTI-UNIVERSE)
-    if (mode === 'gap-analyze') {
-      console.log('🧠 GAP MODE: gap-analyze - Analyzing query with multi-universe context');
-
-      const { currentGraph, activatedGraphs, question } = body;
-
-      console.log('🧠 Multi-universe context:', {
-        hasCurrentGraph: !!currentGraph,
-        activatedCount: activatedGraphs?.length || 0,
-        question: question?.substring(0, 50)
-      });
-
-      // Build context from multiple universes
-      const contextSections: string[] = [];
-
-      if (currentGraph) {
-        contextSections.push(`CURRENT UNIVERSE (on canvas):
-Nexus: ${currentGraph.nexus.title}
-${currentGraph.nexus.content}
-
-Nodes (${currentGraph.nodes.length}):
-${currentGraph.nodes.slice(0, 10).map((n: any, i: number) =>
-          `${i + 1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
-        ).join('\n')}
-${currentGraph.nodes.length > 10 ? `... and ${currentGraph.nodes.length - 10} more nodes` : ''}`);
-      }
-
-      if (activatedGraphs && activatedGraphs.length > 0) {
-        contextSections.push(`\nACTIVATED SOURCE UNIVERSES (${activatedGraphs.length}):`);
-        activatedGraphs.forEach((graph: any, idx: number) => {
-          contextSections.push(`
-Universe ${idx + 1}: ${graph.nexus.title}
-${graph.nexus.content}
-Nodes (${graph.nodes.length}):
-${graph.nodes.slice(0, 5).map((n: any, i: number) =>
-            `  - ${n.type}: ${n.content.substring(0, 80)}...`
-          ).join('\n')}
-${graph.nodes.length > 5 ? `  ... and ${graph.nodes.length - 5} more nodes` : ''}`);
-        });
-      }
-
-      const graphContext = contextSections.join('\n');
-
-      const analyzePrompt = `You are analyzing a user's question across multiple knowledge universes.
-
-${graphContext}
-
-USER QUESTION: "${question}"
-
-Analyze this question and determine:
-1. Can this question be broken into 2-5 INDEPENDENT parallel explorations?
-2. Or should it be answered as a single cohesive response?
-
-Criteria for PARALLEL:
-- Question explicitly asks about multiple things ("explore X, Y, and Z")
-- Question can naturally split into independent subtopics
-- Each subtopic can be explored independently without depending on others
-- User says "explore", "break down", "analyze different aspects"
-${activatedGraphs && activatedGraphs.length > 0 ? '- With multiple universes activated, consider tasks that find connections between them' : ''}
-
-Criteria for SINGLE:
-- Question asks for one coherent answer
-- Question requires synthesis across topics
-- Question is about relationships between things (needs integrated answer)
-- Question is a follow-up that builds on existing conversation
-${activatedGraphs && activatedGraphs.length > 0 ? '- Question asks for cross-universe synthesis or comparison' : ''}
-
-Respond in VALID JSON format:
-{
-  "type": "parallel" OR "single",
-  "reasoning": "brief explanation of why",
-  "tasks": ["task 1", "task 2", "task 3"] (ONLY if type is "parallel", otherwise omit)
-}
-
-IMPORTANT: Return ONLY the JSON, no other text.`;
-
-      const response = await safeAICall(anthropic, openai, {
-
-        max_tokens: 1024,
-        system: 'You are a graph-aware AI analyzer. Assess whether questions should be answered in parallel or as a single response.',
-        messages: [{ role: 'user', content: analyzePrompt }],
-      });
-
-      const textContent = response.content.find((block) => block.type === 'text');
-      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
-
-      try {
-        const analysisResult = JSON.parse(rawResponse.trim());
-        console.log('🧠 Analysis result:', analysisResult);
-
-        return NextResponse.json(analysisResult);
-      } catch (error) {
-        console.error('❌ Failed to parse gap-analyze response:', error);
-        console.error('Raw response:', rawResponse);
-        return NextResponse.json(
-          { error: 'Failed to parse analysis response' },
-          { status: 500 }
-        );
-      }
-    }
-
-    // 🧠 GAP MODE: gap-parallel - Execute one parallel task with multi-universe awareness
-    if (mode === 'gap-parallel') {
-      console.log('🧠 GAP MODE: gap-parallel - Executing parallel task with multi-universe context');
-
-      const { currentGraph, activatedGraphs, task } = body;
-
-      if (!task) {
-        return NextResponse.json(
-          { error: 'Task required for gap-parallel mode' },
-          { status: 400 }
-        );
-      }
-
-      console.log('🧠 Executing task:', task.substring(0, 50) + '...');
-      console.log('🧠 Multi-universe context:', {
-        hasCurrentGraph: !!currentGraph,
-        activatedCount: activatedGraphs?.length || 0
-      });
-
-      // Build context from multiple universes
-      const contextSections: string[] = [];
-
-      if (currentGraph) {
-        contextSections.push(`CURRENT UNIVERSE:
-Nexus: ${currentGraph.nexus.title}
-${currentGraph.nexus.content}
-
-Existing nodes (${currentGraph.nodes.length}):
-${currentGraph.nodes.slice(0, 8).map((n: any, i: number) =>
-          `- ${n.content.substring(0, 80)}...`
-        ).join('\n')}
-${currentGraph.nodes.length > 8 ? `... and ${currentGraph.nodes.length - 8} more` : ''}`);
-      }
-
-      if (activatedGraphs && activatedGraphs.length > 0) {
-        contextSections.push(`\nACTIVATED UNIVERSES (${activatedGraphs.length} source${activatedGraphs.length > 1 ? 's' : ''}):`);
-        activatedGraphs.forEach((graph: any, idx: number) => {
-          contextSections.push(`
-${idx + 1}. ${graph.nexus.title}
-   ${graph.nexus.content.substring(0, 150)}...
-   Key nodes: ${graph.nodes.slice(0, 3).map((n: any) => n.content.substring(0, 60)).join(' | ')}...`);
-        });
-      }
-
-      const graphContext = contextSections.join('\n');
-
-      const parallelPrompt = `You are exploring a specific aspect across multiple knowledge universes.
-
-${graphContext}
-
-YOUR TASK: ${task}
-
-Provide a comprehensive response (3-5 paragraphs) that:
-1. Explores this specific aspect in depth
-2. ${activatedGraphs && activatedGraphs.length > 0 ? 'Draws connections and insights across the activated universes' : 'Connects to the broader graph context when relevant'}
-3. ${activatedGraphs && activatedGraphs.length > 0 ? 'Identifies patterns, contrasts, or synthesis opportunities between universes' : 'Fills gaps in the existing knowledge structure'}
-4. Provides actionable insights or concrete examples
-
-${activatedGraphs && activatedGraphs.length > 0 ? 'IMPORTANT: You have access to multiple universes - find non-obvious connections and synthesize insights across them.' : ''}
-
-Write naturally and substantively. This will become a node in the graph.`;
-
-      const response = await safeAICall(anthropic, openai, {
-
-        max_tokens: 2048,
-        system: 'You are a graph-aware AI exploring specific aspects of knowledge. Provide deep, contextual insights.',
-        messages: [{ role: 'user', content: parallelPrompt }],
-      });
-
-      const textContent = response.content.find((block) => block.type === 'text');
-      const content = textContent && 'text' in textContent ? textContent.text : '';
-
-      console.log('✅ Parallel task completed:', content.substring(0, 100) + '...');
-
-      return NextResponse.json({ content });
-    }
-
-    // 🌌 GAP MODE: gap-synthesize - Create synthesis universe from activated universes (empty canvas)
-    if (mode === 'gap-synthesize') {
-      console.log('🌌 GAP MODE: gap-synthesize - Creating synthesis universe from activated universes');
-
-      const { activatedGraphs, question } = body;
-
-      if (!activatedGraphs || activatedGraphs.length === 0) {
-        return NextResponse.json(
-          { error: 'Activated universes required for synthesis mode' },
-          { status: 400 }
-        );
-      }
-
-      console.log('🌌 Synthesizing from', activatedGraphs.length, 'universes');
-      console.log('🌌 User question:', question?.substring(0, 50));
-
-      // Build context from activated universes
-      const universeContexts = activatedGraphs.map((graph: any, idx: number) => `
-UNIVERSE ${idx + 1}: ${graph.nexus.title}
-Overview: ${graph.nexus.content}
-
-Key Insights (${graph.nodes.length} nodes):
-${graph.nodes.slice(0, 8).map((n: any) => `- ${n.content.substring(0, 120)}...`).join('\n')}
-${graph.nodes.length > 8 ? `... and ${graph.nodes.length - 8} more insights` : ''}
-`).join('\n---\n');
-
-      const synthesisPrompt = `You are creating a NEW synthesis universe that combines insights from multiple activated universes.
-
-USER QUESTION/GOAL: "${question}"
-
-SOURCE UNIVERSES:
-${universeContexts}
-
-Your task: Create a synthesis universe that:
-1. Weaves together the most important insights from ALL source universes
-2. Finds non-obvious connections and patterns across universes
-3. Creates something greater than the sum of its parts
-4. Organizes insights into 5-12 coherent nodes
-5. Addresses the user's question/goal through this synthesis
-
-Format as VALID JSON (ONLY JSON, no other text):
-{
-  "nexusTitle": "Synthesis: [brief title capturing the cross-universe insight]",
-  "nexusContent": "Overview paragraph explaining how this synthesis combines insights from the ${activatedGraphs.length} source universes",
-  "nodes": [
-    {"content": "Synthesis Point 1: Title\\n\\nExplanation that draws from multiple source universes (2-3 sentences)"},
-    {"content": "Synthesis Point 2: Title\\n\\nExplanation that draws from multiple source universes (2-3 sentences)"},
-    ...
-  ]
-}
-
-IMPORTANT:
-- Return ONLY valid JSON, no markdown blocks
-- Use \\n for line breaks (NOT literal newlines)
-- Each node should synthesize across multiple source universes
-- Create 5-12 nodes that comprehensively address the synthesis
-- Node titles should reflect the cross-universe nature of the insights`;
-
-      console.log('📤 Sending synthesis universe generation prompt...');
-
-      const response = await safeAICall(anthropic, openai, {
-
-        max_tokens: 4096,
-        system: 'You are Astryon AI, a universe synthesis architect. You create new knowledge structures that synthesize insights from multiple source universes. Always return ONLY valid JSON with properly escaped newlines (\\n).',
-        messages: [{ role: 'user', content: synthesisPrompt }],
-      }, 'high');
-
-      const textContent = response.content.find((block) => block.type === 'text');
-      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
-
-      console.log('📝 Raw synthesis response:', rawResponse.substring(0, 200));
-
-      try {
-        let spatialData;
-        try {
-          spatialData = JSON.parse(rawResponse);
-        } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
-
-          let cleanedResponse = rawResponse.trim();
-          if (cleanedResponse.startsWith('```json')) {
-            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
-          } else if (cleanedResponse.startsWith('```')) {
-            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
-          }
-
-          cleanedResponse = cleanedResponse.replace(
-            /"((?:[^"\\]|\\.)*)"/g,
-            (match) => {
-              return match
-                .replace(/\r\n/g, '\\n')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\n')
-                .replace(/\t/g, '\\t');
-            }
-          );
-
-          spatialData = JSON.parse(cleanedResponse);
-        }
-
-        console.log('✅ Successfully parsed synthesis universe:', {
-          title: spatialData.nexusTitle,
-          nodeCount: spatialData.nodes?.length || 0
-        });
-
-        return NextResponse.json({
-          response: `Created synthesis universe from ${activatedGraphs.length} source universes`,
-          spatialData
-        });
-      } catch (parseError) {
-        console.error('❌ Failed to parse synthesis JSON:', parseError);
-        console.error('Raw response was:', rawResponse);
-        return NextResponse.json(
-          { error: 'Failed to parse synthesis universe structure' },
-          { status: 500 }
-        );
-      }
-    }
-
-    // 🧠 GAP MODE: gap-single - Execute single task with multi-universe awareness
-    if (mode === 'gap-single') {
-      console.log('🧠 GAP MODE: gap-single - Executing single task with multi-universe context');
-
-      const { currentGraph, activatedGraphs, question } = body;
-
-      if (!question) {
-        return NextResponse.json(
-          { error: 'Question required for gap-single mode' },
-          { status: 400 }
-        );
-      }
-
-      console.log('🧠 Question:', question.substring(0, 50) + '...');
-      console.log('🧠 Multi-universe context:', {
-        hasCurrentGraph: !!currentGraph,
-        activatedCount: activatedGraphs?.length || 0
-      });
-
-      // Build context from multiple universes
-      const contextSections: string[] = [];
-
-      if (currentGraph) {
-        contextSections.push(`CURRENT UNIVERSE:
-Nexus: ${currentGraph.nexus.title}
-${currentGraph.nexus.content}
-
-Existing nodes (${currentGraph.nodes.length}):
-${currentGraph.nodes.map((n: any, i: number) =>
-          `${i + 1}. ${n.type}: ${n.content.substring(0, 100)}${n.content.length > 100 ? '...' : ''}`
-        ).join('\n')}`);
-      }
-
-      if (activatedGraphs && activatedGraphs.length > 0) {
-        contextSections.push(`\nACTIVATED SOURCE UNIVERSES (${activatedGraphs.length}):`);
-        activatedGraphs.forEach((graph: any, idx: number) => {
-          contextSections.push(`
-Universe ${idx + 1}: ${graph.nexus.title}
-${graph.nexus.content}
-Key nodes: ${graph.nodes.slice(0, 5).map((n: any, i: number) =>
-            `${n.type}: ${n.content.substring(0, 100)}...`
-          ).join(' | ')}`);
-        });
-      }
-
-      const graphContext = contextSections.join('\n');
-
-      const singlePrompt = `You are responding to a question across multiple knowledge universes.
-
-${graphContext}
-
-USER QUESTION: "${question}"
-
-Provide a comprehensive response that:
-1. Directly answers the question
-2. ${activatedGraphs && activatedGraphs.length > 0 ? 'Synthesizes insights from all activated universes' : 'Builds on existing knowledge in the graph'}
-3. ${activatedGraphs && activatedGraphs.length > 0 ? 'Identifies patterns, contrasts, and connections across universes' : 'Identifies gaps and suggests new directions'}
-4. ${activatedGraphs && activatedGraphs.length > 0 ? 'Creates a unified synthesis that transcends individual universes' : 'Synthesizes connections across the graph when relevant'}
-5. Provides concrete examples or actionable insights
-
-${activatedGraphs && activatedGraphs.length > 0 ? 'IMPORTANT: You have access to multiple universes - your response should weave together insights from all sources to create something greater than the sum of its parts.' : ''}
-
-Write naturally (3-6 paragraphs). This will become a node in the graph.`;
-
-      const response = await safeAICall(anthropic, openai, {
-
-        max_tokens: 2048,
-        system: 'You are a graph-aware AI that provides contextual, synthesized responses based on the entire knowledge structure.',
-        messages: [{ role: 'user', content: singlePrompt }],
-      });
-
-      const textContent = response.content.find((block) => block.type === 'text');
-      const content = textContent && 'text' in textContent ? textContent.text : '';
-
-      console.log('✅ Single task completed:', content.substring(0, 100) + '...');
-
-      return NextResponse.json({ content });
     }
 
     // ⚖️ DOCTRINE MODE: Generate doctrinal map with JSON structure

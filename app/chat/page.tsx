@@ -1,7 +1,6 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import ChatInterface from '@/components/chat/ChatInterface';
 import Navigation from '@/components/Navigation';
 import { useNexusEvolution } from '@/lib/useNexusEvolution';
 import { useNexusApplicationLabEvolution } from '@/lib/useNexusApplicationLabEvolution';
@@ -31,9 +30,6 @@ export default function ChatPage() {
       }}>
         {/* 3D Canvas */}
         <CanvasScene />
-
-        {/* Chat Interface */}
-        <ChatInterface />
 
         {/* UnifiedNodeModal is rendered in CanvasScene */}
       </div>

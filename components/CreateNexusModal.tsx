@@ -1,73 +1,95 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useCanvasStore } from '@/lib/store';
+import { extractTextFromFile } from '@/lib/extractFileText';
 
 interface CreateNexusModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+const ACCEPTED_EXTENSIONS = [
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.txt', '.csv', '.md', '.json', '.rtf', '.html', '.xml',
+].join(',');
+
+const FRIENDLY_TYPES = 'PDF, Word, Excel, PowerPoint, Text, CSV, Markdown, JSON, RTF, HTML';
+
 export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [videoPreview, setVideoPreview] = useState<string | null>(null);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [audioPreview, setAudioPreview] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const createNexus = useCanvasStore((state) => state.createNexus);
-  
-  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type.startsWith('video/')) {
-      setVideoFile(file);
-      const url = URL.createObjectURL(file);
-      setVideoPreview(url);
+    if (!file) return;
+
+    setUploadedFile(file);
+    setExtractError(null);
+    const url = URL.createObjectURL(file);
+    setFilePreviewUrl(url);
+
+    // Extract text from any file type
+    setExtracting(true);
+    try {
+      const text = await extractTextFromFile(file);
+      if (text.trim()) {
+        setContent(text);
+      }
+    } catch (err) {
+      console.error('Failed to extract text from file:', err);
+      setExtractError('Could not extract text from this file.');
+    } finally {
+      setExtracting(false);
     }
   };
-  
-  const handleAudioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type.startsWith('audio/')) {
-      setAudioFile(file);
-      const url = URL.createObjectURL(file);
-      setAudioPreview(url);
+
+  const handleRemoveFile = () => {
+    setUploadedFile(null);
+    setExtractError(null);
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    setFilePreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
-  
+
   const handleSubmit = () => {
     if (!title.trim()) return;
-    
-    console.log('🟢 Creating Nexus with title:', title, 'video:', !!videoFile, 'audio:', !!audioFile);
-    createNexus(title, content, videoPreview || undefined, audioPreview || undefined);
+
+    console.log('🟢 Creating Nexus with title:', title, 'file:', uploadedFile?.name || 'none');
+    createNexus(
+      title,
+      content,
+      undefined, // videoUrl
+      undefined, // audioUrl
+      filePreviewUrl || undefined,
+      uploadedFile?.name || undefined,
+    );
     setTitle('');
     setContent('');
-    setVideoFile(null);
-    setVideoPreview(null);
-    setAudioFile(null);
-    setAudioPreview(null);
+    handleRemoveFile();
     onClose();
   };
-  
+
   const handleClose = () => {
     setTitle('');
     setContent('');
-    setVideoFile(null);
-    setAudioFile(null);
-    if (videoPreview) {
-      URL.revokeObjectURL(videoPreview);
-    }
-    if (audioPreview) {
-      URL.revokeObjectURL(audioPreview);
-    }
-    setVideoPreview(null);
-    setAudioPreview(null);
+    handleRemoveFile();
     onClose();
   };
-  
+
   if (!isOpen) return null;
-  
+
   return createPortal(
     <div
       style={{
@@ -100,9 +122,9 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
         <h2 style={{ color: '#00FFD4', marginBottom: '16px', fontSize: '24px' }}>
           Create New Nexus
         </h2>
-        
+
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ 
+          <label style={{
             display: 'block',
             color: '#00FFD4',
             marginBottom: '8px',
@@ -128,103 +150,108 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
             autoFocus
           />
         </div>
-        
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Additional content (optional)"
-          style={{
-            width: '100%',
-            height: '120px',
-            padding: '12px',
-            fontSize: '16px',
-            backgroundColor: '#374151',
-            color: 'white',
-            border: '2px solid #00FFD4',
-            borderRadius: '8px',
+
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{
+            display: 'block',
+            color: '#00FFD4',
+            marginBottom: '8px',
+            fontSize: '14px'
+          }}>
+            Upload File (optional)
+          </label>
+          <p style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '8px' }}>
+            {FRIENDLY_TYPES}
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_EXTENSIONS}
+            onChange={handleFileChange}
+            style={{
+              width: '100%',
+              padding: '8px',
+              backgroundColor: '#374151',
+              color: 'white',
+              border: '2px solid #00FFD4',
+              borderRadius: '8px',
+              cursor: 'pointer',
+            }}
+          />
+        </div>
+
+        {uploadedFile && (
+          <div style={{
             marginBottom: '16px',
-            resize: 'none',
-          }}
-        />
-        
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ 
+            padding: '12px',
+            backgroundColor: '#374151',
+            borderRadius: '8px',
+            border: '1px solid #4b5563',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <div style={{ overflow: 'hidden' }}>
+              <p style={{ color: '#00FFD4', fontSize: '14px', fontWeight: 'bold', margin: 0 }}>
+                {uploadedFile.name}
+              </p>
+              <p style={{ color: '#9ca3af', fontSize: '12px', margin: '4px 0 0 0' }}>
+                {(uploadedFile.size / 1024).toFixed(1)} KB
+                {extracting && ' — Extracting text...'}
+              </p>
+            </div>
+            <button
+              onClick={handleRemoveFile}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ef4444',
+                cursor: 'pointer',
+                fontSize: '18px',
+                padding: '4px 8px',
+                flexShrink: 0,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {extractError && (
+          <p style={{ color: '#f87171', fontSize: '13px', marginBottom: '16px' }}>
+            {extractError}
+          </p>
+        )}
+
+        <div style={{ position: 'relative', marginBottom: '16px' }}>
+          <label style={{
             display: 'block',
             color: '#00FFD4',
             marginBottom: '8px',
-            fontSize: '14px'
+            fontSize: '14px',
           }}>
-            Upload Video (optional)
+            Content {uploadedFile ? '(extracted from file — editable)' : '(optional)'}
           </label>
-          <input
-            type="file"
-            accept="video/*"
-            onChange={handleVideoChange}
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder={extracting ? 'Extracting text from file...' : 'Additional content (optional)'}
+            readOnly={extracting}
             style={{
               width: '100%',
-              padding: '8px',
-              backgroundColor: '#374151',
+              height: '180px',
+              padding: '12px',
+              fontSize: '14px',
+              backgroundColor: extracting ? '#2d3748' : '#374151',
               color: 'white',
               border: '2px solid #00FFD4',
               borderRadius: '8px',
-              cursor: 'pointer',
+              resize: 'vertical',
+              opacity: extracting ? 0.6 : 1,
             }}
           />
         </div>
-        
-        {videoPreview && (
-          <div style={{ marginBottom: '16px' }}>
-            <video
-              src={videoPreview}
-              style={{
-                width: '100%',
-                maxHeight: '200px',
-                borderRadius: '8px',
-                backgroundColor: '#000',
-              }}
-              controls
-            />
-          </div>
-        )}
-        
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ 
-            display: 'block',
-            color: '#00FFD4',
-            marginBottom: '8px',
-            fontSize: '14px'
-          }}>
-            Upload Audio (optional)
-          </label>
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={handleAudioChange}
-            style={{
-              width: '100%',
-              padding: '8px',
-              backgroundColor: '#374151',
-              color: 'white',
-              border: '2px solid #00FFD4',
-              borderRadius: '8px',
-              cursor: 'pointer',
-            }}
-          />
-        </div>
-        
-        {audioPreview && (
-          <div style={{ marginBottom: '16px' }}>
-            <audio
-              src={audioPreview}
-              style={{
-                width: '100%',
-                borderRadius: '8px',
-              }}
-              controls
-            />
-          </div>
-        )}
-        
+
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
           <button
             onClick={handleClose}
@@ -240,22 +267,22 @@ export default function CreateNexusModal({ isOpen, onClose }: CreateNexusModalPr
           >
             Cancel
           </button>
-          
+
           <button
             onClick={handleSubmit}
-            disabled={!title.trim()}
+            disabled={!title.trim() || extracting}
             style={{
               padding: '10px 20px',
-              backgroundColor: title.trim() ? '#00FFD4' : '#6b7280',
-              color: title.trim() ? '#050A1E' : 'white',
+              backgroundColor: (title.trim() && !extracting) ? '#00FFD4' : '#6b7280',
+              color: (title.trim() && !extracting) ? '#050A1E' : 'white',
               border: 'none',
               borderRadius: '8px',
-              cursor: title.trim() ? 'pointer' : 'not-allowed',
+              cursor: (title.trim() && !extracting) ? 'pointer' : 'not-allowed',
               fontSize: '16px',
               fontWeight: 'bold',
             }}
           >
-            Create Nexus
+            {extracting ? 'Extracting...' : 'Create Nexus'}
           </button>
         </div>
       </div>
