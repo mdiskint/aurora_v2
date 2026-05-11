@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCanvasStore } from '@/lib/store';
 import ExportModal from './ExportModal';
 import { Node } from '@/lib/types';
@@ -24,6 +24,22 @@ export default function SectionNavigator() {
   const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
   const createMultiConnection = useCanvasStore((state) => state.createMultiConnection);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // 📦 MODAL DRAG & RESIZE STATE
+  const [modalPos, setModalPos] = useState<{ x: number; y: number } | null>(null);
+  const [modalSize, setModalSize] = useState({ width: 350, height: 500 });
+
+  // Initialize position on mount (avoids SSR window reference)
+  useEffect(() => {
+    if (modalPos === null) {
+      setModalPos({ x: window.innerWidth - 370, y: window.innerHeight - 520 });
+    }
+  }, [modalPos]);
+  const isDraggingModal = useRef(false);
+  const isResizing = useRef<string | null>(null); // which corner/edge: 'nw','ne','sw','se','n','s','e','w'
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const resizeStart = useRef({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 🎯 DRAG-AND-DROP STATE
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -63,6 +79,91 @@ export default function SectionNavigator() {
     };
   }, [isHoldingShift]);
 
+  // 📦 MODAL DRAG HANDLERS
+  const handleModalMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!modalPos) return;
+    isDraggingModal.current = true;
+    dragOffset.current = {
+      x: e.clientX - modalPos.x,
+      y: e.clientY - modalPos.y,
+    };
+    e.preventDefault();
+  }, [modalPos]);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent, corner: string) => {
+    if (!modalPos) return;
+    isResizing.current = corner;
+    resizeStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: modalSize.width,
+      height: modalSize.height,
+      posX: modalPos.x,
+      posY: modalPos.y,
+    };
+    e.preventDefault();
+    e.stopPropagation();
+  }, [modalSize, modalPos]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingModal.current) {
+        const newX = Math.max(0, Math.min(window.innerWidth - modalSize.width, e.clientX - dragOffset.current.x));
+        const newY = Math.max(0, Math.min(window.innerHeight - modalSize.height, e.clientY - dragOffset.current.y));
+        setModalPos({ x: newX, y: newY });
+      }
+
+      if (isResizing.current) {
+        const dx = e.clientX - resizeStart.current.x;
+        const dy = e.clientY - resizeStart.current.y;
+        const corner = isResizing.current;
+        const minW = 250;
+        const minH = 200;
+
+        let newWidth = resizeStart.current.width;
+        let newHeight = resizeStart.current.height;
+        let newX = resizeStart.current.posX;
+        let newY = resizeStart.current.posY;
+
+        if (corner.includes('e')) {
+          newWidth = Math.max(minW, resizeStart.current.width + dx);
+        }
+        if (corner.includes('w')) {
+          const proposedWidth = resizeStart.current.width - dx;
+          if (proposedWidth >= minW) {
+            newWidth = proposedWidth;
+            newX = resizeStart.current.posX + dx;
+          }
+        }
+        if (corner.includes('s')) {
+          newHeight = Math.max(minH, resizeStart.current.height + dy);
+        }
+        if (corner.includes('n')) {
+          const proposedHeight = resizeStart.current.height - dy;
+          if (proposedHeight >= minH) {
+            newHeight = proposedHeight;
+            newY = resizeStart.current.posY + dy;
+          }
+        }
+
+        setModalSize({ width: newWidth, height: newHeight });
+        setModalPos({ x: newX, y: newY });
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDraggingModal.current = false;
+      isResizing.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [modalSize.width, modalSize.height]);
+
   // Hide navigation tree when Application Lab is active
   if (isApplicationLabMode) {
     console.log('🔬 Hiding SectionNavigator - Application Lab is active');
@@ -94,7 +195,7 @@ export default function SectionNavigator() {
     nexus = nexuses.find(n => n && n.id && (n.id.startsWith('chat-') || n.id.startsWith('l1-'))) || nexuses[0];
   }
 
-  if (!nexuses.length || !nexus) return null;
+  if (!nexuses.length || !nexus || !modalPos) return null;
 
   // Build recursive tree structure
   const buildTree = (parentId: string, level: number = 0): TreeNode[] => {
@@ -516,33 +617,79 @@ export default function SectionNavigator() {
     );
   };
 
+  // Resize handle component
+  const ResizeHandle = ({ corner }: { corner: string }) => {
+    const cursorMap: Record<string, string> = {
+      nw: 'nw-resize', ne: 'ne-resize', sw: 'sw-resize', se: 'se-resize',
+      n: 'n-resize', s: 's-resize', e: 'e-resize', w: 'w-resize',
+    };
+    const size = 12;
+    const posStyle: React.CSSProperties = { position: 'absolute', zIndex: 1001 };
+
+    if (corner === 'nw') { posStyle.top = -2; posStyle.left = -2; posStyle.width = size; posStyle.height = size; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 'ne') { posStyle.top = -2; posStyle.right = -2; posStyle.width = size; posStyle.height = size; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 'sw') { posStyle.bottom = -2; posStyle.left = -2; posStyle.width = size; posStyle.height = size; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 'se') { posStyle.bottom = -2; posStyle.right = -2; posStyle.width = size; posStyle.height = size; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 'n') { posStyle.top = -3; posStyle.left = size; posStyle.right = size; posStyle.height = 6; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 's') { posStyle.bottom = -3; posStyle.left = size; posStyle.right = size; posStyle.height = 6; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 'e') { posStyle.right = -3; posStyle.top = size; posStyle.bottom = size; posStyle.width = 6; posStyle.cursor = cursorMap[corner]; }
+    else if (corner === 'w') { posStyle.left = -3; posStyle.top = size; posStyle.bottom = size; posStyle.width = 6; posStyle.cursor = cursorMap[corner]; }
+
+    return (
+      <div
+        style={posStyle}
+        onMouseDown={(e) => handleResizeMouseDown(e, corner)}
+      />
+    );
+  };
+
   return (
     <div
+      ref={containerRef}
       style={{
         position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        width: '350px',
-        maxHeight: '500px',
+        left: `${modalPos.x}px`,
+        top: `${modalPos.y}px`,
+        width: `${modalSize.width}px`,
+        height: `${modalSize.height}px`,
         backgroundColor: 'rgba(30, 41, 59, 0.95)',
         backdropFilter: 'blur(8px)',
         borderRadius: '12px',
         border: '2px solid rgba(147, 51, 234, 0.5)',
         padding: '16px',
+        paddingTop: '0px',
         zIndex: 1000,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      <div style={{
-        color: '#9333EA',
-        fontWeight: 'bold',
-        marginBottom: '12px',
-        fontSize: '14px',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em'
-      }}>
+      {/* Resize handles on all edges and corners */}
+      <ResizeHandle corner="nw" />
+      <ResizeHandle corner="ne" />
+      <ResizeHandle corner="sw" />
+      <ResizeHandle corner="se" />
+      <ResizeHandle corner="n" />
+      <ResizeHandle corner="s" />
+      <ResizeHandle corner="e" />
+      <ResizeHandle corner="w" />
+
+      {/* Draggable header */}
+      <div
+        onMouseDown={handleModalMouseDown}
+        style={{
+          color: '#9333EA',
+          fontWeight: 'bold',
+          marginBottom: '4px',
+          padding: '12px 0',
+          fontSize: '14px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          cursor: 'grab',
+          userSelect: 'none',
+          borderBottom: '1px solid rgba(147, 51, 234, 0.3)',
+        }}
+      >
         Navigation Tree
       </div>
 

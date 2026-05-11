@@ -97,8 +97,7 @@ export default function CourseBuilderPage() {
     atomizationBlueprint: null,
   });
 
-  // Pedagogy is now always traditional for course builder
-  // (Leopold teaching doctrine is only available in chat)
+  // Pedagogy is always traditional for course builder
 
   // Parse timestamp string into chunks
   const parseTimestamps = (timestampStr: string): Array<{ start: number; end: number }> => {
@@ -142,7 +141,7 @@ export default function CourseBuilderPage() {
     });
   };
 
-  // Atomize content using Leopold Teaching Doctrines
+  // Atomize content into structured learning units
   const handleAtomizeContent = async () => {
     if (!courseData.fullTextContent || courseData.fullTextContent.trim() === '') {
       alert('Please enter the full text content first.');
@@ -150,7 +149,7 @@ export default function CourseBuilderPage() {
     }
 
     setIsAtomizing(true);
-    console.log('📚 Atomizing content using Leopold Teaching Doctrines...');
+    console.log('📚 Atomizing content into learning units...');
 
     try {
       const response = await fetch('/api/chat', {

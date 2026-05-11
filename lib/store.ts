@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Node, NodeType, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
+import { Node, NodeType, ThreadMessage, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
 import { transformConversation, transformHighlightImport, HighlightImportData } from './conversationTransformer';
@@ -350,6 +350,9 @@ interface Nexus {
   type?: 'academic' | 'social';
   applicationEssay?: ApplicationEssay;  // For course mode: application essay question and rubric
 
+  // Atomized text tracking
+  atomizedRanges?: Array<{ text: string; childNodeId: string }>;
+
   // 🌱 EVOLVING NEXUS → APPLICATION LAB - Tracks learning progression
   evolutionState?: NexusEvolutionState;
   originalContent?: string | null;     // Preserves original professor/AI framing
@@ -426,6 +429,7 @@ interface CanvasStore {
   updateNexusContent: (nexusId: string, newContent: string) => void;
   updateNodeSemanticTitle: (nodeId: string, semanticTitle: string) => void;
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
+  addAtomizedRange: (parentId: string, text: string, childNodeId: string) => void;
   exportToWordDoc: () => void;
   addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => string;
   addNodes: (nodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => string[];
@@ -543,6 +547,12 @@ interface CanvasStore {
   isStoreInitialized: boolean;
 
   buildConversationContext: () => string;
+
+  // 💬 IN-NODE CONVERSATION THREADS
+  addMessageToNode: (nodeId: string, msg: Omit<ThreadMessage, 'id' | 'timestamp'>) => string;
+  updateMessageInNode: (nodeId: string, messageId: string, content: string) => void;
+  breakOffFromNode: (sourceNodeId: string, selectedText: string) => string;
+  getNodeMessages: (node: Node) => ThreadMessage[];
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -1410,6 +1420,137 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().saveToLocalStorage();
 
     console.log(`✅ Updated node ${nodeId}:`, updates);
+  },
+
+  // 💬 IN-NODE CONVERSATION THREADS
+  addMessageToNode: (nodeId: string, msg: Omit<ThreadMessage, 'id' | 'timestamp'>) => {
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const fullMsg: ThreadMessage = {
+      ...msg,
+      id: messageId,
+      timestamp: Date.now(),
+    };
+
+    set((state) => {
+      const node = state.nodes[nodeId];
+      if (!node) return state;
+
+      const existingMessages = node.messages || [];
+      const updatedMessages = [...existingMessages, fullMsg];
+
+      // Update content with a preview of the latest user message for 3D labels / search
+      const contentPreview = msg.role === 'user'
+        ? msg.content.substring(0, 200)
+        : node.content;
+
+      const updatedNodes = {
+        ...state.nodes,
+        [nodeId]: {
+          ...node,
+          messages: updatedMessages,
+          content: contentPreview,
+        },
+      };
+      return { nodes: updatedNodes };
+    });
+
+    get().saveCurrentUniverse();
+    console.log(`💬 Added message ${messageId} to node ${nodeId}`);
+    return messageId;
+  },
+
+  updateMessageInNode: (nodeId: string, messageId: string, content: string) => {
+    set((state) => {
+      const node = state.nodes[nodeId];
+      if (!node || !node.messages) return state;
+
+      const updatedMessages = node.messages.map(m =>
+        m.id === messageId ? { ...m, content } : m
+      );
+
+      const updatedNodes = {
+        ...state.nodes,
+        [nodeId]: {
+          ...node,
+          messages: updatedMessages,
+        },
+      };
+      return { nodes: updatedNodes };
+    });
+    // No save here - called during streaming; save happens after stream completes
+  },
+
+  breakOffFromNode: (sourceNodeId: string, selectedText: string) => {
+    const newNodeId = get().addNode(selectedText, sourceNodeId, undefined, 'user-reply');
+
+    // Initialize the new node with a seed message
+    const seedMsg: ThreadMessage = {
+      id: `msg-${Date.now()}-seed`,
+      role: 'note',
+      content: selectedText,
+      timestamp: Date.now(),
+    };
+
+    set((state) => {
+      const newNode = state.nodes[newNodeId];
+      if (!newNode) return state;
+
+      const updatedNodes = {
+        ...state.nodes,
+        [newNodeId]: {
+          ...newNode,
+          messages: [seedMsg],
+        },
+      };
+      return { nodes: updatedNodes };
+    });
+
+    get().saveCurrentUniverse();
+    console.log(`✂️ Broke off from ${sourceNodeId} -> new node ${newNodeId}`);
+    return newNodeId;
+  },
+
+  getNodeMessages: (node: Node): ThreadMessage[] => {
+    if (node.messages && node.messages.length > 0) {
+      return node.messages;
+    }
+    // Lazy migration: convert existing content to a single message
+    if (!node.content) return [];
+    return [{
+      id: 'legacy-content',
+      role: node.isAI || node.nodeType === 'ai-response' ? 'assistant' : 'user',
+      content: node.content,
+      timestamp: 0,
+    }];
+  },
+
+  addAtomizedRange: (parentId: string, text: string, childNodeId: string) => {
+    set((state) => {
+      // Check if parent is a node
+      if (state.nodes[parentId]) {
+        const updatedNodes = { ...state.nodes };
+        const existing = updatedNodes[parentId].atomizedRanges || [];
+        updatedNodes[parentId] = {
+          ...updatedNodes[parentId],
+          atomizedRanges: [...existing, { text, childNodeId }],
+        };
+        return { nodes: updatedNodes };
+      }
+      // Check if parent is a nexus
+      const nexusIndex = state.nexuses.findIndex(n => n.id === parentId);
+      if (nexusIndex !== -1) {
+        const updatedNexuses = [...state.nexuses];
+        const existing = updatedNexuses[nexusIndex].atomizedRanges || [];
+        updatedNexuses[nexusIndex] = {
+          ...updatedNexuses[nexusIndex],
+          atomizedRanges: [...existing, { text, childNodeId }],
+        };
+        return { nexuses: updatedNexuses };
+      }
+      return state;
+    });
+    get().saveToLocalStorage();
+    console.log(`⚛️ Recorded atomized range on ${parentId}: "${text.substring(0, 50)}..." → ${childNodeId}`);
   },
 
   exportToWordDoc: async () => {

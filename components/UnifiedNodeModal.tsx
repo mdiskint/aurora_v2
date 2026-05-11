@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { parseVideoUrl } from '@/lib/videoUtils';
 import ApplicationEssaySection from './ApplicationEssaySection';
-import { NodeType } from '@/lib/types';
+import { NodeType, ThreadMessage } from '@/lib/types';
 import {
   buildDoctrinePracticeBundle,
   getAvailablePracticeSteps,
@@ -16,6 +16,52 @@ import { generateUniverseStudyGuide, UniverseDefinition } from '@/lib/studyGuide
 import { StudyGuideWriteUp } from '@/lib/types';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
+
+const ATOMIZE_START_LABEL = '[[ATOMIZE_START';
+const ATOMIZE_END_LABEL = '[[ATOMIZE_END';
+
+type AtomizeMarkedSection = {
+  markerId: string;
+  text: string;
+};
+
+function getNextAtomizeMarkerId(content: string) {
+  const markerRegex = /\[\[ATOMIZE_(?:START|END):(\d+)\]\]/g;
+  let highestId = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerRegex.exec(content)) !== null) {
+    highestId = Math.max(highestId, Number(match[1]));
+  }
+
+  return String(highestId + 1);
+}
+
+function parseAtomizeMarkedSections(content: string) {
+  const pairRegex = /\[\[ATOMIZE_START:(\d+)\]\]([\s\S]*?)\[\[ATOMIZE_END:\1\]\]/g;
+  const sections: AtomizeMarkedSection[] = [];
+  let cleanContent = content;
+  let match: RegExpExecArray | null;
+
+  while ((match = pairRegex.exec(content)) !== null) {
+    const [, markerId, markedText] = match;
+    const text = markedText.trim();
+    if (text) {
+      sections.push({ markerId, text });
+    }
+  }
+
+  cleanContent = cleanContent.replace(pairRegex, (_fullMatch, _markerId, markedText) => markedText);
+
+  const remainingStartMarkers = cleanContent.match(/\[\[ATOMIZE_START:\d+\]\]/g) || [];
+  const remainingEndMarkers = cleanContent.match(/\[\[ATOMIZE_END:\d+\]\]/g) || [];
+
+  return {
+    sections,
+    cleanContent,
+    incompleteMarkers: remainingStartMarkers.length + remainingEndMarkers.length,
+  };
+}
 
 // VideoPlayer component with YouTube API for proper end time enforcement
 function VideoPlayer({ videoUrl, startTime, endTime }: {
@@ -394,12 +440,17 @@ export default function UnifiedNodeModal() {
   const selectNode = useCanvasStore((state) => state.selectNode);
   const addNode = useCanvasStore((state) => state.addNode);
   const addNodes = useCanvasStore((state) => state.addNodes);
+  const addAtomizedRange = useCanvasStore((state) => state.addAtomizedRange);
   const setQuotedText = useCanvasStore((state) => state.setQuotedText);
   const quotedText = useCanvasStore((state) => state.quotedText);
   const createMetaInspirationNode = useCanvasStore((state) => state.createMetaInspirationNode);
   const toggleAnchor = useCanvasStore((state) => state.toggleAnchor);
   const getNodeChildrenCount = useCanvasStore((state) => state.getNodeChildrenCount);
   const deleteNode = useCanvasStore((state) => state.deleteNode);
+  const addMessageToNode = useCanvasStore((state) => state.addMessageToNode);
+  const updateMessageInNode = useCanvasStore((state) => state.updateMessageInNode);
+  const breakOffFromNode = useCanvasStore((state) => state.breakOffFromNode);
+  const getNodeMessages = useCanvasStore((state) => state.getNodeMessages);
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -416,11 +467,16 @@ export default function UnifiedNodeModal() {
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [inputContent, setInputContent] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [isStreamingAI, setIsStreamingAI] = useState(false);
+
+  // Chat thread state
+  const threadEndRef = useRef<HTMLDivElement>(null);
+  const [threadSelectedText, setThreadSelectedText] = useState('');
+  const [showBreakOffButton, setShowBreakOffButton] = useState(false);
+  const [noteMode, setNoteMode] = useState(false);
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [isLoadingLeopold, setIsLoadingLeopold] = useState(false);
-
   // Loaded video URL from IndexedDB
   const [loadedVideoUrl, setLoadedVideoUrl] = useState<string | null>(null);
 
@@ -595,61 +651,6 @@ export default function UnifiedNodeModal() {
     });
   }
 
-  // 🎓 Trigger Leopold atomization for current node
-  const handleLeopoldTrigger = async () => {
-    if (!node) return;
-
-    setIsLoadingLeopold(true);
-    console.log(`🎓 Triggering Leopold method for node: ${node.id}`);
-
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'leopold-practice',
-          messages: [{ role: 'user', content: node.content }]
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Leopold generation failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.response && data.response.practiceSteps) {
-        console.log(`✨ Generated ${data.response.practiceSteps.length} Leopold practice steps`);
-
-        // Update the current node with practice metadata
-        updateNode(node.id, {
-          practiceSteps: data.response.practiceSteps
-        });
-
-        showToastNotification('✨ Leopold methodology applied! Starting guided practice...');
-
-        // 🎓 AUTO-START GUIDED PRACTICE
-        // Wait a moment for state updates to propagate
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        // Reset and open guided practice panel
-        setActivePracticeStep('intuition');
-        setPracticeStepInput('');
-        setPracticeStepFeedback('');
-        setIsGradingPractice(false);
-        setShowGuidedPractice(true);
-
-        console.log('🎓 Auto-started guided practice mode with metadata');
-      } else {
-        throw new Error('No practice data returned from AI');
-      }
-    } catch (err) {
-      console.error('❌ Leopold trigger failed:', err);
-      showToastNotification(`Failed to apply Leopold: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingLeopold(false);
-    }
-  };
-
   // (L1+ node atomize now uses the unified handleAtomizeSelection above)
 
   // Toast notification helper
@@ -731,6 +732,23 @@ export default function UnifiedNodeModal() {
     : (isApplicationLabNexus && !showOriginalContent)
       ? (nexus.applicationLabConfig?.doctrineSummary || '')
       : (selectedItem?.content || '');
+  const atomizeMarkerSummary = parseAtomizeMarkedSections(editedContent || displayContent || '');
+
+  // 💬 THREAD VIEW - Determine if we should show the chat thread for this node
+  // Thread view works on regular nodes (not nexuses, not connection nodes)
+  // On /explore page, the textarea editor takes priority for content editing
+  const isExploreEditorMode = pathname === '/explore';
+  const isThreadNode = node && !nexus && !node.isConnectionNode && !isExploreEditorMode;
+  const threadMessages: ThreadMessage[] = isThreadNode ? getNodeMessages(node) : [];
+
+  // Auto-scroll thread to bottom when messages change
+  const prevMessageCount = useRef(0);
+  useEffect(() => {
+    if (threadMessages.length > prevMessageCount.current && threadEndRef.current) {
+      threadEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMessageCount.current = threadMessages.length;
+  }, [threadMessages.length]);
 
   console.log('🎨 UnifiedNodeModal render:', {
     selectedId,
@@ -1017,6 +1035,7 @@ export default function UnifiedNodeModal() {
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
+    setEditedContent(newValue);
     setHasUnsavedChanges(true);
     setSelectedContentText('');
 
@@ -1036,6 +1055,24 @@ export default function UnifiedNodeModal() {
         console.log('✅ Auto-saved changes to:', selectedItem.id);
       }
     }, 1000);
+  };
+
+  const saveCurrentTextareaContent = (newValue: string) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    setEditedContent(newValue);
+    setHasUnsavedChanges(false);
+
+    if (!selectedItem || !isExplorePage) return;
+
+    if (node) {
+      updateNodeContent(node.id, newValue);
+    } else if (nexus) {
+      updateNexusContent(nexus.id, newValue);
+    }
   };
 
   const handleClose = () => {
@@ -1075,42 +1112,235 @@ export default function UnifiedNodeModal() {
     setSelectedContentText(selectedText);
   };
 
-  const handleAtomizeSelection = () => {
-    if (!selectedContentText.trim()) return;
+  const insertAtomizeTextAtSelection = (beforeText: string, afterText = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    const scrollTop = textarea.scrollTop;
+    const scrollLeft = textarea.scrollLeft;
+    const currentValue = textarea.value;
+    const selectedText = currentValue.slice(selectionStart, selectionEnd);
+    const nextValue = `${currentValue.slice(0, selectionStart)}${beforeText}${selectedText}${afterText}${currentValue.slice(selectionEnd)}`;
+
+    textarea.value = nextValue;
+    setEditedContent(nextValue);
+    setHasUnsavedChanges(true);
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      const currentTextareaValue = textareaRef.current?.value || '';
+      if (isExplorePage && selectedItem) {
+        if (node) {
+          updateNodeContent(node.id, currentTextareaValue);
+        } else if (nexus) {
+          updateNexusContent(nexus.id, currentTextareaValue);
+        }
+        setHasUnsavedChanges(false);
+        console.log('✅ Auto-saved atomize markers to:', selectedItem.id);
+      }
+    }, 1000);
+
+    const nextSelectionStart = selectionStart + beforeText.length;
+    const nextSelectionEnd = nextSelectionStart + selectedText.length;
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+      textarea.scrollTop = scrollTop;
+      textarea.scrollLeft = scrollLeft;
+      handleTextareaSelection();
+    });
+  };
+
+  const handleMarkAtomizeSelection = () => {
+    const textarea = textareaRef.current;
+    if (!textarea || textarea.selectionStart === textarea.selectionEnd) return;
+
+    const markerId = getNextAtomizeMarkerId(textarea.value);
+    insertAtomizeTextAtSelection(
+      `${ATOMIZE_START_LABEL}:${markerId}]]`,
+      `${ATOMIZE_END_LABEL}:${markerId}]]`
+    );
+    showToastNotification(`Marked section ${markerId} for atomizing`);
+  };
+
+  const handleAtomizeMarkedSections = () => {
     const parentId = node ? node.id : nexus?.id;
     if (!parentId) return;
 
-    addNode(selectedContentText.trim(), parentId, undefined, 'user-reply');
+    const currentValue = textareaRef.current?.value || editedContent || displayContent || '';
+    const { sections, cleanContent, incompleteMarkers } = parseAtomizeMarkedSections(currentValue);
+
+    if (incompleteMarkers > 0) {
+      showToastNotification('Complete each atomize section with matching start and end markers');
+      return;
+    }
+
+    if (sections.length === 0) {
+      showToastNotification('Add atomize markers before atomizing');
+      return;
+    }
+
+    saveCurrentTextareaContent(cleanContent);
+    if (textareaRef.current) {
+      textareaRef.current.value = cleanContent;
+    }
+
+    const newNodeIds = addNodes(sections.map(section => ({
+      content: section.text,
+      parentId,
+      nodeType: 'user-reply' as NodeType,
+    })));
+
+    newNodeIds.forEach((newNodeId, index) => {
+      const section = sections[index];
+      if (section) {
+        addAtomizedRange(parentId, section.text, newNodeId);
+      }
+    });
+
     setSelectedContentText('');
-    showToastNotification('⚛️ Selection atomized into a new node');
+    showToastNotification(`Atomized ${sections.length} marked section${sections.length === 1 ? '' : 's'} into child nodes`);
+
+    // Close modal and deselect to show 3D universe
+    selectNode(null, false);
+
+    // Re-open on first new node after a 4-second pause
+    if (newNodeIds.length > 0) {
+      const targetNodeId = newNodeIds[0];
+      setTimeout(() => {
+        selectNode(targetNodeId, true);
+      }, 4000);
+    }
   };
 
-  // 💬 USER REPLY
+  // 🔦 RENDER HIGHLIGHTED CONTENT - Shows atomized ranges with colored background
+  const renderHighlightedContent = (content: string) => {
+    const parentId = node ? node.id : nexus?.id;
+    const atomizedRanges = node?.atomizedRanges || nexus?.atomizedRanges;
+    if (!atomizedRanges || atomizedRanges.length === 0 || !parentId) {
+      return content;
+    }
+
+    // Build a list of matches with their positions (first occurrence of each range)
+    const matches: Array<{ start: number; end: number; childNodeId: string }> = [];
+
+    for (const range of atomizedRanges) {
+      const idx = content.indexOf(range.text);
+      if (idx === -1) continue;
+
+      // Check for overlap with existing matches
+      let overlaps = false;
+      for (const m of matches) {
+        if (idx < m.end && idx + range.text.length > m.start) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) {
+        matches.push({ start: idx, end: idx + range.text.length, childNodeId: range.childNodeId });
+      }
+    }
+
+    if (matches.length === 0) return content;
+
+    // Sort by position
+    matches.sort((a, b) => a.start - b.start);
+
+    // Build React elements
+    const elements: React.ReactNode[] = [];
+    let lastIndex = 0;
+
+    matches.forEach((match, i) => {
+      // Plain text before this match
+      if (match.start > lastIndex) {
+        elements.push(content.slice(lastIndex, match.start));
+      }
+      // Highlighted span
+      elements.push(
+        <span
+          key={`atomized-${i}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectNode(match.childNodeId, true);
+          }}
+          style={{
+            backgroundColor: 'rgba(251, 191, 36, 0.25)',
+            borderBottom: '2px solid rgba(251, 191, 36, 0.6)',
+            cursor: 'pointer',
+            borderRadius: '2px',
+            padding: '1px 0',
+            transition: 'background-color 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            (e.target as HTMLElement).style.backgroundColor = 'rgba(251, 191, 36, 0.45)';
+          }}
+          onMouseLeave={(e) => {
+            (e.target as HTMLElement).style.backgroundColor = 'rgba(251, 191, 36, 0.25)';
+          }}
+          title="Click to navigate to atomized node"
+        >
+          {content.slice(match.start, match.end)}
+        </span>
+      );
+      lastIndex = match.end;
+    });
+
+    // Remaining text after last match
+    if (lastIndex < content.length) {
+      elements.push(content.slice(lastIndex));
+    }
+
+    return elements;
+  };
+
+  // 💬 USER REPLY - Now adds message to in-node thread instead of creating child node
   const handleUserReply = () => {
-    if (!inputContent.trim() || !selectedId) return;
+    if (!inputContent.trim() || !selectedId || !node) return;
 
     const content = quotedText
       ? `> ${quotedText}\n\n${inputContent.trim()}`
       : inputContent.trim();
 
-    addNode(content, selectedId);
+    // Initialize thread if this is a legacy node (no messages yet)
+    if (!node.messages || node.messages.length === 0) {
+      // Migrate existing content as the first message
+      if (node.content) {
+        const role = node.isAI || node.nodeType === 'ai-response' ? 'assistant' as const : 'user' as const;
+        addMessageToNode(selectedId, { role, content: node.content });
+      }
+    }
+
+    addMessageToNode(selectedId, { role: 'user', content });
     setInputContent('');
     setActionMode(null);
     setQuotedText(null);
-
-    setTimeout(() => {
-      selectNode(selectedId, false);
-    }, 200);
   };
 
-  // 🤖 ASK AI
+  // 🤖 ASK AI - Now adds messages to in-node thread instead of creating child node
   const handleAskAI = async () => {
-    if (!inputContent.trim() || !selectedId) return;
+    if (!inputContent.trim() || !selectedId || !node) return;
 
     setIsLoadingAI(true);
 
     try {
+      const userQuestion = inputContent.trim();
       const contextContent = displayContent || '';
+
+      // Initialize thread if this is a legacy node (no messages yet)
+      if (!node.messages || node.messages.length === 0) {
+        if (node.content) {
+          const role = node.isAI || node.nodeType === 'ai-response' ? 'assistant' as const : 'user' as const;
+          addMessageToNode(selectedId, { role, content: node.content });
+        }
+      }
+
+      // Add user message to thread
+      addMessageToNode(selectedId, { role: 'user', content: userQuestion });
 
       // Build full universe context so AI can search across all nodes
       const universeContext: string[] = [];
@@ -1123,6 +1353,12 @@ export default function UnifiedNodeModal() {
       });
       const universeSnapshot = universeContext.join('\n\n');
 
+      // Build thread context for AI
+      const currentNode = useCanvasStore.getState().nodes[selectedId];
+      const threadContext = (currentNode?.messages || [])
+        .map(m => `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Claude' : 'Note'}: ${m.content}`)
+        .join('\n\n');
+
       // Calculate node depth to decide if we should use web search
       let askDepth = 1;
       let walkAskId: string | undefined = node?.parentId;
@@ -1134,18 +1370,29 @@ export default function UnifiedNodeModal() {
       const useSearch = askDepth >= 2;
       console.log(`🔍 Ask AI: node depth=${askDepth}, useSearch=${useSearch}`);
 
-      const fullPrompt = `You have access to the user's full conversation universe. Search across ALL nodes to answer their question.
+      const fullPrompt = `You have access to the user's full conversation universe and the current in-node conversation thread.
 
 === FULL UNIVERSE ===
 ${universeSnapshot}
 
-=== CURRENTLY SELECTED NODE ===
+=== CURRENT NODE CONTENT ===
 ${contextContent}
 
+=== CONVERSATION THREAD ===
+${threadContext}
+
 === USER QUESTION ===
-${inputContent.trim()}
+${userQuestion}
 
 Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.${useSearch ? ' If the universe lacks sufficient information, use web search results to supplement your answer with real-world facts, citations, or current developments.' : ''}`;
+
+      // Create placeholder AI message for streaming
+      const aiMessageId = addMessageToNode(selectedId, { role: 'assistant', content: '' });
+
+      setInputContent('');
+      setActionMode(null);
+      setIsLoadingAI(false);
+      setIsStreamingAI(true);
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -1153,33 +1400,52 @@ Answer using information from ANY node in the universe, not just the selected on
         body: JSON.stringify({
           messages: [{ role: 'user', content: fullPrompt }],
           mode: useSearch ? 'ask-with-search' : 'standard',
-          ...(useSearch && { searchQuery: inputContent.trim() }),
+          stream: true,
+          ...(useSearch && { searchQuery: userQuestion }),
         }),
       });
 
       if (!response.ok) throw new Error('Failed to get AI response');
 
-      const data = await response.json();
-      const combinedContent = `You: ${inputContent.trim()}\n\nClaude: ${data.response}`;
+      if (!response.body) {
+        const data = await response.json();
+        updateMessageInNode(selectedId, aiMessageId, data.response || '');
+        useCanvasStore.getState().saveCurrentUniverse();
+        setIsStreamingAI(false);
+        return;
+      }
 
-      // Step 1: Wait 300ms after receiving response (moment to breathe)
-      await new Promise(resolve => setTimeout(resolve, 300));
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamedAnswer = '';
+      let pendingFrame: number | null = null;
 
-      // Step 2: Create node (camera will animate to it)
-      const newNodeId = addNode(combinedContent, selectedId, undefined, 'ai-response');
+      const flushStreamedContent = () => {
+        pendingFrame = null;
+        updateMessageInNode(selectedId, aiMessageId, streamedAnswer);
+      };
 
-      setInputContent('');
-      setActionMode(null);
-      setIsLoadingAI(false);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      // Step 3: Wait for camera animation (800ms) + buffer (300ms) = 1100ms
-      await new Promise(resolve => setTimeout(resolve, 1100));
+        streamedAnswer += decoder.decode(value, { stream: true });
+        if (pendingFrame === null) {
+          pendingFrame = requestAnimationFrame(flushStreamedContent);
+        }
+      }
 
-      // Step 4: Open modal smoothly
-      selectNode(newNodeId, true);
+      streamedAnswer += decoder.decode();
+      if (pendingFrame !== null) {
+        cancelAnimationFrame(pendingFrame);
+      }
+      updateMessageInNode(selectedId, aiMessageId, streamedAnswer);
+      useCanvasStore.getState().saveCurrentUniverse();
+      setIsStreamingAI(false);
     } catch (error) {
       console.error('❌ Failed to get AI response:', error);
       setIsLoadingAI(false);
+      setIsStreamingAI(false);
     }
   };
 
@@ -2324,6 +2590,31 @@ Be conversational and human, not formulaic.`;
     }
   };
 
+  // 💬 THREAD TEXT SELECTION - Show break-off button when text is selected in thread
+  const handleThreadTextSelection = () => {
+    const selection = window.getSelection();
+    const highlighted = selection?.toString().trim() || '';
+    setThreadSelectedText(highlighted);
+    setShowBreakOffButton(!!highlighted);
+
+    // Also track for atomize
+    setSelectedContentText(highlighted);
+  };
+
+  // ✂️ BREAK OFF - Create child node from selected thread text
+  const handleBreakOff = () => {
+    if (!threadSelectedText || !selectedId) return;
+
+    const newNodeId = breakOffFromNode(selectedId, threadSelectedText);
+    setThreadSelectedText('');
+    setShowBreakOffButton(false);
+
+    // Navigate to the new node
+    setTimeout(() => {
+      selectNode(newNodeId, true);
+    }, 300);
+  };
+
   // Don't show if nothing selected or overlay is hidden
   if (!selectedItem || !showContentOverlay) return null;
 
@@ -2427,42 +2718,36 @@ Be conversational and human, not formulaic.`;
                 </div>
               </div>
               <div className="flex items-center">
-                {/* Atomize Selection — works for both nexus and L1+ nodes */}
+                {/* Atomize marked sections — works for both nexus and L1+ nodes */}
                 {!isConnectionNode && !(node?.id.startsWith('meta-inspiration')) && (
-                  <div className="flex flex-col items-center mx-2">
+                  <div className="flex flex-col items-end gap-2 mx-2">
                     <button
-                      onClick={handleAtomizeSelection}
+                      onClick={handleMarkAtomizeSelection}
                       disabled={!selectedContentText.trim()}
                       className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
                         ${selectedContentText.trim()
+                          ? 'bg-slate-800/60 hover:bg-amber-600/20 border border-amber-500/50 text-amber-200'
+                          : 'bg-slate-800/40 border border-slate-700 text-slate-500 cursor-not-allowed'}`}
+                      title={selectedContentText.trim() ? 'Mark the highlighted text as one atomized section' : 'Highlight a section to mark it'}
+                    >
+                      Mark Selection
+                    </button>
+                    <button
+                      onClick={handleAtomizeMarkedSections}
+                      disabled={atomizeMarkerSummary.sections.length === 0 || atomizeMarkerSummary.incompleteMarkers > 0}
+                      className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
+                        ${atomizeMarkerSummary.sections.length > 0 && atomizeMarkerSummary.incompleteMarkers === 0
                           ? 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'
                           : 'bg-slate-800/40 border-2 border-slate-700 text-slate-500 cursor-not-allowed'}`}
-                      title={selectedContentText.trim() ? 'Create a child node from the highlighted text' : 'Highlight text in the content first'}
+                      title={
+                        atomizeMarkerSummary.incompleteMarkers > 0
+                          ? 'Finish each marked section with matching begin and end markers'
+                          : atomizeMarkerSummary.sections.length > 0
+                            ? 'Create one child node for each marked section'
+                            : 'Add begin/end markers before atomizing'
+                      }
                     >
-                      ⚛️ Atomize Selection
-                    </button>
-                  </div>
-                )}
-
-                {/* Leopold Button - Next to Atomize */}
-                {node && !isConnectionNode && !node.id.startsWith('meta-inspiration') && (
-                  <div className="flex flex-col items-center mx-2">
-                    <button
-                      onClick={handleLeopoldTrigger}
-                      disabled={isLoadingLeopold}
-                      className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
-                        ${isLoadingLeopold
-                          ? 'bg-cyan-900/40 border-2 border-cyan-700 text-cyan-500 cursor-not-allowed'
-                          : 'bg-transparent hover:bg-cyan-600/20 border-2 border-cyan-500/50 text-cyan-300'}`}
-                    >
-                      {isLoadingLeopold ? (
-                        <>
-                          <span className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></span>
-                          Generating...
-                        </>
-                      ) : (
-                        <>🎓 Leopold Method</>
-                      )}
+                      ⚛️ Atomize Marked ({atomizeMarkerSummary.sections.length})
                     </button>
                   </div>
                 )}
@@ -2504,7 +2789,56 @@ Be conversational and human, not formulaic.`;
 
             {/* Content Area */}
             <div className="flex-1 p-6">
-              {isExplorePage && selectedItem ? (
+              {isThreadNode ? (
+                /* 💬 CHAT THREAD VIEW - Show conversation messages for thread-enabled nodes */
+                <div className="flex flex-col h-full">
+                  <div
+                    className="flex-1 space-y-3 overflow-y-auto max-h-[50vh] pr-2"
+                    onMouseUp={handleThreadTextSelection}
+                  >
+                    {threadMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : msg.role === 'note' ? 'justify-center' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-lg px-4 py-3 ${
+                            msg.role === 'user'
+                              ? 'bg-purple-600/30 border border-purple-500/40 text-purple-100'
+                              : msg.role === 'assistant'
+                                ? 'bg-cyan-600/20 border border-cyan-500/30 text-gray-200'
+                                : 'bg-slate-700/40 border border-slate-500/30 text-gray-400 text-sm italic'
+                          }`}
+                        >
+                          <div className="text-xs mb-1 opacity-60">
+                            {msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Claude' : 'Note'}
+                            {msg.timestamp > 0 && (
+                              <span className="ml-2">{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                            )}
+                          </div>
+                          <div className="whitespace-pre-wrap leading-relaxed text-base">
+                            {msg.content || (isStreamingAI && msg.role === 'assistant' ? '...' : '')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={threadEndRef} />
+                  </div>
+
+                  {/* Break-off button - appears when text is selected in thread */}
+                  {showBreakOffButton && threadSelectedText && (
+                    <div className="mt-3 flex justify-center">
+                      <button
+                        onClick={handleBreakOff}
+                        className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50
+                                 text-amber-300 rounded-lg transition-all text-sm font-medium flex items-center gap-2"
+                      >
+                        ✂️ Break Off Selection into New Node
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : isExplorePage && selectedItem ? (
                 <div className="relative h-full flex flex-col">
                   <textarea
                     key={selectedId}
@@ -2522,8 +2856,13 @@ Be conversational and human, not formulaic.`;
                     style={{ minHeight: '300px' }}
                   />
                   <div className="mt-2 text-xs text-gray-500 italic">
-                    💡 Changes auto-save as you type • Highlight text to atomize it into a child node
+                    💡 Changes auto-save as you type • Use begin/end markers to atomize one or more sections into child nodes
                   </div>
+                  {atomizeMarkerSummary.incompleteMarkers > 0 && (
+                    <div className="mt-2 text-xs text-amber-300">
+                      {atomizeMarkerSummary.incompleteMarkers} unmatched atomize marker{atomizeMarkerSummary.incompleteMarkers === 1 ? '' : 's'} found. Each section needs a matching begin and end marker.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -2593,7 +2932,7 @@ Be conversational and human, not formulaic.`;
                       className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap"
                       onMouseUp={handleTextSelection}
                     >
-                      {displayContent || 'No content available.'}
+                      {displayContent ? renderHighlightedContent(displayContent) : 'No content available.'}
                     </div>
                   )}
                 </>
@@ -2872,8 +3211,63 @@ Be conversational and human, not formulaic.`;
               </div>
             )}
 
-            {/* Action Mode Input */}
-            {actionMode && !socraticQuestion && (
+            {/* 💬 PERSISTENT CHAT INPUT - For thread-enabled nodes */}
+            {isThreadNode && !socraticQuestion && (
+              <div className="p-4 bg-slate-950/30 border-b border-cyan-500/20">
+                {quotedText && (
+                  <div className="mb-2 p-2 bg-purple-900/20 border-l-4 border-purple-500 rounded text-sm text-gray-300 italic flex items-center justify-between">
+                    <span>&gt; {quotedText}</span>
+                    <button onClick={() => setQuotedText(null)} className="text-gray-500 hover:text-gray-300 ml-2 text-xs">✕</button>
+                  </div>
+                )}
+                <textarea
+                  value={inputContent}
+                  onChange={(e) => setInputContent(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (inputContent.trim() && !isLoadingAI && !isStreamingAI) {
+                        if (noteMode) {
+                          addNode(inputContent.trim(), selectedId!);
+                          setInputContent('');
+                          setNoteMode(false);
+                        } else {
+                          handleAskAI();
+                        }
+                      }
+                    }
+                  }}
+                  placeholder={
+                    isStreamingAI ? 'AI is responding...'
+                    : noteMode ? 'Type a note... (Enter to save)'
+                    : 'Type a message... (Enter to ask AI, Shift+Enter for new line)'
+                  }
+                  disabled={isLoadingAI || isStreamingAI}
+                  className={`w-full bg-slate-950/50 text-gray-200 rounded-lg p-3
+                           focus:outline-none resize-none border ${
+                             noteMode
+                               ? 'border-amber-500/40 focus:border-amber-500/60'
+                               : 'border-cyan-500/20 focus:border-cyan-500/50'
+                           }`}
+                  rows={2}
+                />
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => setNoteMode(!noteMode)}
+                    className={`px-4 py-2 rounded-lg transition-all font-medium ${
+                      noteMode
+                        ? 'bg-amber-600/30 border-2 border-amber-400 text-amber-200'
+                        : 'bg-slate-700/40 hover:bg-slate-700/60 border border-slate-500/40 text-slate-300'
+                    }`}
+                  >
+                    📝 Note
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Action Mode Input - For non-thread nodes (nexuses, connection nodes, explore page) */}
+            {!isThreadNode && actionMode && !socraticQuestion && (
               <div className="p-4 bg-slate-950/30 border-b border-cyan-500/20">
                 <div className="text-sm text-cyan-300 mb-2 font-semibold">
                   {actionMode === 'user-reply' && '💬 Your Reply'}
@@ -2928,28 +3322,32 @@ Be conversational and human, not formulaic.`;
                 {node && node.parentId && (node.nodeType === 'intuition-example' || node.nodeType === 'imitate') ? (
                   // PRACTICE L2 NODE LAYOUT: Simplified buttons + prominent Continue button
                   <>
-                    {/* Row 1: Just basic actions */}
+                    {/* Row 1: Just basic actions (Reply/Ask AI hidden for thread nodes - they have persistent input) */}
                     <div className="flex gap-3">
-                      <button
-                        onClick={() => setActionMode('user-reply')}
-                        disabled={actionMode === 'user-reply'}
-                        className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                          ${actionMode === 'user-reply'
-                            ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
-                            : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
-                      >
-                        💬 Reply
-                      </button>
-                      <button
-                        onClick={() => setActionMode('ask-ai')}
-                        disabled={actionMode === 'ask-ai' || isLoadingAI}
-                        className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                          ${actionMode === 'ask-ai'
-                            ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
-                            : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
-                      >
-                        🤖 Ask AI
-                      </button>
+                      {!isThreadNode && (
+                        <>
+                          <button
+                            onClick={() => setActionMode('user-reply')}
+                            disabled={actionMode === 'user-reply'}
+                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                              ${actionMode === 'user-reply'
+                                ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
+                                : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
+                          >
+                            💬 Reply
+                          </button>
+                          <button
+                            onClick={() => setActionMode('ask-ai')}
+                            disabled={actionMode === 'ask-ai' || isLoadingAI}
+                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                              ${actionMode === 'ask-ai'
+                                ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
+                                : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
+                          >
+                            🤖 Ask AI
+                          </button>
+                        </>
+                      )}
                       <button
                         onClick={handleDeleteClick}
                         className="px-4 py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium"
@@ -3020,26 +3418,31 @@ Be conversational and human, not formulaic.`;
                   // STANDARD NODE LAYOUT: Full button set
                   <>
                     <div className="flex gap-3">
-                      <button
-                        onClick={() => setActionMode('user-reply')}
-                        disabled={actionMode === 'user-reply'}
-                        className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                          ${actionMode === 'user-reply'
-                            ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
-                            : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
-                      >
-                        💬 User Reply
-                      </button>
-                      <button
-                        onClick={() => setActionMode('ask-ai')}
-                        disabled={actionMode === 'ask-ai' || isLoadingAI}
-                        className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
-                          ${actionMode === 'ask-ai'
-                            ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
-                            : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
-                      >
-                        🤖 Ask AI
-                      </button>
+                      {/* Reply and Ask AI buttons only for non-thread nodes (nexuses, connection nodes) */}
+                      {!isThreadNode && (
+                        <>
+                          <button
+                            onClick={() => setActionMode('user-reply')}
+                            disabled={actionMode === 'user-reply'}
+                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                              ${actionMode === 'user-reply'
+                                ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
+                                : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
+                          >
+                            💬 User Reply
+                          </button>
+                          <button
+                            onClick={() => setActionMode('ask-ai')}
+                            disabled={actionMode === 'ask-ai' || isLoadingAI}
+                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                              ${actionMode === 'ask-ai'
+                                ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
+                                : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
+                          >
+                            🤖 Ask AI
+                          </button>
+                        </>
+                      )}
                       <button
                         onClick={() => {
                           if (hasGuidedPractice) {

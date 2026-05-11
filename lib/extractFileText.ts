@@ -1,45 +1,32 @@
 /**
- * Client-side text extraction from uploaded files.
- * Supports PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx),
- * and plain text formats.
+ * Text extraction from uploaded files.
+ * Uses a server-side API route for reliable PDF/docx/xlsx parsing,
+ * and client-side reading for plain text formats.
  */
+
+const SERVER_EXTRACTED = ['.pdf', '.docx', '.doc', '.xlsx', '.xls'];
 
 export async function extractTextFromFile(file: File): Promise<string> {
   const name = file.name.toLowerCase();
 
-  // Plain text formats - read directly
+  // Plain text formats - read directly in the browser
   if (isPlainText(name, file.type)) {
     return readAsText(file);
   }
 
-  // PDF
-  if (name.endsWith('.pdf')) {
-    return extractPdfText(file);
-  }
-
-  // Word .docx
-  if (name.endsWith('.docx')) {
-    return extractDocxText(file);
-  }
-
-  // Word .doc (legacy binary format - limited support)
-  if (name.endsWith('.doc')) {
-    return extractDocText(file);
-  }
-
-  // Excel .xlsx / .xls
-  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
-    return extractExcelText(file);
-  }
-
-  // PowerPoint .pptx
+  // PowerPoint .pptx - client-side zip extraction
   if (name.endsWith('.pptx')) {
     return extractPptxText(file);
   }
 
-  // PowerPoint .ppt (legacy - limited support)
+  // PowerPoint .ppt (legacy - no support)
   if (name.endsWith('.ppt')) {
     return '[Legacy .ppt format — please convert to .pptx for text extraction]';
+  }
+
+  // PDF, Word, Excel - send to server for reliable extraction
+  if (SERVER_EXTRACTED.some(ext => name.endsWith(ext))) {
+    return extractViaServer(file);
   }
 
   // Fallback: try reading as text
@@ -48,6 +35,34 @@ export async function extractTextFromFile(file: File): Promise<string> {
   } catch {
     return `[Could not extract text from ${file.name}]`;
   }
+}
+
+async function extractViaServer(file: File): Promise<string> {
+  // Read file and convert to base64 in chunks to avoid stack overflow
+  // with large files. FormData multipart has issues with certain MIME
+  // types in Next.js API routes.
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  const chunkSize = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  const base64 = btoa(binary);
+
+  const res = await fetch('/api/extract-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, data: base64 }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Server extraction failed');
+  }
+
+  const { text } = await res.json();
+  return text || '';
 }
 
 function isPlainText(name: string, mimeType: string): boolean {
@@ -69,98 +84,12 @@ function readAsText(file: File): Promise<string> {
   });
 }
 
-function readAsArrayBuffer(file: File): Promise<ArrayBuffer> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as ArrayBuffer);
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-async function extractPdfText(file: File): Promise<string> {
-  const pdfjsLib = await import('pdfjs-dist');
-
-  // Set worker source to bundled worker
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.mjs',
-    import.meta.url,
-  ).toString();
-
-  const buffer = await readAsArrayBuffer(file);
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-
-  const pages: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: any) => item.str)
-      .join(' ');
-    pages.push(pageText);
-  }
-
-  return pages.join('\n\n');
-}
-
-async function extractDocxText(file: File): Promise<string> {
-  const mammoth = await import('mammoth');
-  const buffer = await readAsArrayBuffer(file);
-  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
-  return result.value;
-}
-
-async function extractDocText(file: File): Promise<string> {
-  // Legacy .doc files: attempt raw text extraction
-  // This won't work perfectly but captures readable strings
-  const buffer = await readAsArrayBuffer(file);
-  const bytes = new Uint8Array(buffer);
-  const text: string[] = [];
-  let current = '';
-
-  for (const byte of bytes) {
-    if (byte >= 32 && byte < 127) {
-      current += String.fromCharCode(byte);
-    } else {
-      if (current.length >= 4) {
-        text.push(current);
-      }
-      current = '';
-    }
-  }
-  if (current.length >= 4) text.push(current);
-
-  const extracted = text.join(' ').replace(/\s{2,}/g, ' ').trim();
-  if (extracted.length < 50) {
-    return '[Legacy .doc format — please convert to .docx for better text extraction]';
-  }
-  return extracted;
-}
-
-async function extractExcelText(file: File): Promise<string> {
-  const XLSX = await import('xlsx');
-  const buffer = await readAsArrayBuffer(file);
-  const workbook = XLSX.read(buffer, { type: 'array' });
-
-  const sheets: string[] = [];
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    const csv = XLSX.utils.sheet_to_csv(sheet);
-    if (csv.trim()) {
-      sheets.push(`--- ${sheetName} ---\n${csv}`);
-    }
-  }
-
-  return sheets.join('\n\n');
-}
-
 async function extractPptxText(file: File): Promise<string> {
   const JSZip = (await import('jszip')).default;
-  const buffer = await readAsArrayBuffer(file);
+  const buffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(buffer);
 
   const slides: string[] = [];
-  // PPTX files contain slides as XML in ppt/slides/slide1.xml, slide2.xml, etc.
   const slideFiles = Object.keys(zip.files)
     .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((a, b) => {
@@ -171,7 +100,6 @@ async function extractPptxText(file: File): Promise<string> {
 
   for (const slidePath of slideFiles) {
     const xml = await zip.files[slidePath].async('text');
-    // Extract text from XML tags like <a:t>text</a:t>
     const textMatches = xml.match(/<a:t>([^<]*)<\/a:t>/g);
     if (textMatches) {
       const slideText = textMatches

@@ -274,12 +274,15 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
     'application-scenario'
   ].includes(node.nodeType || '');
 
+  // Sphere nodes get wireframe, diamond/faceted nodes get solid metallic
+  const isSphereNode = isAtomizationNode;
+
   return (
     <group ref={groupRef} onClick={onClick} onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
       <mesh ref={meshRef} castShadow receiveShadow>
         {geometry}
-        {node.nodeType === 'ai-response' || node.nodeType === 'doctrine' ? (
-          // AI responses and Doctrine (L1) nodes: Wireframe
+        {isSphereNode ? (
+          // Orange sphere nodes: Wireframe
           <meshBasicMaterial
             color={color}
             wireframe={true}
@@ -287,14 +290,14 @@ function RotatingNode({ node, size, geometry, color, emissive, emissiveIntensity
             opacity={opacity}
           />
         ) : (
-          // All artifact nodes: Reflective metallic material for shiny facets
+          // Diamond/faceted nodes: Reflective metallic material for shiny facets
           <meshStandardMaterial
             color={color}
-            metalness={1.0}  // Full metallic for maximum reflections
-            roughness={0.0}  // Zero roughness for mirror-like reflections
+            metalness={1.0}
+            roughness={0.0}
             emissive={emissive}
             emissiveIntensity={emissiveIntensity * opacity}
-            envMapIntensity={1.2}  // Enhanced reflections
+            envMapIntensity={1.2}
             flatShading={false}
             transparent={opacity < 1}
             opacity={opacity}
@@ -353,15 +356,11 @@ function RotatingUserReplyNode({ node, size, onClick, onPointerDown, onPointerEn
       castShadow
       receiveShadow
     >
-      <octahedronGeometry args={[size, 0]} />
-      <meshStandardMaterial
-        color="#6D28D9"
-        emissive="#6D28D9"
-        emissiveIntensity={0.7 * opacity}
-        metalness={1.0}
-        roughness={0.0}
-        envMapIntensity={1.2}
-        transparent={opacity < 1}
+      <sphereGeometry args={[size, 32, 32]} />
+      <meshBasicMaterial
+        color="#C85A0A"
+        wireframe={true}
+        transparent={true}
         opacity={opacity}
       />
     </mesh>
@@ -1050,8 +1049,6 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
   useCameraAnimation();
 
   const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
-  const nextMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
-  const alternateMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
   const sparkleMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial[]>>(new Map());
 
   // Double-click detection for nexus meshes
@@ -1068,66 +1065,11 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
   const getGlowNodes = () => {
     const glowNodes = {
       selected: null as string | null,
-      next: null as string | null,
-      alternate: null as string | null
     };
 
     if (!selectedId) return glowNodes;
 
-    const allNodes = Object.values(nodes);
     glowNodes.selected = selectedId;
-
-    console.log(`🎨 Glow States - Selected: ${selectedId}, Next: calculating...`);
-
-    const selectedNexus = nexuses.find(n => n.id === selectedId);
-
-    if (selectedNexus) {
-      const l1Nodes = allNodes.filter(n => n.parentId === selectedNexus.id);
-      if (l1Nodes.length >= 1) {
-        glowNodes.next = l1Nodes[0].id;
-      }
-    } else if (nodes[selectedId]) {
-      const currentNode = nodes[selectedId];
-      const children = allNodes.filter(n => n.parentId === selectedId);
-      const nodeNexus = getNexusForNode(selectedId);
-
-      if (children.length >= 1) {
-        glowNodes.next = children[0].id;
-
-        const parentNexus = nexuses.find(n => n.id === currentNode.parentId);
-        if (parentNexus) {
-          const l1Siblings = allNodes.filter(n => n.parentId === parentNexus.id);
-          const currentIndex = l1Siblings.findIndex(n => n.id === selectedId);
-          if (currentIndex >= 0 && currentIndex < l1Siblings.length - 1) {
-            glowNodes.alternate = l1Siblings[currentIndex + 1].id;
-          }
-        }
-      } else {
-        const siblings = allNodes.filter(n => n.parentId === currentNode.parentId);
-        const currentIndex = siblings.findIndex(n => n.id === selectedId);
-
-        if (currentIndex >= 0 && currentIndex < siblings.length - 1) {
-          glowNodes.next = siblings[currentIndex + 1].id;
-        }
-
-        if (nodeNexus) {
-          let l1Ancestor = currentNode;
-          while (l1Ancestor.parentId !== nodeNexus.id && nodes[l1Ancestor.parentId]) {
-            l1Ancestor = nodes[l1Ancestor.parentId];
-          }
-
-          const l1Siblings = allNodes.filter(n => n.parentId === nodeNexus.id);
-          const l1Index = l1Siblings.findIndex(n => n.id === l1Ancestor.id);
-
-          if (l1Index >= 0 && l1Index < l1Siblings.length - 1) {
-            glowNodes.alternate = l1Siblings[l1Index + 1].id;
-          } else if (l1Siblings.length > 0) {
-            glowNodes.alternate = l1Siblings[0].id;
-          }
-        }
-      }
-    }
-
     return glowNodes;
   };
 
@@ -1299,94 +1241,6 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
               </>
             )}
 
-            {glowNodes.next === nexus.id && (
-              <>
-                <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                  <meshBasicMaterial
-                    ref={(mat) => {
-                      if (mat) nextMaterialsRef.current.set(nexus.id, mat);
-                    }}
-                    color="#00FFFF"
-                    transparent
-                    opacity={0.9 * nexusOpacity}
-                  />
-                </mesh>
-
-                {Array.from({ length: 30 }).map((_, i) => {
-                  const angle = (Math.random() * Math.PI * 2);
-                  const sparkleRadius = 2.4 + Math.random() * 0.3;
-                  const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                  const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                  const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                  const size = 0.04 + Math.random() * 0.06;
-
-                  return (
-                    <mesh key={`sparkle-next-${i}`} position={[x, y, z]}>
-                      <sphereGeometry args={[size, 6, 6]} />
-                      <meshBasicMaterial
-                        ref={(mat) => {
-                          if (mat) {
-                            if (!sparkleMaterialsRef.current.has(nexus.id)) {
-                              sparkleMaterialsRef.current.set(nexus.id, []);
-                            }
-                            sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
-                          }
-                        }}
-                        color="#00FFFF"
-                        transparent
-                        opacity={0.9 * nexusOpacity}
-                      />
-                    </mesh>
-                  );
-                })}
-              </>
-            )}
-
-            {glowNodes.alternate === nexus.id && (
-              <>
-                <mesh position={nexus.position} rotation={[Math.PI / 2, 0, 0]}>
-                  <torusGeometry args={[2.5, 0.15, 16, 32]} />
-                  <meshBasicMaterial
-                    ref={(mat) => {
-                      if (mat) alternateMaterialsRef.current.set(nexus.id, mat);
-                    }}
-                    color="#00FFFF"
-                    transparent
-                    opacity={0.8 * nexusOpacity}
-                  />
-                </mesh>
-
-                {Array.from({ length: 30 }).map((_, i) => {
-                  const angle = (Math.random() * Math.PI * 2);
-                  const sparkleRadius = 2.4 + Math.random() * 0.3;
-                  const x = nexus.position[0] + Math.cos(angle) * sparkleRadius;
-                  const z = nexus.position[2] + Math.sin(angle) * sparkleRadius;
-                  const y = nexus.position[1] + (Math.random() - 0.5) * 0.1;
-                  const size = 0.04 + Math.random() * 0.06;
-
-                  return (
-                    <mesh key={`sparkle-alt-${i}`} position={[x, y, z]}>
-                      <sphereGeometry args={[size, 6, 6]} />
-                      <meshBasicMaterial
-                        ref={(mat) => {
-                          if (mat) {
-                            if (!sparkleMaterialsRef.current.has(nexus.id)) {
-                              sparkleMaterialsRef.current.set(nexus.id, []);
-                            }
-                            sparkleMaterialsRef.current.get(nexus.id)!.push(mat);
-                          }
-                        }}
-                        color="#00FFFF"
-                        transparent
-                        opacity={0.8 * nexusOpacity}
-                      />
-                    </mesh>
-                  );
-                })}
-              </>
-            )}
-
             {nexus.videoUrl && (
               <VideoThumbnail videoUrl={nexus.videoUrl} position={nexus.position} opacity={nexusOpacity} />
             )}
@@ -1399,7 +1253,7 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
         const level = getNodeLevel(node.id);
         const size = level === 1 ? 0.75 : 0.5;
 
-        const baseColor = "#7C3AED"; // Darker vibrant neon purple
+        const baseColor = "#C85A0A"; // Burnt orange
 
         // Calculate opacity based on locked state
         let nodeOpacity = 1;
@@ -1420,12 +1274,6 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
         } else if (glowNodes.selected === node.id) {
           haloColor = "#CCCC00"; // Darker vibrant yellow
           haloType = 'selected';
-        } else if (glowNodes.next === node.id) {
-          haloColor = "#00CCCC"; // Darker vibrant cyan
-          haloType = 'next';
-        } else if (glowNodes.alternate === node.id) {
-          haloColor = "#00CCCC"; // Darker vibrant cyan
-          haloType = 'alternate';
         }
 
         // Geometry selection based on nodeType (user-reply handled separately)
@@ -1442,37 +1290,37 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
           Geometry = <icosahedronGeometry args={[size * 1.2, 0]} />;
           nodeColor = isNodeLocked(node) ? "#808080" : "#00CCCC"; // Darker vibrant neon cyan
         } else if (node.nodeType === 'ai-response') {
-          // AI responses: Burnt orange sphere (wireframe)
-          Geometry = <sphereGeometry args={[size, 32, 32]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
+          // AI responses: Purple diamond
+          Geometry = <octahedronGeometry args={[size, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Vibrant purple
         } else if (node.nodeType === 'inspiration' || node.nodeType === 'socratic-question') {
           // Inspiration/Socratic questions: Dodecahedron star (gold)
           Geometry = <dodecahedronGeometry args={[size * 1.3, 0]} />;
           nodeColor = isNodeLocked(node) ? "#808080" : "#B8860B"; // Darker vibrant neon gold
         } else if (node.nodeType === 'doctrine') {
-          // 🎓 Doctrine nodes: Larger spheres (burnt orange)
-          Geometry = <sphereGeometry args={[size * 1.2, 32, 32]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange with red undertones
+          // 🎓 Doctrine nodes: Purple diamond
+          Geometry = <octahedronGeometry args={[size * 1.2, 0]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Vibrant purple
         } else if (node.nodeType === 'intuition-example') {
-          // 💡 Intuition example nodes: Purple diamond
-          Geometry = <octahedronGeometry args={[size, 0]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+          // 💡 Intuition example nodes: Orange sphere
+          Geometry = <sphereGeometry args={[size, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange
         } else if (node.nodeType === 'model-answer') {
-          // 📐 Model answer nodes: Purple diamond
-          Geometry = <octahedronGeometry args={[size, 0]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+          // 📐 Model answer nodes: Orange sphere
+          Geometry = <sphereGeometry args={[size, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange
         } else if (node.nodeType === 'imitate') {
-          // 🎯 Imitate nodes: Purple diamond
-          Geometry = <octahedronGeometry args={[size, 0]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+          // 🎯 Imitate nodes: Orange sphere
+          Geometry = <sphereGeometry args={[size, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange
         } else if (node.nodeType === 'quiz-mc' || node.nodeType === 'quiz-short-answer') {
-          // 📝 Quiz nodes: Purple diamond
-          Geometry = <octahedronGeometry args={[size, 0]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+          // 📝 Quiz nodes: Orange sphere
+          Geometry = <sphereGeometry args={[size, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange
         } else if (node.nodeType === 'application-scenario') {
-          // 🌍 Application scenario nodes: Purple diamond
-          Geometry = <octahedronGeometry args={[size, 0]} />;
-          nodeColor = isNodeLocked(node) ? "#808080" : "#7C3AED"; // Darker vibrant neon purple
+          // 🌍 Application scenario nodes: Orange sphere
+          Geometry = <sphereGeometry args={[size, 32, 32]} />;
+          nodeColor = isNodeLocked(node) ? "#808080" : "#C85A0A"; // Burnt orange
         }
         // Note: user-reply and socratic-answer are rendered by RotatingUserReplyNode component
 
@@ -1669,14 +1517,8 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
                   <torusGeometry args={[size * 1.65, 0.135, 8, 20]} />
                   <meshStandardMaterial
                     ref={(mat) => {
-                      if (mat && haloType) {
-                        if (haloType === 'selected') {
-                          selectedMaterialsRef.current.set(node.id, mat);
-                        } else if (haloType === 'next') {
-                          nextMaterialsRef.current.set(node.id, mat);
-                        } else if (haloType === 'alternate') {
-                          alternateMaterialsRef.current.set(node.id, mat);
-                        }
+                      if (mat && haloType === 'selected') {
+                        selectedMaterialsRef.current.set(node.id, mat);
                       }
                     }}
                     color={haloColor}

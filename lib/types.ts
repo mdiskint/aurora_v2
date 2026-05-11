@@ -13,6 +13,13 @@ export type NodeType =
   | 'quiz-short-answer'
   | 'application-scenario';
 
+export interface ThreadMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'note';
+  content: string;
+  timestamp: number;
+}
+
 export interface MCQ {
   question: string;
   options: { A: string; B: string; C: string; D: string };
@@ -50,6 +57,9 @@ export interface Node {
   isLocked?: boolean;          // Flag to mark this node as locked (course mode)
   isCompleted?: boolean;       // Flag to mark this node as completed (unlocks next node)
 
+  // Atomized text tracking
+  atomizedRanges?: Array<{ text: string; childNodeId: string }>;
+
   // Video playback
   videoUrl?: string | null;    // YouTube or Vimeo URL for embedded video
   videoStart?: number | null;  // Start time in seconds
@@ -79,6 +89,9 @@ export interface Node {
     correctOption?: string;
     explanation?: string;
   }>;
+
+  // In-node conversation thread
+  messages?: ThreadMessage[];
 }
 
 // ============================================

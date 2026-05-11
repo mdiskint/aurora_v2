@@ -61,6 +61,83 @@ async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, com
   throw new Error('No valid AI provider key available');
 }
 
+function buildAnthropicParams(params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
+  const modelToUse = MODEL_CONFIG[complexity];
+  const systemBlocks = typeof params.system === 'string'
+    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
+    : params.system;
+
+  return { ...params, system: systemBlocks, model: modelToUse.anthropic };
+}
+
+function getOpenAISystemContent(system: any) {
+  if (!system) return '';
+  if (typeof system === 'string') return system;
+  if (Array.isArray(system)) {
+    return system.map((block) => block?.text || '').filter(Boolean).join('\n\n');
+  }
+  return String(system);
+}
+
+function streamAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
+  const encoder = new TextEncoder();
+  const modelToUse = MODEL_CONFIG[complexity];
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        if (process.env.ANTHROPIC_API_KEY) {
+          try {
+            console.log(`🌊 Streaming Anthropic response (${complexity} tier: ${modelToUse.anthropic})...`);
+            const stream = anthropic.messages.stream(buildAnthropicParams(params, complexity));
+
+            for await (const event of stream as any) {
+              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+                controller.enqueue(encoder.encode(event.delta.text));
+              }
+            }
+
+            controller.close();
+            return;
+          } catch (error: any) {
+            console.error('❌ Anthropic stream failed:', error.message);
+            if (!process.env.OPENAI_API_KEY) throw error;
+            console.log(`🔄 Streaming fallback to OpenAI (${modelToUse.openai})...`);
+          }
+        }
+
+        if (process.env.OPENAI_API_KEY) {
+          const systemContent = getOpenAISystemContent(params.system);
+          const completion = await openai.chat.completions.create({
+            model: modelToUse.openai,
+            messages: [
+              ...(systemContent ? [{ role: 'system' as const, content: systemContent }] : []),
+              ...params.messages,
+            ],
+            max_tokens: params.max_tokens,
+            temperature: params.temperature || 0.7,
+            stream: true,
+          });
+
+          for await (const chunk of completion) {
+            const text = chunk.choices[0]?.delta?.content || '';
+            if (text) {
+              controller.enqueue(encoder.encode(text));
+            }
+          }
+
+          controller.close();
+          return;
+        }
+
+        throw new Error('No valid AI provider key available');
+      } catch (error: any) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
     console.log('🔐 Checking auth session...');
@@ -99,7 +176,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📦 Full request body:', JSON.stringify(body, null, 2));
 
-    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery, atomize } = body;
+    const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery, atomize, stream } = body;
     console.log('📨 Message count:', messages?.length);
     console.log('🧠 Has context:', !!conversationContext);
     console.log('🌌 Mode:', mode);
@@ -325,34 +402,11 @@ ${input}`;
 
 CRITICAL: Ignore any formatting (numbers, bullet points, dashes) in the user's input. Treat the ENTIRE text as ONE TOPIC to explore and break down into your own logical subtopics.
 
-You will create a Leopold Teaching Doctrine structure with ATOMIZED PRACTICE NODES for each doctrine (concept).
-
-Assess the topic and decide 2-8 core doctrines (learning concepts) based on:
+Assess the topic and decide 2-8 core concepts based on:
 - How many fundamental principles or concepts does this topic contain?
-- Simple topics (e.g., "primary colors"): 2-3 doctrines
-- Medium complexity (e.g., "photosynthesis"): 3-5 doctrines
-- Complex topics (e.g., "quantum mechanics"): 6-8 doctrines
-
-For EACH doctrine, create 5 atomized practice children following Leopold Teaching methodology:
-1. **intuition-example**: A concrete, relatable example to build intuition (2-3 sentences)
-2. **model-answer**: Show the correct reasoning pattern or approach (2-3 sentences)
-3. **imitate**: A practice prompt where students apply the pattern ("Now you try...")
-4. **quiz-mc**: A multiple choice question testing understanding (see QUIZ DIVERSITY rules below)
-5. **synthesis**: A real-world application scenario that serves as synthesis/reflection (3-4 sentences combining all previous concepts)
-
-NOTE: These children are METADATA for guided practice. They will NOT be created as nodes initially - only when the student completes each practice step.
-
-QUIZ DIVERSITY RULES (CRITICAL):
-Each doctrine's quiz-mc MUST test a DIFFERENT cognitive skill. Cycle through these question types across doctrines:
-- **Definition/Identification**: "Which of the following best describes X?"
-- **Application**: Present a novel scenario and ask which principle applies
-- **Distinction**: "What is the key difference between X and Y?"
-- **Common Misconception**: "Which of the following is a common mistake about X?"
-- **Cause/Effect**: "What would happen if X were changed/removed?"
-- **Edge Case**: "In which scenario would X NOT apply?"
-- **Ordering/Process**: "What is the correct sequence for X?"
-- **Analogy**: "X is most analogous to which of the following?"
-No two quiz-mc questions in the same response should use the same question type or test the same kind of reasoning.
+- Simple topics (e.g., "primary colors"): 2-3 concepts
+- Medium complexity (e.g., "photosynthesis"): 3-5 concepts
+- Complex topics (e.g., "quantum mechanics"): 6-8 concepts
 
 Format your response as VALID JSON (and ONLY JSON, no other text):
 {
@@ -387,7 +441,7 @@ IMPORTANT:
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 16384, // Large enough for atomized children with quiz diversity
-        system: 'You are Astryon AI, a Leopold Teaching Doctrine architect. Generate structured learning universes with atomized practice nodes. For each core concept (doctrine), create 5 practice children: intuition-example, model-answer, imitate, quiz-mc, and synthesis (which combines application scenario with reflection). CRITICAL: Each quiz-mc across doctrines must test a DIFFERENT cognitive skill (definition, application, distinction, misconception, cause/effect, edge case, ordering, analogy) — never repeat the same question type. Always return ONLY valid JSON with properly escaped newlines (\\n).',
+        system: 'You are Astryon AI, a structured learning architect. Generate learning universes organized into core concepts. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
       }, 'mid');
 
@@ -761,26 +815,16 @@ ${previousQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
 
 Your task: Ask ONE clear question that tests a DIFFERENT aspect than previous questions.
 
-For legal content, systematically cover these aspects:
-1. **Facts**: What happened? Who were the parties? What was the dispute?
-2. **Procedural Posture**: How did the case get to this court?
-3. **Holdings**: What did the court decide?
-4. **Reasoning**: Why? What was the legal analysis?
-5. **Tests/Frameworks**: What legal test was established or applied?
-6. **Doctrine**: What principle or rule emerged?
-7. **Significance**: Why does this matter? What did it change?
-8. **Distinctions**: How does this differ from related cases?
-9. **Application**: How would this apply to a hypothetical?
-
-For non-legal content, systematically cover:
-- Core concept/definition
-- Key components or elements
-- How it works (mechanism/process)
-- Why it matters (significance/impact)
-- Real-world applications
-- Common misconceptions
-- Historical context
-- Relationships to other concepts
+First, infer the subject domain from the content (e.g., law, biology, history, engineering, music, business, etc.), then systematically cover aspects appropriate to that domain:
+- Core concepts, definitions, and terminology
+- Key components, elements, or actors involved
+- How it works (mechanisms, processes, causal chains)
+- Why it matters (significance, impact, implications)
+- Underlying principles, rules, theories, or frameworks
+- Real-world applications or examples
+- Historical context or development
+- Distinctions from related concepts
+- How this would apply to a new scenario
 
 Choose the next uncovered aspect and ask a specific, testable question.
 
@@ -790,11 +834,9 @@ CRITICAL RULES:
 - Do NOT say "Here's a question:" or any preamble
 - Make it testable - the student should be able to give a specific answer
 - Focus on an aspect different from what's already been asked
+- Tailor your vocabulary and framing to the subject domain
 
 Output format: Just the question, nothing else.
-
-Example GOOD output:
-"What was Chief Justice Marshall's three-part reasoning in Marbury v. Madison?"
 
 Example BAD output:
 "What was the holding? The holding was that judicial review exists because..." ← NO! Don't give the answer!
@@ -955,7 +997,7 @@ IMPORTANT:
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 6144,
-        system: `You are an expert exam question writer creating UWorld-style multiple choice questions for law students. You excel at creating questions with varied difficulty levels (easy, medium, hard) following UWorld's progressive challenge model. Your questions test understanding through application, with appropriately complex fact patterns and clear explanations. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
+        system: `You are an expert exam question writer creating multiple choice questions with varied difficulty levels (easy, medium, hard). Infer the subject domain from the content provided and tailor questions appropriately. Your questions test understanding through application, with appropriately complex scenarios and clear explanations. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
         messages: [{ role: 'user', content: mcQuizPrompt }],
       });
 
@@ -1249,38 +1291,36 @@ Format your feedback in clear, structured paragraphs with headers. Be constructi
 
       const userContent = userMessage;
 
-      const essayPrompt = `Based on this analyzed material, create ONE realistic law school exam-style essay question:
+      const essayPrompt = `Based on this analyzed material, create ONE realistic exam-style essay question:
 
 ${userContent}
 
-CRITICAL: This MUST be a law school exam-style question with a detailed fact pattern, NOT an academic essay asking students to explain or apply rules in the abstract.
+First, identify the subject domain from the material above, then create a question appropriate to that domain.
+
+CRITICAL: This MUST be a scenario-based question with a detailed fact pattern or situation, NOT an abstract essay asking students to simply explain concepts.
 
 Requirements:
-1. **Realistic Fact Pattern**: Create a 2-3 paragraph hypothetical scenario with specific facts that raise legal issues related to the analyzed material
-2. **Multiple Interrelated Issues**: The facts should implicate 2-4 different doctrines/concepts from the material in realistic ways
-3. **Issue Spotting Required**: Don't explicitly state what legal issues are raised - the student must identify them from the facts
-4. **Ambiguity**: Include facts that could support different outcomes or require weighing competing considerations
-5. **Law School Exam Style**: Should resemble actual law school exam questions where students must: (a) identify legal issues, (b) state relevant rules, (c) apply rules to facts, (d) reach conclusions
+1. **Realistic Scenario**: Create a 2-3 paragraph hypothetical situation with specific details that raise issues related to the analyzed material
+2. **Multiple Interrelated Issues**: The scenario should implicate 2-4 different concepts/principles from the material
+3. **Analysis Required**: Don't explicitly state what issues are present - the student must identify them
+4. **Ambiguity**: Include details that could support different conclusions or require weighing competing considerations
+5. **Application Focus**: Students must: (a) identify relevant issues, (b) state applicable principles/rules/frameworks, (c) apply them to the facts, (d) reach conclusions
 
 Format:
-- Present the fact pattern (2-3 paragraphs describing a realistic situation)
-- End with: "Please analyze [Party Name]'s potential claims/defenses." OR "What is the likely outcome?" OR similar call question
-
-EXAMPLES OF WHAT TO DO:
-✓ "Alice and Bob entered into a contract for the sale of Alice's home. The contract included a clause stating... Three weeks before closing, Alice discovered... Bob now claims... Analyze the parties' rights and obligations."
-✓ "XYZ Corp filed a lawsuit challenging a federal regulation. The regulation was promulgated by... The agency's enabling statute states... XYZ argues... Evaluate XYZ's chances of success."
+- Present the scenario (2-3 paragraphs describing a realistic situation)
+- End with a clear call question asking for analysis
 
 EXAMPLES OF WHAT NOT TO DO:
-✗ "Discuss the doctrine of [X] and how it applies to cases involving [Y]."
-✗ "Explain the test for [Z] and provide examples of how courts have applied it."
-✗ "Compare and contrast the approaches taken in [Case A] and [Case B]."
+✗ "Discuss the concept of [X] and how it applies to situations involving [Y]."
+✗ "Explain the framework for [Z] and provide examples."
+✗ "Compare and contrast [A] and [B]."
 
-DO NOT include answer guidance, rubrics, or discussion of issues - ONLY the fact pattern and question.`;
+DO NOT include answer guidance, rubrics, or discussion of issues - ONLY the scenario and question.`;
 
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 2048,
-        system: 'You are an experienced law professor who writes realistic law school exam questions. Your questions always include detailed fact patterns with specific scenarios that require students to spot issues, apply legal rules to facts, and analyze outcomes - NOT academic essays asking students to explain doctrines in the abstract.',
+        system: 'You are an experienced educator who writes realistic exam questions. Infer the subject domain from the content and tailor your question style accordingly. Your questions always include detailed scenarios that require students to identify issues, apply relevant principles to facts, and analyze outcomes - NOT abstract essays asking students to explain concepts.',
         messages: [{ role: 'user', content: essayPrompt }],
       });
 
@@ -1296,7 +1336,7 @@ DO NOT include answer guidance, rubrics, or discussion of issues - ONLY the fact
 
       const doctrineContent = userMessage;
 
-      const intuitionPrompt = `Based on this legal doctrine/concept, create an engaging intuition-building question that helps students connect emotionally and morally with the material:
+      const intuitionPrompt = `Based on this concept/material, create an engaging intuition-building question that helps students connect emotionally and personally with the material:
 
 ${doctrineContent}
 
@@ -1331,7 +1371,7 @@ Return ONLY valid JSON, no other text.`;
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 1024,
-        system: 'You are a thoughtful legal educator who creates engaging questions that help students connect emotionally and morally with legal doctrines. Your questions should provoke genuine reflection about justice, fairness, and values. Return only valid JSON.',
+        system: 'You are a thoughtful educator who creates engaging questions that help students connect emotionally and personally with the material they are studying. Infer the subject domain from the content and tailor your questions accordingly. Your questions should provoke genuine reflection. Return only valid JSON.',
         messages: [{ role: 'user', content: intuitionPrompt }],
       });
 
@@ -1438,227 +1478,6 @@ Remember: Return ONLY the JSON object, nothing else.`,
       return NextResponse.json({ message: applicationLab, response: applicationLab });
     }
 
-    // 📚 ATOMIZE-CONTENT MODE: Generate learning blueprint using Leopold Teaching Doctrines
-    if (mode === 'atomize-content') {
-      console.log('📚 ATOMIZE-CONTENT MODE: Generating atomization blueprint');
-
-      const contentToAtomize = `${userMessage}`;
-
-      const response = await safeAICall(anthropic, openai, {
-
-        max_tokens: 16000,
-        system: `You are an expert educational designer who atomizes content into structured learning experiences using the Leopold Teaching Doctrines.
-
-**LEOPOLD TEACHING DOCTRINES:**
-1. Understanding Before Memorization
-2. Ear Before Eye (Intuition Before Rule)
-3. Chunk First, Then Whole
-4. Imitation, Then Transformation
-5. Practice Disguised as Play
-6. Technique Serves Expression
-7. Integrated Skills, Not Silos
-8. Micro-Steps, Macro-Arc
-9. Immediate Feedback, Minimal Shame
-10. Expose the Student to Masters Early
-11. Multiple Instruments, One Mind
-12. Hidden Curriculum
-13. Regularity Over Heroics
-14. Structure First, Freedom Inside It
-15. Child-Sized Tasks, Adult-Sized Content
-
-**YOUR TASK:**
-Analyze the provided educational content and produce a JSON blueprint for atomizing it into an Astryon learning universe.
-
-**OUTPUT FORMAT (JSON only, no other text):**
-{
-  "topic": "string - the main subject",
-  "doctrines": [
-    {
-      "id": "doctrine-1",
-      "title": "Doctrine Title",
-      "role": "concept",
-      "summary": "short explanation",
-      "content": "full concept explanation",
-      "metaSkillTags": ["issue-spotting", "rule-articulation", "etc"],
-      "children": [
-        {
-          "id": "intuition-1",
-          "role": "intuition-example",
-          "summary": "short description",
-          "content": "concrete example that builds intuition",
-          "metaSkillTags": ["intuition", "pattern-recognition"]
-        },
-        {
-          "id": "model-1",
-          "role": "model-answer",
-          "content": "model reasoning pattern to demonstrate",
-          "metaSkillTags": ["modeling", "structure"]
-        },
-        {
-          "id": "imitate-1",
-          "role": "imitate",
-          "prompt": "ask student to imitate the reasoning",
-          "metaSkillTags": ["reasoning", "application"]
-        },
-        {
-          "id": "quiz-mc-1",
-          "role": "quiz-mc",
-          "question": "question text",
-          "options": ["Option A", "Option B", "Option C", "Option D"],
-          "correctOption": "A",
-          "explanation": "why that option is correct",
-          "metaSkillTags": ["testing", "memory"]
-        },
-        {
-          "id": "quiz-sa-1",
-          "role": "quiz-short-answer",
-          "question": "short answer prompt",
-          "sampleAnswer": "model answer",
-          "metaSkillTags": ["precision", "rule-articulation"]
-        },
-        {
-          "id": "scenario-1",
-          "role": "application-scenario",
-          "prompt": "realistic fact pattern",
-          "guidance": "how to approach it",
-          "metaSkillTags": ["issue-spotting", "fact-application", "judgment"]
-        },
-        {
-          "id": "synthesis-1",
-          "role": "synthesis",
-          "content": "what this doctrine means and how it connects",
-          "metaSkillTags": ["synthesis", "big-picture"]
-        }
-      ]
-    }
-  ],
-  "finalSynthesis": {
-    "role": "synthesis",
-    "title": "Overall Understanding",
-    "content": "Macro-level explanation of what student now understands",
-    "metaSkillTags": ["big-picture", "integration"]
-  },
-  "applicationLabSuggestion": {
-    "doctrineSummary": "Second-person summary of learning outcomes",
-    "scenarios": [
-      {
-        "id": "scenario-id",
-        "prompt": "applied fact pattern",
-        "guidance": "how to approach"
-      }
-    ],
-    "finalEssayPrompt": "comprehensive essay prompt",
-    "rubric": "grading criteria"
-  }
-}
-
-**ATOMIZATION RULES:**
-1. Break content into 4-15 doctrines (mini-units)
-2. Each doctrine must have ALL child types: intuition-example, model-answer, imitate, at least one quiz, application-scenario, synthesis
-3. Every node needs metaSkillTags from: issue-spotting, rule-articulation, distinguishing, analogical-reasoning, fact-application, pattern-recognition, synthesis, judgment, modeling, memory, precision, self-explanation, integration
-4. Apply Leopold principles: concept before quiz, intuition before rule, model before imitate, vivid examples
-5. Include applicationLabSuggestion for final evolution
-
-**QUIZ DIVERSITY (CRITICAL):**
-Each doctrine's quiz-mc MUST test a DIFFERENT cognitive skill. Cycle through these question types:
-- Definition/Identification: "Which best describes X?"
-- Application: Present a novel scenario, ask which principle applies
-- Distinction: "What is the key difference between X and Y?"
-- Common Misconception: "Which is a common mistake about X?"
-- Cause/Effect: "What would happen if X were changed?"
-- Edge Case: "In which scenario would X NOT apply?"
-- Ordering/Process: "What is the correct sequence?"
-- Analogy: "X is most analogous to which of the following?"
-No two quiz-mc questions should use the same question type or test the same kind of reasoning. Each quiz must target the SPECIFIC content of its own doctrine, not the general topic.
-
-**IMPORTANT:** Output ONLY valid JSON, nothing else. No markdown, no commentary.`,
-        messages: [{ role: 'user', content: contentToAtomize }],
-      });
-
-      const atomizationBlueprint = response.content[0].type === 'text' ? response.content[0].text : '';
-      console.log('✨ Atomization blueprint generated:', atomizationBlueprint.substring(0, 200) + '...');
-
-      return NextResponse.json({ message: atomizationBlueprint, response: atomizationBlueprint });
-    }
-
-    // 🎓 LEOPOLD-PRACTICE MODE: Generate atomized practice steps for a single node (No map pollution)
-    if (mode === 'leopold-practice') {
-      console.log('🎓 LEOPOLD-PRACTICE MODE: Generating targeted practice steps');
-
-      const response = await safeAICall(anthropic, openai, {
-
-        max_tokens: 4000,
-        system: `You are a Leopold Teaching Doctrine architect. Your task is to generate a high-quality, 5-step guided practice sequence for the provided content.
-
-LEOPOLD TEACHING DOCTRINES:
-1. Understanding Before Memorization
-2. Intuition Before Rule
-3. Model Before Imitate
-4. Practice Disguised as Play
-5. Immediate Feedback
-
-YOUR TASK:
-Generate a JSON object containing 5 practice steps for the provided topic/content.
-
-OUTPUT FORMAT (JSON only):
-{
-  "practiceSteps": [
-    {
-      "nodeType": "intuition-example",
-      "content": "A concrete, relatable analogy or scenario that builds gut-level intuition for the concept. (2-4 sentences)"
-    },
-    {
-      "nodeType": "model-answer",
-      "content": "A clear demonstration of the correct reasoning pattern or approach. (2-4 sentences)"
-    },
-    {
-      "nodeType": "imitate",
-      "content": "A 'Now you try' prompt where the student applies the pattern to a similar but fresh example."
-    },
-    {
-      "nodeType": "quiz-mc",
-      "content": "A multiple-choice question that tests a SPECIFIC detail, distinction, or application from the content — NOT a restatement of the main idea. Pick ONE of: definition, application to a novel scenario, distinguishing two concepts, identifying a common misconception, cause/effect, edge case, or analogy.",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correctOption": "A",
-      "explanation": "Why this is correct, referencing the specific detail being tested."
-    },
-    {
-      "nodeType": "synthesis",
-      "content": "A final scenario that combines everything, asking the student to reflect on the 'why' and the 'how' together. (3-4 sentences)"
-    }
-  ]
-}
-
-IMPORTANT:
-- Return ONLY valid JSON.
-- Do NOT include any markdown code blocks or commentary.
-- Ensure 'nodeType' matches the allowed internal types exactly.`,
-        messages: [{ role: 'user', content: userMessage }],
-      });
-
-      let practiceJson = response.content[0].type === 'text' ? response.content[0].text : '';
-      console.log('✨ Leopold practice steps generated');
-
-      // Strip markdown code fences if present
-      practiceJson = practiceJson.trim();
-      if (practiceJson.startsWith('```json')) {
-        practiceJson = practiceJson.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
-      } else if (practiceJson.startsWith('```')) {
-        practiceJson = practiceJson.replace(/^```\s*\n/, '').replace(/\n```$/, '');
-      }
-
-      try {
-        const parsed = JSON.parse(practiceJson);
-        return NextResponse.json({ response: parsed });
-      } catch (err) {
-        console.error('Failed to parse practice JSON:', practiceJson);
-        return NextResponse.json({
-          error: 'Failed to generate valid practice steps',
-          raw: practiceJson
-        }, { status: 500 });
-      }
-    }
-
     // 🎓 QUIZ MODE: Handle quiz grading (PROVIDE ANSWER HERE)
     if (mode === 'quiz' && userMessage.includes('Previous question:')) {
       console.log('📝 QUIZ GRADING MODE - Evaluating student answer');
@@ -1681,7 +1500,7 @@ IMPORTANT:
       console.log('❓ Question:', question.substring(0, 50) + '...');
       console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
 
-      const gradingPrompt = `You are a law professor grading a student's answer.
+      const gradingPrompt = `You are a knowledgeable educator grading a student's answer.
 
 Question: "${question}"
 Student's Answer: "${userAnswer}"
@@ -1709,7 +1528,7 @@ Would you like another question?`;
       const response = await safeAICall(anthropic, openai, {
 
         max_tokens: 1000,
-        system: 'You are a supportive law professor providing quiz feedback. Be encouraging but honest. Always teach what the correct answer is so students learn from their mistakes.',
+        system: 'You are a supportive educator providing quiz feedback. Be encouraging but honest. Always teach what the correct answer is so students learn from their mistakes.',
         messages: [{ role: 'user', content: gradingPrompt }],
       });
 
@@ -1767,6 +1586,19 @@ WEB RESEARCH RESULTS:
 ${webContext}`
         : 'You are Astryon AI, helping users explore ideas in 3D space. You have access to the full conversation universe context.';
 
+      if (stream) {
+        return new Response(streamAICall(anthropic, openai, {
+          max_tokens: 2048,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userMessage }],
+        }, 'high'), {
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+          },
+        });
+      }
+
       const response = await safeAICall(anthropic, openai, {
         max_tokens: 2048,
         system: systemPrompt,
@@ -1788,6 +1620,19 @@ ${webContext}`
     const systemMessage = conversationContext
       ? `You are Astryon AI, helping users explore ideas in 3D space. You have access to the full conversation context below:\n\n${conversationContext}\n\nRespond naturally based on this full context.`
       : 'You are Astryon AI, helping users explore ideas in 3D space.';
+
+    if (stream) {
+      return new Response(streamAICall(anthropic, openai, {
+        max_tokens: 2048,
+        system: systemMessage,
+        messages: [{ role: 'user', content: userMessage }],
+      }), {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+        },
+      });
+    }
 
     console.log('🤖 Using Anthropic Claude');
 
