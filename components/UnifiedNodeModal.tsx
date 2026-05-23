@@ -2659,33 +2659,35 @@ Be conversational and human, not formulaic.`;
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          width: '90vw',
-          maxWidth: '1400px',
-          maxHeight: '90vh',
+          width: '94vw',
+          maxWidth: '1600px',
+          height: '97vh',
+          maxHeight: '97vh',
           display: 'flex',
           flexDirection: 'column',
-          padding: '20px'
+          padding: '8px'
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
           className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-cyan-500/50 rounded-2xl shadow-2xl flex flex-col"
           style={{
-            maxHeight: '90vh',
+            height: '100%',
+            maxHeight: '100%',
             overflowY: 'auto',
             overflowX: 'hidden'
           }}
         >
 
           {/* TOP SECTION - Content Display */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-h-0">
             {/* Header */}
-            <div className="p-6 border-b border-cyan-500/30 flex items-start justify-between flex-shrink-0">
+            <div className="px-5 py-3 border-b border-cyan-500/30 flex items-center justify-between gap-4 flex-shrink-0">
               <div className="flex-1">
-                <h2 className={`text-2xl font-bold mb-2 ${(node?.isSynthesis) ? 'text-cyan-300' : isConnectionNode ? 'text-yellow-300' : 'text-cyan-400'}`}>
+                <h2 className={`text-xl font-bold mb-1 ${(node?.isSynthesis) ? 'text-cyan-300' : isConnectionNode ? 'text-yellow-300' : 'text-cyan-400'}`}>
                   {displayNexus?.title || selectedItem.title || (selectedItem.content?.substring(0, 50) + (selectedItem.content?.length > 50 ? '...' : ''))}
                 </h2>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   {/* 🎓 EVOLVING NEXUS - Show Application Lab badge and toggle */}
                   {isApplicationLabNexus && (
                     <div className="flex items-center gap-2">
@@ -2702,13 +2704,13 @@ Be conversational and human, not formulaic.`;
                   )}
 
                   {hasUnsavedChanges && isExplorePage && (
-                    <div className="text-sm text-yellow-400 flex items-center gap-2">
+                    <div className="text-xs text-yellow-400 flex items-center gap-2">
                       <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
                       Saving...
                     </div>
                   )}
                   {!hasUnsavedChanges && isExplorePage && selectedItem && (
-                    <div className="text-sm text-green-400/80 flex items-center gap-2">
+                    <div className="text-xs text-green-400/80 flex items-center gap-2">
                       ✓ Saved
                     </div>
                   )}
@@ -2717,14 +2719,14 @@ Be conversational and human, not formulaic.`;
                   </div>
                 </div>
               </div>
-              <div className="flex items-center">
+              <div className="flex items-center gap-2">
                 {/* Atomize marked sections — works for both nexus and L1+ nodes */}
                 {!isConnectionNode && !(node?.id.startsWith('meta-inspiration')) && (
-                  <div className="flex flex-col items-end gap-2 mx-2">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={handleMarkAtomizeSelection}
                       disabled={!selectedContentText.trim()}
-                      className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
+                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-xs
                         ${selectedContentText.trim()
                           ? 'bg-slate-800/60 hover:bg-amber-600/20 border border-amber-500/50 text-amber-200'
                           : 'bg-slate-800/40 border border-slate-700 text-slate-500 cursor-not-allowed'}`}
@@ -2735,7 +2737,7 @@ Be conversational and human, not formulaic.`;
                     <button
                       onClick={handleAtomizeMarkedSections}
                       disabled={atomizeMarkerSummary.sections.length === 0 || atomizeMarkerSummary.incompleteMarkers > 0}
-                      className={`px-6 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
+                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-xs
                         ${atomizeMarkerSummary.sections.length > 0 && atomizeMarkerSummary.incompleteMarkers === 0
                           ? 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'
                           : 'bg-slate-800/40 border-2 border-slate-700 text-slate-500 cursor-not-allowed'}`}
@@ -2757,7 +2759,7 @@ Be conversational and human, not formulaic.`;
                   <div className="flex flex-col items-center mx-2">
                     <button
                       onClick={() => setShowEssaySection(true)}
-                      className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-bold flex items-center gap-2"
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-all font-bold flex items-center gap-2 text-xs"
                     >
                       📝 Application Essay
                     </button>
@@ -2766,7 +2768,7 @@ Be conversational and human, not formulaic.`;
 
                 <button
                   onClick={handleClose}
-                  className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/10 rounded ml-4"
+                  className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/10 rounded"
                   type="button"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2788,12 +2790,12 @@ Be conversational and human, not formulaic.`;
             )}
 
             {/* Content Area */}
-            <div className="flex-1 p-6">
+            <div className="flex-1 px-5 pt-3 pb-5 overflow-y-auto min-h-0">
               {isThreadNode ? (
                 /* 💬 CHAT THREAD VIEW - Show conversation messages for thread-enabled nodes */
                 <div className="flex flex-col h-full">
                   <div
-                    className="flex-1 space-y-3 overflow-y-auto max-h-[50vh] pr-2"
+                    className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-2"
                     onMouseUp={handleThreadTextSelection}
                   >
                     {threadMessages.map((msg) => (
@@ -2853,7 +2855,7 @@ Be conversational and human, not formulaic.`;
                              resize-none text-base leading-relaxed"
                     placeholder="Start typing to edit this section..."
                     spellCheck={true}
-                    style={{ minHeight: '300px' }}
+                    style={{ minHeight: '420px' }}
                   />
                   <div className="mt-2 text-xs text-gray-500 italic">
                     💡 Changes auto-save as you type • Use begin/end markers to atomize one or more sections into child nodes
@@ -3213,9 +3215,9 @@ Be conversational and human, not formulaic.`;
 
             {/* 💬 PERSISTENT CHAT INPUT - For thread-enabled nodes */}
             {isThreadNode && !socraticQuestion && (
-              <div className="p-4 bg-slate-950/30 border-b border-cyan-500/20">
+              <div className="px-4 py-2 bg-slate-950/30 border-b border-cyan-500/20">
                 {quotedText && (
-                  <div className="mb-2 p-2 bg-purple-900/20 border-l-4 border-purple-500 rounded text-sm text-gray-300 italic flex items-center justify-between">
+                  <div className="mb-2 p-2 bg-purple-900/20 border-l-4 border-purple-500 rounded text-xs text-gray-300 italic flex items-center justify-between">
                     <span>&gt; {quotedText}</span>
                     <button onClick={() => setQuotedText(null)} className="text-gray-500 hover:text-gray-300 ml-2 text-xs">✕</button>
                   </div>
@@ -3243,7 +3245,7 @@ Be conversational and human, not formulaic.`;
                     : 'Type a message... (Enter to ask AI, Shift+Enter for new line)'
                   }
                   disabled={isLoadingAI || isStreamingAI}
-                  className={`w-full bg-slate-950/50 text-gray-200 rounded-lg p-3
+                  className={`w-full bg-slate-950/50 text-gray-200 rounded-lg px-3 py-2
                            focus:outline-none resize-none border ${
                              noteMode
                                ? 'border-amber-500/40 focus:border-amber-500/60'
@@ -3251,30 +3253,18 @@ Be conversational and human, not formulaic.`;
                            }`}
                   rows={2}
                 />
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={() => setNoteMode(!noteMode)}
-                    className={`px-4 py-2 rounded-lg transition-all font-medium ${
-                      noteMode
-                        ? 'bg-amber-600/30 border-2 border-amber-400 text-amber-200'
-                        : 'bg-slate-700/40 hover:bg-slate-700/60 border border-slate-500/40 text-slate-300'
-                    }`}
-                  >
-                    📝 Note
-                  </button>
-                </div>
               </div>
             )}
 
             {/* Action Mode Input - For non-thread nodes (nexuses, connection nodes, explore page) */}
             {!isThreadNode && actionMode && !socraticQuestion && (
-              <div className="p-4 bg-slate-950/30 border-b border-cyan-500/20">
-                <div className="text-sm text-cyan-300 mb-2 font-semibold">
+              <div className="px-4 py-3 bg-slate-950/30 border-b border-cyan-500/20">
+                <div className="text-xs text-cyan-300 mb-1.5 font-semibold">
                   {actionMode === 'user-reply' && '💬 Your Reply'}
                   {actionMode === 'ask-ai' && '🤖 Ask AI'}
                 </div>
                 {quotedText && actionMode === 'user-reply' && (
-                  <div className="mb-2 p-2 bg-purple-900/20 border-l-4 border-purple-500 rounded text-sm text-gray-300 italic">
+                  <div className="mb-2 p-2 bg-purple-900/20 border-l-4 border-purple-500 rounded text-xs text-gray-300 italic">
                     &gt; {quotedText}
                   </div>
                 )}
@@ -3287,16 +3277,16 @@ Be conversational and human, not formulaic.`;
                       : 'What would you like to know about this?'
                   }
                   disabled={isLoadingAI}
-                  className="w-full bg-slate-950/50 text-gray-200 border border-cyan-500/20 rounded-lg p-3
+                  className="w-full bg-slate-950/50 text-gray-200 border border-cyan-500/20 rounded-lg px-3 py-2
                            focus:outline-none focus:border-cyan-500/50 resize-none"
-                  rows={3}
+                  rows={2}
                 />
-                <div className="flex gap-2 mt-3">
+                <div className="flex gap-2 mt-2">
                   <button
                     onClick={actionMode === 'user-reply' ? handleUserReply : handleAskAI}
                     disabled={isLoadingAI || !inputContent.trim()}
-                    className="flex-1 px-4 py-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50
-                             text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50
+                             text-cyan-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >
                     {isLoadingAI ? '⏳ Loading...' : 'Submit'}
                   </button>
@@ -3306,8 +3296,8 @@ Be conversational and human, not formulaic.`;
                       setInputContent('');
                       setQuotedText(null);
                     }}
-                    className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50
-                             text-gray-300 rounded-lg transition-all"
+                    className="px-3 py-1.5 bg-gray-600/20 hover:bg-gray-600/30 border border-gray-500/50
+                             text-gray-300 rounded-lg transition-all text-sm"
                   >
                     Cancel
                   </button>
@@ -3317,19 +3307,19 @@ Be conversational and human, not formulaic.`;
 
             {/* Action Buttons Row */}
             {!socraticQuestion && (
-              <div className="p-4 space-y-3">
+              <div className="px-4 py-2 space-y-1.5">
                 {/* Check if this is a practice L2 node */}
                 {node && node.parentId && (node.nodeType === 'intuition-example' || node.nodeType === 'imitate') ? (
                   // PRACTICE L2 NODE LAYOUT: Simplified buttons + prominent Continue button
                   <>
                     {/* Row 1: Just basic actions (Reply/Ask AI hidden for thread nodes - they have persistent input) */}
-                    <div className="flex gap-3">
+                    <div className="flex gap-2">
                       {!isThreadNode && (
                         <>
                           <button
                             onClick={() => setActionMode('user-reply')}
                             disabled={actionMode === 'user-reply'}
-                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                            className={`flex-1 px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
                               ${actionMode === 'user-reply'
                                 ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
                                 : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
@@ -3339,7 +3329,7 @@ Be conversational and human, not formulaic.`;
                           <button
                             onClick={() => setActionMode('ask-ai')}
                             disabled={actionMode === 'ask-ai' || isLoadingAI}
-                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                            className={`flex-1 px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
                               ${actionMode === 'ask-ai'
                                 ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
                                 : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
@@ -3350,7 +3340,7 @@ Be conversational and human, not formulaic.`;
                       )}
                       <button
                         onClick={handleDeleteClick}
-                        className="px-4 py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium"
+                        className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm"
                         title="Delete this node"
                       >
                         🗑️
@@ -3400,14 +3390,14 @@ Be conversational and human, not formulaic.`;
                               setActivePracticeStep(nextStep!);
                             }, 300);
                           }}
-                          className="w-full px-6 py-4 bg-gradient-to-r from-yellow-600/20 to-amber-600/20
+                          className="w-full px-4 py-2.5 bg-gradient-to-r from-yellow-600/20 to-amber-600/20
                                    hover:from-yellow-600/30 hover:to-amber-600/30
                                    border-2 border-yellow-500/50 text-yellow-300 rounded-lg transition-all
-                                   flex items-center justify-center gap-3 font-semibold text-lg
+                                   flex items-center justify-center gap-2 font-semibold text-sm
                                    shadow-lg shadow-yellow-500/10"
                         >
                           Continue to {nextStepLabel}
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                           </svg>
                         </button>
@@ -3417,14 +3407,26 @@ Be conversational and human, not formulaic.`;
                 ) : (
                   // STANDARD NODE LAYOUT: Full button set
                   <>
-                    <div className="flex gap-3">
+                    <div className="flex gap-2">
                       {/* Reply and Ask AI buttons only for non-thread nodes (nexuses, connection nodes) */}
+                      {isThreadNode && (
+                        <button
+                          onClick={() => setNoteMode(!noteMode)}
+                          className={`px-3 py-1.5 rounded-lg transition-all font-medium text-sm flex items-center justify-center gap-2 ${
+                            noteMode
+                              ? 'bg-amber-600/30 border-2 border-amber-400 text-amber-200'
+                              : 'bg-slate-700/40 hover:bg-slate-700/60 border border-slate-500/40 text-slate-300'
+                          }`}
+                        >
+                          📝 Note
+                        </button>
+                      )}
                       {!isThreadNode && (
                         <>
                           <button
                             onClick={() => setActionMode('user-reply')}
                             disabled={actionMode === 'user-reply'}
-                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                            className={`flex-1 px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
                               ${actionMode === 'user-reply'
                                 ? 'bg-purple-600/40 border-2 border-purple-400 text-purple-200'
                                 : 'bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-300'}`}
@@ -3434,7 +3436,7 @@ Be conversational and human, not formulaic.`;
                           <button
                             onClick={() => setActionMode('ask-ai')}
                             disabled={actionMode === 'ask-ai' || isLoadingAI}
-                            className={`flex-1 px-4 py-3 rounded-lg transition-all flex items-center justify-center gap-2 font-medium
+                            className={`flex-1 px-3 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm
                               ${actionMode === 'ask-ai'
                                 ? 'bg-cyan-600/40 border-2 border-cyan-400 text-cyan-200'
                                 : 'bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-300'}`}
@@ -3455,7 +3457,7 @@ Be conversational and human, not formulaic.`;
                           }
                         }}
                         disabled={isLoadingAI}
-                        className="flex-1 px-4 py-3 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50"
+                        className={`${isThreadNode ? 'px-3 min-w-[130px]' : 'flex-1 px-3'} py-1.5 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/50 text-yellow-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50 text-sm`}
                       >
                         {hasGuidedPractice ? (
                           activePracticeStep && availablePracticeSteps.includes(activePracticeStep) ? (
@@ -3471,7 +3473,7 @@ Be conversational and human, not formulaic.`;
                       {node && !nexus && (
                         <button
                           onClick={handleDeleteClick}
-                          className="px-4 py-3 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium"
+                          className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 text-red-300 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-sm"
                           title="Delete this node (Delete key)"
                         >
                           🗑️
@@ -3486,10 +3488,10 @@ Be conversational and human, not formulaic.`;
                   <button
                     onClick={handleExploreUniverse}
                     disabled={isLoadingAI}
-                    className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600/20 to-purple-600/20
+                    className="w-full px-3 py-2 bg-gradient-to-r from-indigo-600/20 to-purple-600/20
                              hover:from-indigo-600/30 hover:to-purple-600/30
                              border-2 border-indigo-500/50 text-indigo-300 rounded-lg transition-all
-                             flex items-center justify-center gap-2 font-medium disabled:opacity-50
+                             flex items-center justify-center gap-2 font-medium disabled:opacity-50 text-sm
                              shadow-lg shadow-indigo-500/10"
                   >
                     🌌 Explore Entire Universe
@@ -3582,10 +3584,10 @@ Be conversational and human, not formulaic.`;
                 {node && !showDeleteConfirm && (
                   <div
                     style={{
-                      marginTop: '20px',
-                      paddingTop: '12px',
+                      marginTop: '10px',
+                      paddingTop: '8px',
                       borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       color: 'rgba(255, 255, 255, 0.5)',
                       textAlign: 'center',
                     }}
