@@ -10,12 +10,6 @@ export const authOptions = {
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
         }),
-        // Microsoft provider will be added later when Azure setup is complete
-        // AzureADProvider({
-        //   clientId: process.env.AZURE_AD_CLIENT_ID!,
-        //   clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
-        //   tenantId: process.env.AZURE_AD_TENANT_ID!,
-        // }),
     ],
     session: {
         strategy: "jwt" as const,
@@ -24,6 +18,13 @@ export const authOptions = {
         signIn: '/auth/signin',
     },
     callbacks: {
+        async signIn({ user }: any) {
+            if (!user.email) return false
+            // ponytail: skip gate in dev so you can test without beta signup
+            if (process.env.NODE_ENV === 'development') return true
+            const signup = await prisma.betaSignup.findUnique({ where: { email: user.email } })
+            return !!signup
+        },
         async session({ session, token }: any) {
             if (session.user) {
                 session.user.id = token.sub
