@@ -2,9 +2,11 @@
 
 import { Suspense, useRef, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import CanvasScene from '@/components/CanvasScene';
 import SectionNavigator from '@/components/SectionNavigator';
 import { useCanvasStore } from '@/lib/store';
+import { importKeyConversation, importKeyHighlight } from '@/lib/persistenceContext';
 
 function ExploreContent() {
   const nexuses = useCanvasStore((state) => state.nexuses);
@@ -12,16 +14,23 @@ function ExploreContent() {
   const loadConversationFromData = useCanvasStore((state) => state.loadConversationFromData);
   const addHighlightToUniverse = useCanvasStore((state) => state.addHighlightToUniverse);
   const selectNode = useCanvasStore((state) => state.selectNode);
+  const setUserContext = useCanvasStore((state) => state.setUserContext);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+
+  // 🔒 BETA-06: point persistence at the signed-in account before any import runs.
+  useEffect(() => {
+    setUserContext(session?.user?.id ?? null);
+  }, [session?.user?.id, setUserContext]);
 
   // Handle ?import=conversation from extension
   useEffect(() => {
     if (searchParams.get('import') !== 'conversation') return;
 
     function tryImport() {
-      const raw = localStorage.getItem('astryon_import');
+      const raw = localStorage.getItem(importKeyConversation());
       if (!raw) return false;
 
       try {
@@ -29,7 +38,7 @@ function ExploreContent() {
         if (data && Array.isArray(data.messages) && data.messages.length > 0) {
           console.log('💬 Importing conversation from extension:', data.title);
           const highlightNodeId = loadConversationFromData(data);
-          localStorage.removeItem('astryon_import');
+          localStorage.removeItem(importKeyConversation());
 
           // Auto-focus the highlighted node if the user had text selected
           if (highlightNodeId) {
@@ -50,7 +59,7 @@ function ExploreContent() {
 
     // Otherwise listen for the storage event dispatched by the extension
     function onStorage(e: StorageEvent) {
-      if (e.key === 'astryon_import' && e.newValue) {
+      if (e.key === importKeyConversation() && e.newValue) {
         tryImport();
       }
     }
@@ -64,7 +73,7 @@ function ExploreContent() {
     if (searchParams.get('import') !== 'highlight') return;
 
     function tryHighlightImport() {
-      const raw = localStorage.getItem('astryon_highlight_import');
+      const raw = localStorage.getItem(importKeyHighlight());
       if (!raw) return false;
 
       try {
@@ -72,7 +81,7 @@ function ExploreContent() {
         if (data && data.highlightedSection && Array.isArray(data.fullConversation)) {
           console.log('🔦 Importing highlight from extension:', data.title);
           addHighlightToUniverse(data);
-          localStorage.removeItem('astryon_highlight_import');
+          localStorage.removeItem(importKeyHighlight());
           return true;
         }
       } catch (e) {
@@ -86,7 +95,7 @@ function ExploreContent() {
 
     // Otherwise listen for the storage event dispatched by the extension
     function onStorage(e: StorageEvent) {
-      if (e.key === 'astryon_highlight_import' && e.newValue) {
+      if (e.key === importKeyHighlight() && e.newValue) {
         tryHighlightImport();
       }
     }

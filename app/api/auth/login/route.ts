@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * DEPRECATED — legacy password-cookie login.
+ *
+ * This route is retained so existing frontend callers do not 404, but it is
+ * REMOVED from the security boundary: the App Router middleware no longer
+ * honors the `aurora-auth` cookie it sets, and no protected route checks it.
+ * Real authentication is handled by NextAuth (OAuth + JWT session) via
+ * `/api/auth/*` and the session-based `requireUser` helper.
+ *
+ * Do not extend this route. Use NextAuth sign-in instead.
+ */
 export async function POST(request: NextRequest) {
     try {
         const { password } = await request.json();

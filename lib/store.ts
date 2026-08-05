@@ -1,67 +1,38 @@
 import { create } from 'zustand';
 import { Node, NodeType, ThreadMessage, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
-import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
+import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud, deleteFromCloud, migrateLegacyDexieRecords } from './db';
+import {
+  setPersistenceNamespace,
+  getNamespace,
+  storageKeyMain,
+  storageKeyBackup,
+  clearForeignImportKeys,
+  migrateLegacyLocalStorage,
+} from './persistenceContext';
 import { transformConversation, transformHighlightImport, HighlightImportData } from './conversationTransformer';
 import { calculateL1Position, calculateL2Position, calculateMetaPosition, validatePosition } from './nodePositioning';
 
-// 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
-if (typeof window !== 'undefined') {
+// 🔧 BETA-06: Dev-only debug helpers. Never exposed in production so the full
+// user library cannot be dumped or deleted via a browser global. Namespace-aware
+// so any dev use only touches the current account's data.
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
   (window as any).auroraDebug = {
     showLibrary: () => {
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = localStorage.getItem(storageKeyMain());
       if (!data) {
-        console.log('📚 No aurora-portal-data found in localStorage');
+        console.log('📚 No', storageKeyMain(), 'found in localStorage');
         return;
       }
       const parsed = JSON.parse(data);
       const library = parsed.universeLibrary || {};
-      console.log('📚 ==========================================');
-      console.log('📚 AURORA LIBRARY');
+      console.log('📚 AURORA LIBRARY (namespace:', getNamespace(), ')');
       console.log('📚   Total universes:', Object.keys(library).length);
-      console.table(Object.entries(library).map(([id, data]: any) => ({
-        id: id.substring(0, 20) + '...',
-        title: data.title,
-        nexuses: data.nexuses?.length || 0,
-        nodes: Object.keys(data.nodes || {}).length,
-        modified: new Date(data.lastModified).toLocaleString()
-      })));
-      console.log('📚 ==========================================');
       return library;
     },
-    showFolders: () => {
-      console.log('📁 ==========================================');
-      console.log('📁 FOLDER DIAGNOSTICS');
-
-      // Check localStorage
-      const data = localStorage.getItem('aurora-portal-data');
-      if (!data) {
-        console.log('📁 ❌ No aurora-portal-data found in localStorage');
-        return;
-      }
-      const parsed = JSON.parse(data);
-      const foldersInStorage = parsed.folders || {};
-      console.log('📁 Folders in localStorage:', Object.keys(foldersInStorage).length);
-      Object.entries(foldersInStorage).forEach(([id, folder]: any) => {
-        console.log(`📁   - ${folder.name} (${folder.color}) [${id}]`);
-      });
-
-      // Check current Zustand state
-      const store = (window as any).auroraStore;
-      if (store) {
-        const currentFolders = store.getState().folders;
-        console.log('📁 Folders in current state:', Object.keys(currentFolders).length);
-        Object.entries(currentFolders).forEach(([id, folder]: any) => {
-          console.log(`📁   - ${folder.name} (${folder.color}) [${id}]`);
-        });
-      }
-
-      console.log('📁 ==========================================');
-      return { storage: foldersInStorage, state: store?.getState().folders };
-    },
     clearLibrary: () => {
-      localStorage.removeItem('aurora-portal-data');
-      console.log('🗑️ Library cleared from localStorage');
+      localStorage.removeItem(storageKeyMain());
+      console.log('🗑️ Library cleared from localStorage (namespace:', getNamespace(), ')');
     },
     recoverLibrary: () => {
       console.log('🛡️ Attempting to recover library from backup...');
@@ -73,256 +44,18 @@ if (typeof window !== 'undefined') {
         return false;
       }
     },
-    cleanupOrphaned: () => {
-      console.log('🧹 Cleaning up orphaned universes...');
-      const store = (window as any).auroraStore;
-      if (store) {
-        const result = store.getState().cleanupOrphanedUniverses();
-        console.log(`✅ Deleted ${result.deleted} orphaned universes`);
-        return result;
-      } else {
-        console.error('❌ Store not available yet');
-        return { deleted: 0, migrated: 0 };
-      }
-    },
-    fixOrphaned: () => {
-      console.log('🔧 Fixing orphaned universes...');
-      const store = (window as any).auroraStore;
-      if (store) {
-        const count = store.getState().fixOrphanedUniverses();
-        console.log(`✅ Fixed ${count} orphaned universes`);
-        return count;
-      } else {
-        console.error('❌ Store not available yet');
-        return 0;
-      }
-    },
-    showActive: () => {
-      // Note: This function needs to be called after the store is created
-      // It will be updated after store creation to have proper access
-      console.log('⚠️ Store access not yet available - will be enabled after store creation');
-      console.log('   Try refreshing the page or check back in a moment');
-    },
     dumpRaw: () => {
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = localStorage.getItem(storageKeyMain());
       if (!data) {
-        console.log('No data found');
+        console.log('No data found for', storageKeyMain());
         return null;
       }
       const parsed = JSON.parse(data);
-      console.log('Raw aurora-portal-data:', parsed);
+      console.log('Raw', storageKeyMain(), ':', parsed);
       return parsed;
     },
-    checkNow: () => {
-      console.log('🔍 ==========================================');
-      console.log('🔍 DIAGNOSTIC CHECK:', new Date().toLocaleTimeString());
-      const data = localStorage.getItem('aurora-portal-data');
-      if (!data || data === 'null') {
-        console.log('🔍 ❌ NO DATA IN LOCALSTORAGE!');
-        console.log('🔍 ==========================================');
-        return null;
-      }
-      const parsed = JSON.parse(data);
-      const universeCount = Object.keys(parsed.universeLibrary || {}).length;
-      console.log('🔍 ✅ Data exists:', universeCount, 'universes');
-      console.log('🔍 Data size:', (data.length / 1024).toFixed(2), 'KB');
-      console.log('🔍 Timestamp:', parsed.timestamp ? new Date(parsed.timestamp).toLocaleString() : 'none');
-      console.log('🔍 ==========================================');
-      return parsed;
-    },
-    watchChanges: () => {
-      console.log('👁️ STARTING LOCALSTORAGE WATCH MODE');
-      console.log('👁️ Will log all changes to aurora-portal-data');
-      let lastValue = localStorage.getItem('aurora-portal-data');
-      const interval = setInterval(() => {
-        const currentValue = localStorage.getItem('aurora-portal-data');
-        if (currentValue !== lastValue) {
-          console.log('🚨 ==========================================');
-          console.log('🚨 LOCALSTORAGE CHANGED!', new Date().toLocaleTimeString());
-          console.log('🚨 Previous:', lastValue ? `${(lastValue.length / 1024).toFixed(2)}KB` : 'null');
-          console.log('🚨 Current:', currentValue ? `${(currentValue.length / 1024).toFixed(2)}KB` : 'null');
-          if (!currentValue || currentValue === 'null') {
-            console.log('🚨 ❌❌❌ DATA WAS CLEARED OR SET TO NULL! ❌❌❌');
-            console.trace('Call stack at time of detection:');
-          }
-          console.log('🚨 ==========================================');
-          lastValue = currentValue;
-        }
-      }, 1000);
-      console.log('👁️ Watching every 1 second. Call clearInterval(' + interval + ') to stop');
-      return interval;
-    },
-    checkQuota: () => {
-      console.log('💾 ==========================================');
-      console.log('💾 LOCALSTORAGE QUOTA CHECK');
-      console.log('💾 ==========================================');
-
-      try {
-        // Calculate total localStorage size
-        let totalSize = 0;
-        let auroraSize = 0;
-
-        for (const key in localStorage) {
-          if (localStorage.hasOwnProperty(key)) {
-            const itemSize = localStorage.getItem(key)?.length || 0;
-            totalSize += itemSize + key.length;
-
-            if (key === 'aurora-portal-data') {
-              auroraSize = itemSize;
-            }
-          }
-        }
-
-        // Convert to human-readable format
-        const formatBytes = (bytes: number) => {
-          if (bytes < 1024) return bytes + ' B';
-          if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-          return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-        };
-
-        // Typical localStorage limit is 5-10 MB (varies by browser)
-        // We'll use 5MB as conservative estimate
-        const estimatedLimit = 5 * 1024 * 1024; // 5MB in bytes
-        const percentUsed = (totalSize / estimatedLimit * 100).toFixed(2);
-        const auroraPercent = (auroraSize / estimatedLimit * 100).toFixed(2);
-
-        console.log('💾 Total localStorage usage:');
-        console.log('💾   Size:', formatBytes(totalSize));
-        console.log('💾   Estimated % of 5MB limit:', percentUsed + '%');
-        console.log('💾');
-        console.log('💾 Aurora Portal data:');
-        console.log('💾   Size:', formatBytes(auroraSize));
-        console.log('💾   % of total storage:', (auroraSize / totalSize * 100).toFixed(2) + '%');
-        console.log('💾   % of 5MB limit:', auroraPercent + '%');
-
-        // Get universe details
-        const auroraData = localStorage.getItem('aurora-portal-data');
-        if (auroraData) {
-          const parsed = JSON.parse(auroraData);
-          const universeCount = Object.keys(parsed.universeLibrary || {}).length;
-          const avgPerUniverse = universeCount > 0 ? auroraSize / universeCount : 0;
-
-          console.log('💾');
-          console.log('💾 Universe breakdown:');
-          console.log('💾   Total universes:', universeCount);
-          console.log('💾   Average per universe:', formatBytes(avgPerUniverse));
-
-          // Show largest universes
-          const universes = Object.entries(parsed.universeLibrary || {}).map(([id, data]: any) => {
-            const universeStr = JSON.stringify(data);
-            return {
-              id: id.substring(0, 30),
-              title: data.title,
-              size: universeStr.length,
-              sizeFormatted: formatBytes(universeStr.length),
-              nodes: Object.keys(data.nodes || {}).length
-            };
-          }).sort((a, b) => b.size - a.size);
-
-          if (universes.length > 0) {
-            console.log('💾');
-            console.log('💾 Largest universes:');
-            console.table(universes.slice(0, 5));
-          }
-        }
-
-        console.log('💾');
-        console.log('💾 Storage health:');
-
-        if (parseFloat(percentUsed) < 50) {
-          console.log('💾   ✅ HEALTHY - Plenty of space available');
-        } else if (parseFloat(percentUsed) < 80) {
-          console.log('💾   ⚠️ WARNING - Approaching capacity');
-          console.log('💾   Consider deleting old universes');
-        } else {
-          console.log('💾   🔴 CRITICAL - Storage nearly full!');
-          console.log('💾   Delete universes ASAP or you may lose data');
-        }
-
-        console.log('💾');
-        console.log('💾 Note: Actual localStorage limit varies by browser');
-        console.log('💾   Chrome/Edge: ~10MB per domain');
-        console.log('💾   Firefox: ~10MB per domain');
-        console.log('💾   Safari: ~5MB per domain (more restrictive)');
-        console.log('💾 ==========================================');
-
-        return {
-          totalSize,
-          auroraSize,
-          percentUsed: parseFloat(percentUsed),
-          auroraPercent: parseFloat(auroraPercent),
-          formatted: {
-            total: formatBytes(totalSize),
-            aurora: formatBytes(auroraSize)
-          }
-        };
-
-      } catch (error) {
-        console.error('💾 ❌ Error checking quota:', error);
-        console.log('💾 ==========================================');
-        return null;
-      }
-    }
   };
-
-  // 🚨 LOCALSTORAGE INTERCEPTORS - Track all operations with call stacks
-  const originalSetItem = localStorage.setItem.bind(localStorage);
-  const originalRemoveItem = localStorage.removeItem.bind(localStorage);
-  const originalClear = localStorage.clear.bind(localStorage);
-
-  localStorage.setItem = function (key: string, value: string) {
-    if (key === 'aurora-portal-data') {
-      const stack = new Error().stack || '';
-      const caller = stack.split('\n')[2]?.trim() || 'unknown';
-      console.log('📝 ==========================================');
-      console.log('📝 LOCALSTORAGE.SETITEM:', new Date().toLocaleTimeString());
-      console.log('📝   Key:', key);
-      console.log('📝   Size:', (value.length / 1024).toFixed(2), 'KB');
-      console.log('📝   Called from:', caller);
-      console.log('📝 Full call stack:', stack);
-      console.log('📝 ==========================================');
-    }
-    return originalSetItem(key, value);
-  };
-
-  localStorage.removeItem = function (key: string) {
-    if (key === 'aurora-portal-data') {
-      const stack = new Error().stack || '';
-      const caller = stack.split('\n')[2]?.trim() || 'unknown';
-      console.log('🗑️ ==========================================');
-      console.log('🗑️ LOCALSTORAGE.REMOVEITEM:', new Date().toLocaleTimeString());
-      console.log('🗑️   Key:', key);
-      console.log('🗑️   ⚠️ AURORA DATA BEING REMOVED!');
-      console.log('🗑️   Called from:', caller);
-      console.log('🗑️ Full call stack:', stack);
-      console.log('🗑️ ==========================================');
-    }
-    return originalRemoveItem(key);
-  };
-
-  localStorage.clear = function () {
-    const stack = new Error().stack || '';
-    const caller = stack.split('\n')[2]?.trim() || 'unknown';
-    console.log('🔥 ==========================================');
-    console.log('🔥 LOCALSTORAGE.CLEAR:', new Date().toLocaleTimeString());
-    console.log('🔥   ⚠️⚠️⚠️ ALL DATA BEING CLEARED! ⚠️⚠️⚠️');
-    console.log('🔥   Called from:', caller);
-    console.log('🔥 Full call stack:', stack);
-    console.log('🔥 ==========================================');
-    return originalClear();
-  };
-
-  console.log('🚨 localStorage interceptors installed! All aurora-portal-data operations will be logged.');
-
-  // Log helper availability
-  console.log('🐛 Aurora Debug helpers loaded! Try:');
-  console.log('   auroraDebug.showLibrary()  - View all saved universes');
-  console.log('   auroraDebug.showActive()   - View current canvas state');
-  console.log('   auroraDebug.checkNow()     - Check localStorage right now');
-  console.log('   auroraDebug.watchChanges() - Watch for changes every 1 second');
-  console.log('   auroraDebug.checkQuota()   - Check localStorage usage & quota');
-  console.log('   auroraDebug.clearLibrary() - Clear all saved data');
-  console.log('   auroraDebug.dumpRaw()      - Dump raw localStorage data');
+  console.log('🔧 Aurora dev debug helpers loaded (non-production only).');
 }
 
 type NexusEvolutionState = 'seed' | 'growing' | 'application-lab';
@@ -358,6 +91,7 @@ interface Nexus {
   originalContent?: string | null;     // Preserves original professor/AI framing
   applicationLabConfig?: ApplicationLabConfig | null;  // Generated Application Lab content
   needsApplicationLab?: boolean;       // Flag to trigger Application Lab generation
+  masterySummary?: string;             // AI-generated "What You've Learned" summary (evolved to mastered)
 }
 
 interface Folder {
@@ -376,6 +110,10 @@ interface UniverseData {
   lastModified: number;
   folderId?: string;
   courseMode?: boolean; // Flag to identify course universes
+  // Server-owned optimistic-concurrency token, echoed from the cloud on save
+  // and load. Persisted locally so the next sync submits the latest version
+  // and never hits a false clock-skew conflict.
+  cloudVersion?: number;
   courseSettings?: {
     memoryActivation: boolean;
     mcqCount: number;
@@ -459,6 +197,7 @@ interface CanvasStore {
   getNodesForNexus: (nexusId: string) => Node[];
   isNexusCompleted: (nexusId: string) => boolean;
   setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => void;
+  setNexusMasterySummary: (nexusId: string, summary: string) => void;
   addNodeFromWebSocket: (data: any) => void;
   addNexusFromWebSocket: (data: any) => void;
   activatedConversations: string[];
@@ -491,7 +230,19 @@ interface CanvasStore {
   revertToOriginal: (universeId: string) => void;
 
   saveToLocalStorage: () => void;
-  loadFromLocalStorage: () => void;
+  loadFromLocalStorage: () => Promise<void>;
+
+  // 🔒 BETA-06: switch browser persistence to the given account's namespace.
+  // Call whenever the session user changes (sign-in, sign-out, account
+  // switch). Clears pending cloud sync dirty-tracking and any foreign import
+  // keys for the new account, synchronously drops the previous account's
+  // in-memory library, blocks every save/sync path until the target
+  // namespace is rehydrated, then reloads that namespace. Resolves once the
+  // rehydration completes, so callers may await it before reading state.
+  setUserContext: (userId: string | null) => Promise<void>;
+
+  // ☁️ BETA-05: explicit cloud sync of dirty universes (decoupled from local save)
+  syncToCloud: () => Promise<void>;
 
   // 🛡️ BACKUP & RECOVERY
   backupLibrary: () => void;
@@ -546,6 +297,17 @@ interface CanvasStore {
   // 🛡️ INITIALIZATION TRACKING
   isStoreInitialized: boolean;
 
+  // 🔒 BETA-06 P1: true while a namespace change is resetting the in-memory
+  // library and rehydrating the target namespace. All save/sync paths are
+  // blocked while true so the previous account's in-memory data can never be
+  // written into the new account's namespace.
+  isPersistenceTransitioning: boolean;
+
+  // 🔒 BETA-06: the namespace id last fully hydrated into the in-memory
+  // library. Lets setUserContext skip redundant reloads when it is called
+  // again for the same account (e.g. on page navigation).
+  lastHydratedNamespace: string;
+
   buildConversationContext: () => string;
 
   // 💬 IN-NODE CONVERSATION THREADS
@@ -553,6 +315,133 @@ interface CanvasStore {
   updateMessageInNode: (nodeId: string, messageId: string, content: string) => void;
   breakOffFromNode: (sourceNodeId: string, selectedText: string) => string;
   getNodeMessages: (node: Node) => ThreadMessage[];
+}
+
+// ── BETA-05: decoupled cloud sync (dirty-tracking) ────────────────────────
+// Cloud sync is separate from local persistence. Locally-persisted universes
+// are marked dirty; an explicit sync uploads only the dirty universes instead
+// of re-uploading the full library on every mutation.
+
+/** Client ids of universes awaiting cloud sync. */
+const dirtyUniverseIds = new Set<string>();
+
+/** Mark a universe dirty so the next explicit cloud sync will upload it. */
+function markUniverseDirty(clientId: string) {
+  dirtyUniverseIds.add(clientId);
+}
+
+/**
+ * Upload every dirty universe to the cloud, scoped by clientId + session user.
+ *
+ * Conflict handling: on a 409 (stale overwrite refused) the client adopts the
+ * server's authoritative copy (server version + server data) so the universe
+ * converges and can sync again — no permanent stall. This is deterministic and
+ * safe because a universe belongs to a single user. On 401 the sync stops
+ * (user not signed in) and is retried on the next explicit sync. On
+ * rejected/error the universe is kept dirty for a later retry.
+ */
+async function syncDirtyUniverses() {
+  const state = useCanvasStore.getState();
+  // 🔒 BETA-06 P1: never sync during a namespace transition; the in-memory
+  // library is not yet guaranteed to belong to the current namespace.
+  if (state.isPersistenceTransitioning) return;
+  // 🔒 BETA-06 P1 round 3: the namespace this sync started under. Re-checked
+  // before and after every request so an account switch that lands mid-batch
+  // aborts the remaining uploads immediately instead of uploading the previous
+  // account's in-memory library into the new session's cloud rows.
+  const startNamespace = getNamespace();
+  const ids = Array.from(dirtyUniverseIds);
+  for (const clientId of ids) {
+    // 🔒 BETA-06 P1 round 3: re-check at loop continuation. A transition that
+    // began during the previous request means the in-memory library may now
+    // belong to another account; uploading it would write the previous
+    // account's data into the current session's cloud rows (the server scopes
+    // by the session user at request time).
+    const live = useCanvasStore.getState();
+    if (live.isPersistenceTransitioning || getNamespace() !== startNamespace) {
+      return;
+    }
+    // Re-read the universe from the LIVE store every iteration instead of the
+    // snapshot captured at entry: a transition replaces `universeLibrary` (and
+    // any concurrent mutation edits it) while previous requests are in flight.
+    const universe = live.universeLibrary[clientId];
+    if (!universe) {
+      dirtyUniverseIds.delete(clientId);
+      continue;
+    }
+    const result = await saveToCloud(
+      clientId,
+      universe,
+      universe.nexuses[0]?.videoUrl,
+      universe.lastModified,
+      universe.cloudVersion
+    );
+    // 🔒 BETA-06 P1 round 3: an account switch can complete while this request
+    // was in flight. Abort BEFORE applying the outcome or starting the next
+    // upload; the in-flight request itself can no longer be recalled, but it
+    // was initiated under the old session and no further request may follow.
+    if (
+      useCanvasStore.getState().isPersistenceTransitioning ||
+      getNamespace() !== startNamespace
+    ) {
+      return;
+    }
+    if (result.ok) {
+      dirtyUniverseIds.delete(clientId);
+      // Persist the authoritative server version so the next sync submits the
+      // newest token and never regresses to a stale one. Re-read the LIVE
+      // object (a concurrent mutation may have replaced the entry while the
+      // request was in flight) so the mutation is picked up by the next
+      // saveToLocalStorage() call.
+      if (typeof result.version === 'number') {
+        const current = useCanvasStore.getState().universeLibrary[clientId];
+        if (current) {
+          current.cloudVersion = result.version;
+          useCanvasStore.getState().saveToLocalStorage();
+        }
+      }
+    } else if (result.reason === 'unauthorized') {
+      // Stop the whole batch; nothing more can sync while signed out.
+      break;
+    } else if (result.reason === 'conflict') {
+      // Genuine conflict (client version older than server version). This is a
+      // single-user-per-universe, so the server copy is authoritative: adopt
+      // the server version + data to converge and clear the deadlock. Without
+      // this the universe would stay dirty forever and could never sync again
+      // (permanent stall). Local data is only preserved where reconciliation is
+      // safe; on a genuine conflict server-wins is deterministic and safe.
+      if (typeof result.serverVersion === 'number' && result.serverData) {
+        // Apply the adoption to the LIVE library. The guard above already
+        // confirmed the library still belongs to the account that started the
+        // sync, and no await separates it from that check.
+        const liveState = useCanvasStore.getState();
+        liveState.universeLibrary[clientId] = {
+          ...result.serverData,
+          cloudVersion: result.serverVersion,
+        };
+        // Persist the adopted copy (marks dirty), then clear the dirty flag so
+        // the resolved universe is not re-uploaded on the very next sync.
+        await liveState.saveToLocalStorage();
+        dirtyUniverseIds.delete(clientId);
+        console.warn(
+          '⚠️ Cloud save conflict resolved: adopted server copy for',
+          clientId,
+          'v' + result.serverVersion
+        );
+      } else {
+        // Server did not echo a usable copy (no body/current). Keep the
+        // universe dirty so it retries on the next explicit sync; this is
+        // bounded (not a permanent stall) and reconciles once a server copy is
+        // available.
+        console.warn(
+          '⚠️ Cloud save conflict for universe',
+          clientId,
+          '- server copy unavailable; keeping dirty for retry.'
+        );
+      }
+    }
+    // 'rejected' and 'error' keep the universe dirty for a later retry.
+  }
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -571,6 +460,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   // 🛡️ INITIALIZATION TRACKING - Prevent saves before load completes
   isStoreInitialized: false,
+
+  // 🔒 BETA-06 P1: no namespace transition in progress; nothing hydrated yet.
+  isPersistenceTransitioning: false,
+  lastHydratedNamespace: '',
 
   // 📁 FOLDER SYSTEM - Start with default folder
   folders: {
@@ -613,6 +506,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return;
     }
 
+    // 🔒 BETA-06 P1: never persist while a namespace transition is in flight.
+    // The in-memory library may still carry the previous account's data, so
+    // writing it now would leak it into the new account's namespace.
+    if (state.isPersistenceTransitioning) {
+      console.warn('⏸️ SKIPPING SAVE: Persistence namespace transition in progress');
+      console.warn('⏸️ Save was called from:', saveCaller);
+      return;
+    }
+
     // 🛡️ CRITICAL: Backup existing library before any save operation
     get().backupLibrary();
 
@@ -624,7 +526,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
 
     // 🛡️ CRITICAL: Never save empty library if one already exists
-    const existingData = localStorage.getItem('aurora-portal-data');
+    const existingData = localStorage.getItem(storageKeyMain());
     if (existingData && existingData !== 'null') {
       try {
         const existing = JSON.parse(existingData);
@@ -659,20 +561,25 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
 
       // 💾 Save to localStorage (backwards compatibility)
-      localStorage.setItem('aurora-portal-data', serialized);
+      localStorage.setItem(storageKeyMain(), serialized);
 
-      // 💾 Save each universe to IndexedDB
+      // 💾 Save each universe to IndexedDB (local persistence only). Cloud
+      // sync is decoupled and handled separately (syncDirtyUniverses) so we
+      // never re-upload the full library on every mutation.
       const universeCount = Object.keys(state.universeLibrary).length;
       for (const [id, universeData] of Object.entries(state.universeLibrary)) {
         await saveUniverse(id, universeData);
-        // ☁️ Sync to Cloud (NeonDB)
-        await saveToCloud(id, universeData, universeData.nexuses[0]?.videoUrl);
       }
 
-      // 💾 Create backup snapshot every 5 saves
-      const saveCounter = (window as any)._auroraSaveCount || 0;
-      (window as any)._auroraSaveCount = saveCounter + 1;
-      if ((window as any)._auroraSaveCount % 5 === 0) {
+      // 💾 Mark every locally-persisted universe as dirty so the next explicit
+      // cloud sync uploads only the changed universes, not the whole library.
+      Object.keys(state.universeLibrary).forEach(id => markUniverseDirty(id));
+
+      // 💾 Create backup snapshot every 5 saves (counter scoped per account)
+      const saveCounterKey = `_auroraSaveCount:${getNamespace()}`;
+      const saveCounter = (window as any)[saveCounterKey] || 0;
+      (window as any)[saveCounterKey] = saveCounter + 1;
+      if ((window as any)[saveCounterKey] % 5 === 0) {
         await createBackup(dataToSave, 'auto');
       }
 
@@ -698,7 +605,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       console.log('💾 ==========================================');
 
       // 🔍 DIAGNOSTIC: Verify save worked by reading back
-      const verification = localStorage.getItem('aurora-portal-data');
+      const verification = localStorage.getItem(storageKeyMain());
       if (!verification) {
         throw new Error('Save verification failed - data not in localStorage!');
       }
@@ -727,6 +634,88 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
+  // ☁️ BETA-05: Explicit cloud sync of dirty universes (decoupled from local save)
+  syncToCloud: async () => {
+    await syncDirtyUniverses();
+  },
+
+  // 🔒 BETA-06: point persistence at the given account's namespace. On a
+  // namespace change this synchronously drops the previous account's
+  // in-memory library (and blocks every save/sync path until the target
+  // namespace is rehydrated), then reloads the target namespace so a save can
+  // never run against a library that belongs to another account. Page
+  // agnostic: PersistenceBoundary fires it on every page.
+  setUserContext: (userId: string | null): Promise<void> => {
+    setPersistenceNamespace(userId);
+    // Never carry another account's universe into a cloud sync.
+    dirtyUniverseIds.clear();
+    // 🔒 BETA-06 P1-1: on first sign-in, migrate pre-BETA-06 base-key local
+    // data into this account's namespace so it surfaces after sign-in.
+    // No-op when signed out or when a different account already claimed it.
+    if (userId) {
+      migrateLegacyLocalStorage();
+    }
+    // Adopt any unclaimed base-key import into the current namespace and drop
+    // pending import data that belongs to another account so it cannot be
+    // consumed by the newly-active account.
+    clearForeignImportKeys();
+
+    const target = getNamespace();
+    const current = get();
+    // Already hydrated for this namespace and not mid-transition: nothing to
+    // reload (e.g. PersistenceBoundary + page both resolving the same user).
+    if (
+      current.lastHydratedNamespace === target &&
+      !current.isPersistenceTransitioning &&
+      current.isStoreInitialized
+    ) {
+      return Promise.resolve();
+    }
+
+    // 🔒 BETA-06 P1: synchronously reset the in-memory library BEFORE any
+    // save/autosave can run, and block saves until the target namespace is
+    // rehydrated below. Without this, the previous account's in-memory
+    // library would be persisted into the new account's namespace
+    // (localStorage + Dexie) and synced to the new account's cloud rows.
+    set({
+      isStoreInitialized: false,
+      isPersistenceTransitioning: true,
+      universeLibrary: {},
+      originalSnapshots: {},
+      folders: {
+        'default': {
+          id: 'default',
+          name: 'Uncategorized',
+          color: '#6B7280',
+          createdAt: Date.now()
+        }
+      },
+      activatedConversations: [],
+      nexuses: [],
+      nodes: {},
+      activeUniverseId: null,
+      activeUniverseIds: [],
+    });
+
+    // Rehydrate the target namespace (Dexie + localStorage + cloud merge).
+    // loadFromLocalStorage flips isStoreInitialized back on; the finally
+    // below clears the transition guard and records the hydrated namespace.
+    return get()
+      .loadFromLocalStorage()
+      .then(() => {
+        // loadFromLocalStorage sets isStoreInitialized=true on completion.
+      })
+      .catch((error) => {
+        console.error('❌ Failed to rehydrate persistence namespace:', error);
+      })
+      .finally(() => {
+        set({
+          isPersistenceTransitioning: false,
+          lastHydratedNamespace: getNamespace(),
+        });
+      });
+  },
+
   // 📂 LOAD FROM INDEXEDDB + LOCALSTORAGE (with migration)
   loadFromLocalStorage: async () => {
     // Skip if running on server-side
@@ -744,6 +733,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       console.log('📂 LOAD FROM STORAGE:', new Date().toLocaleTimeString());
       console.log('📂 🔍 Called from:', loadCaller);
 
+      // 🔒 BETA-06 P1-1: claim pre-BETA-06 ownerId-less Dexie records into the
+      // current account BEFORE reading, so migrated legacy data is visible.
+      await migrateLegacyDexieRecords();
+
       // Try IndexedDB first
       let universeLibrary = await loadAllUniverses();
       let folders: any = {};
@@ -755,10 +748,26 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         const cloudUniverses = await loadFromCloud();
         if (cloudUniverses) {
           console.log('☁️ Merging cloud universes with local data...');
-          // Merge cloud universes into local library
-          // Cloud data takes precedence if timestamps are newer (TODO: Implement proper conflict resolution)
-          // For now, we'll just add missing universes or update existing ones
-          universeLibrary = { ...universeLibrary, ...cloudUniverses };
+          // Merge cloud universes into local library WITHOUT letting an older
+          // cloud copy clobber a newer local copy. Both sides carry the same
+          // client-generated lastModified, so the comparison is clock-skew
+          // independent (no server clock involved). A cloud copy only wins
+          // when it is strictly newer than the local copy; otherwise the
+          // local copy (which may hold unsynced changes) is preserved.
+          for (const [clientId, cloudData] of Object.entries(cloudUniverses)) {
+            const localData = universeLibrary[clientId];
+            const cloudTs =
+              cloudData && typeof cloudData.lastModified === 'number'
+                ? cloudData.lastModified
+                : -Infinity;
+            const localTs =
+              localData && typeof localData.lastModified === 'number'
+                ? localData.lastModified
+                : -Infinity;
+            if (!localData || cloudTs > localTs) {
+              universeLibrary[clientId] = cloudData;
+            }
+          }
         }
       } catch (cloudError) {
         console.warn('☁️ Failed to load from cloud (user might be offline or not logged in):', cloudError);
@@ -768,7 +777,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       if (Object.keys(universeLibrary).length === 0) {
         console.log('📂 IndexedDB empty, checking localStorage for migration...');
 
-        const saved = localStorage.getItem('aurora-portal-data');
+        const saved = localStorage.getItem(storageKeyMain());
 
         console.log('📂 Raw data status:', saved === null ? 'NULL' : saved === 'null' ? '"null" STRING' : 'EXISTS');
         if (saved) {
@@ -873,7 +882,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       } else {
         // Load folders, snapshots and activated conversations from localStorage (could move to IndexedDB later)
         console.log('📂 IndexedDB has universes, loading folders from localStorage...');
-        const localData = localStorage.getItem('aurora-portal-data');
+        const localData = localStorage.getItem(storageKeyMain());
         if (localData) {
           const data = JSON.parse(localData);
           console.log('📂 🔍 Raw localStorage data.folders:', data.folders);
@@ -1047,36 +1056,30 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().clearCanvas();
 
     // 🌌 STEP 3: Create the new nexus
-    let newNexus: Nexus | null = null;
-    let newUniverseId = '';
+    const newUniverseId = `nexus-${Date.now()}`;
+    const position: [number, number, number] = [0, 0, 0]; // First nexus always at origin
+    const newNexus: Nexus = {
+      id: newUniverseId,
+      position,
+      title,
+      content,
+      videoUrl,
+      audioUrl,
+      fileUrl,
+      fileName,
+      type: 'social',
+      // 🌱 Initialize evolution state
+      evolutionState: 'seed',
+      originalContent: content, // Preserve original framing
+      applicationLabConfig: null,
+      needsApplicationLab: false,
+    };
 
-    set((state) => {
-      const position: [number, number, number] = [0, 0, 0]; // First nexus always at origin
+    console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
 
-      newUniverseId = `nexus-${Date.now()}`;
-      newNexus = {
-        id: newUniverseId,
-        position,
-        title,
-        content,
-        videoUrl,
-        audioUrl,
-        fileUrl,
-        fileName,
-        type: 'social',
-        // 🌱 Initialize evolution state
-        evolutionState: 'seed',
-        originalContent: content, // Preserve original framing
-        applicationLabConfig: null,
-        needsApplicationLab: false,
-      };
-
-      console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
-
-      return {
-        nexuses: [newNexus], // Start fresh with just this nexus
-        activeUniverseId: newUniverseId // Set as active universe
-      };
+    set({
+      nexuses: [newNexus], // Start fresh with just this nexus
+      activeUniverseId: newUniverseId // Set as active universe
     });
 
     // 🌌 STEP 4: Auto-save the new universe to library
@@ -1566,7 +1569,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { Document, Paragraph, HeadingLevel, AlignmentType, Packer } = await import('docx');
 
     const sections = Object.values(nodes)
-      .filter((n) => n.type !== 'nexus')
       .sort((a, b) => {
         const aIndex = parseInt(a.id.split('-')[1]) || 0;
         const bIndex = parseInt(b.id.split('-')[1]) || 0;
@@ -2767,6 +2769,39 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().saveToLocalStorage();
   },
 
+  setNexusMasterySummary: (nexusId: string, summary: string) => {
+    console.log(`🌱 [Nexus ${nexusId}] Setting mastery summary`);
+
+    set((state) => {
+      const nexuses = state.nexuses.map(nexus => {
+        if (nexus.id === nexusId) {
+          return {
+            ...nexus,
+            masterySummary: summary,
+            evolutionState: 'growing' as NexusEvolutionState,
+          };
+        }
+        return nexus;
+      });
+
+      const updatedLibrary = { ...state.universeLibrary };
+      if (updatedLibrary[nexusId]) {
+        updatedLibrary[nexusId] = {
+          ...updatedLibrary[nexusId],
+          nexuses: updatedLibrary[nexusId].nexuses.map((n: Nexus) =>
+            n.id === nexusId
+              ? { ...n, masterySummary: summary }
+              : n
+          )
+        };
+      }
+
+      return { nexuses, universeLibrary: updatedLibrary };
+    });
+
+    get().saveToLocalStorage();
+  },
+
   addNodeFromWebSocket: (data: any) => {
     const state = get();
 
@@ -2974,7 +3009,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       get().saveToLocalStorage();
 
       // Final verification: Check localStorage
-      const lsData = localStorage.getItem('aurora-portal-data');
+      const lsData = localStorage.getItem(storageKeyMain());
       if (lsData) {
         const parsed = JSON.parse(lsData);
         if (parsed.universeLibrary && parsed.universeLibrary[nexusId]) {
@@ -3052,17 +3087,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         console.log('🗑️   ✅ Deleted from IndexedDB');
       });
 
-      // Delete from cloud
-      fetch('/api/universes', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ universeId }),
-      }).then(res => {
-        if (res.ok) console.log('🗑️   ✅ Deleted from cloud');
-        else console.warn('🗑️   ⚠️ Cloud delete returned:', res.status);
+      // Delete from cloud, scoped by clientId + session user (BETA-05 owner-safe).
+      deleteFromCloud(universeId).then(ok => {
+        if (ok) console.log('🗑️   ✅ Deleted from cloud');
+        else console.warn('🗑️   ⚠️ Cloud delete returned:', ok);
       }).catch(e => {
         console.error('🗑️   ❌ Failed to delete from cloud:', e);
       });
+
+      // Remove any pending cloud sync for this universe.
+      dirtyUniverseIds.delete(universeId);
 
       // Save to localStorage
       get().saveToLocalStorage();
@@ -3300,7 +3334,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('✅ Node marked as completed:', nodeId);
 
     // Unlock next node (only for course universes)
-    let unlockedNodeId = null;
+    let unlockedNodeId: string | null = null;
     if (isCourseUniverse) {
       unlockedNodeId = get().unlockNextNode(nodeId);
     }
@@ -4058,6 +4092,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     try {
       const state = get();
 
+      // 🔒 BETA-06 P1: block saves during a namespace transition. The
+      // in-memory library is not yet guaranteed to belong to the current
+      // namespace, and this function must not force initialization past the
+      // transition guard (it would reopen the stale-library write path).
+      if (state.isPersistenceTransitioning) {
+        console.log('⏸️ SKIPPING SAVE CURRENT: persistence namespace transition in progress');
+        console.log('───────────────────────────────────');
+        return;
+      }
+
       // 🛡️ Mark store as initialized when saving (we have valid data)
       if (!state.isStoreInitialized) {
         console.log('🔓 Marking store as initialized (saveCurrentUniverse called)');
@@ -4174,7 +4218,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       get().saveToLocalStorage();
 
       // FINAL VERIFICATION: Check localStorage
-      const lsData = localStorage.getItem('aurora-portal-data');
+      const lsData = localStorage.getItem(storageKeyMain());
       if (!lsData) {
         throw new Error('localStorage is empty after save!');
       }
@@ -4200,6 +4244,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
       console.log('✅ SAVE COMPLETE - All verifications passed!');
       console.log('───────────────────────────────────');
+
+      // ☁️ BETA-05: trigger explicit cloud sync of the dirty universes changed
+      // by this save (decoupled from local persistence, not the full library).
+      get().syncToCloud();
 
     } catch (error) {
       console.error('❌ ==========================================');
@@ -5003,11 +5051,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🛡️ BACKUP LIBRARY
   backupLibrary: () => {
     try {
-      const current = localStorage.getItem('aurora-portal-data');
+      const current = localStorage.getItem(storageKeyMain());
 
       // Only backup if data exists and is not null
       if (current && current !== 'null') {
-        localStorage.setItem('aurora-portal-data-backup', current);
+        localStorage.setItem(storageKeyBackup(), current);
         console.log('🛡️ Library backed up successfully');
       } else {
         console.log('🛡️ No valid data to backup');
@@ -5020,7 +5068,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🛡️ RECOVER FROM BACKUP
   recoverFromBackup: () => {
     try {
-      const backup = localStorage.getItem('aurora-portal-data-backup');
+      const backup = localStorage.getItem(storageKeyBackup());
 
       if (!backup || backup === 'null') {
         console.error('❌ No backup found');
@@ -5040,7 +5088,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
 
       // Restore from backup
-      localStorage.setItem('aurora-portal-data', backup);
+      localStorage.setItem(storageKeyMain(), backup);
       console.log('✅ Successfully recovered library from backup!');
       console.log('🛡️ Please reload the page to load recovered data');
 
@@ -5057,8 +5105,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 }));
 
-// 🐛 Enable showActive debug helper now that store is created
-if (typeof window !== 'undefined' && (window as any).auroraDebug) {
+// 🔧 BETA-06: debug helpers are non-production only; the store is never
+// exposed globally in production.
+if (
+  typeof window !== 'undefined' &&
+  process.env.NODE_ENV !== 'production' &&
+  (window as any).auroraDebug
+) {
   // Expose store for debug helpers
   (window as any).auroraStore = useCanvasStore;
 

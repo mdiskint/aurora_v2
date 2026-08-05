@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { useCanvasStore } from './store';
 import { calculateCameraTarget } from './cameraUtils';
+import { Node } from './types';
 import * as THREE from 'three';
 
 export function useCameraAnimation() {
@@ -20,8 +21,8 @@ export function useCameraAnimation() {
   const getSelectedAndNextNode = () => {
     if (!selectedId) return { selected: null, next: null };
 
-    let selectedNode = null;
-    let nextNode = null;
+    let selectedNode: Node | { position: [number, number, number]; id?: string } | null = null;
+    let nextNode: { position: [number, number, number] } | null = null;
 
     const selectedNexus = nexuses.find(n => n.id === selectedId);
     
@@ -33,7 +34,8 @@ export function useCameraAnimation() {
         nextNode = l1Nodes[0];
       }
     } else if (nodes[selectedId]) {
-      selectedNode = nodes[selectedId];
+      const currentNode = nodes[selectedId];
+      selectedNode = currentNode;
       const allNodes = Object.values(nodes);
       
       const children = allNodes.filter(n => n.parentId === selectedId);
@@ -41,13 +43,13 @@ export function useCameraAnimation() {
       if (children.length > 0) {
         nextNode = children[0];
       } else {
-        const siblings = allNodes.filter(n => n.parentId === selectedNode!.parentId);
+        const siblings = allNodes.filter(n => n.parentId === currentNode.parentId);
         const currentIndex = siblings.findIndex(n => n.id === selectedId);
         
         if (currentIndex >= 0 && currentIndex < siblings.length - 1) {
           nextNode = siblings[currentIndex + 1];
         } else {
-          const parentNexus = nexuses.find(n => n.id === selectedNode!.parentId);
+          const parentNexus = nexuses.find(n => n.id === currentNode.parentId);
           
           if (parentNexus) {
             const nexusIndex = nexuses.findIndex(n => n.id === parentNexus.id);

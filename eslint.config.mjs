@@ -17,6 +17,14 @@ const eslintConfig = [
     },
   },
   {
+    // Legacy local-development-only Express/Socket.IO server (CommonJS).
+    // NOT part of the Next.js production build. Uses require() by design.
+    files: ["server/**/*.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     ignores: [
       "node_modules/**",
       ".next/**",

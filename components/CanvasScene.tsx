@@ -1048,7 +1048,7 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
 
   useCameraAnimation();
 
-  const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
+  const selectedMaterialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());
   const sparkleMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial[]>>(new Map());
 
   // Double-click detection for nexus meshes
@@ -1768,6 +1768,16 @@ export default function CanvasScene() {
   }, [clearConnectionMode, selectedId, nexuses, nodes, deleteNode, deleteConversation]);
 
   useEffect(() => {
+    // Realtime collaboration (Socket.IO) is local-development-only. The
+    // Express/Socket.IO service is excluded from the production beta path, so
+    // browsers must never connect to it from a production build. In production
+    // builds NODE_ENV is statically replaced with 'production', so this branch
+    // always returns early and the socket client is never instantiated.
+    if (process.env.NODE_ENV === 'production') {
+      console.log('🔵 Realtime collaboration disabled in production (Express/Socket.IO is local-development-only)');
+      return;
+    }
+
     console.log('🔵 useEffect running, attempting connection...');
     const socket = io(process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001');
 

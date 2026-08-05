@@ -1,38 +1,9 @@
-import NextAuth from "next-auth"
-import GoogleProvider from "next-auth/providers/google"
-import { PrismaAdapter } from "@next-auth/prisma-adapter"
-import prisma from "@/lib/prisma"
+import NextAuth from "next-auth";
+import { authOptions, assertAuthEnv } from "@/lib/auth";
 
-export const authOptions = {
-    adapter: PrismaAdapter(prisma),
-    providers: [
-        GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID!,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-        }),
-    ],
-    session: {
-        strategy: "jwt" as const,
-    },
-    pages: {
-        signIn: '/auth/signin',
-    },
-    callbacks: {
-        async signIn({ user }: any) {
-            if (!user.email) return false
-            // ponytail: skip gate in dev so you can test without beta signup
-            if (process.env.NODE_ENV === 'development') return true
-            const signup = await prisma.betaSignup.findUnique({ where: { email: user.email } })
-            return !!signup
-        },
-        async session({ session, token }: any) {
-            if (session.user) {
-                session.user.id = token.sub
-            }
-            return session
-        }
-    }
-}
+// Fail closed: in production, reject startup when required env names are
+// missing (OAuth, NEXTAUTH_SECRET, DATABASE_URL, NEXTAUTH_URL).
+assertAuthEnv();
 
-const handler = NextAuth(authOptions)
-export { handler as GET, handler as POST }
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };

@@ -91,7 +91,7 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
       setVideoDuration(video.duration);
 
       // Debug: Check for audio tracks
-      const audioTracks = video.audioTracks;
+      const audioTracks = (video as any).audioTracks;
       const hasAudio = audioTracks && audioTracks.length > 0;
       console.log('🎵 Video audio debug:', {
         hasAudioTracks: hasAudio,
@@ -2383,7 +2383,7 @@ Be conversational and human, not formulaic.`;
         // No next sibling - return to the nexus
         // Find the nexus by traversing up the tree
         let currentId: string | undefined = node.parentId;
-        let foundNexus = null;
+        let foundNexus: (typeof nexuses)[number] | undefined = undefined;
 
         while (currentId) {
           foundNexus = nexuses.find(n => n.id === currentId);
@@ -2873,7 +2873,7 @@ Be conversational and human, not formulaic.`;
                     <div className="space-y-6">
                       {/* Doctrine Summary */}
                       <div>
-                        <h3 className="text-lg font-semibold text-yellow-300 mb-3">📚 What You've Learned</h3>
+                        <h3 className="text-lg font-semibold text-yellow-300 mb-3">📚 What You&apos;ve Learned</h3>
                         <div className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap">
                           {nexus.applicationLabConfig.doctrineSummary}
                         </div>
@@ -3605,7 +3605,7 @@ Be conversational and human, not formulaic.`;
 
                     {/* Node content preview */}
                     <div className="p-3 bg-purple-900/20 border-l-4 border-purple-500 rounded text-sm text-gray-300 mb-4 max-h-24 overflow-auto">
-                      "{node.content.slice(0, 150)}{node.content.length > 150 ? '...' : ''}"
+                      &quot;{node.content.slice(0, 150)}{node.content.length > 150 ? '...' : ''}&quot;
                     </div>
 
                     {/* Children warning */}
@@ -4139,7 +4139,7 @@ Be conversational and human, not formulaic.`;
                       </div>
                       <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                         <p className="text-sm text-blue-200">
-                          💡 <strong>Tip:</strong> Study this pattern carefully - you'll apply it in the next step.
+                          💡 <strong>Tip:</strong> Study this pattern carefully - you&apos;ll apply it in the next step.
                         </p>
                       </div>
                     </div>
@@ -4243,7 +4243,7 @@ Be conversational and human, not formulaic.`;
                       <h3 className="text-lg font-semibold text-purple-300">📝 Test Your Understanding</h3>
                       <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
                         <p className="text-sm text-purple-200">
-                          Click the button below to take the quiz for this section. You'll return here when complete.
+                          Click the button below to take the quiz for this section. You&apos;ll return here when complete.
                         </p>
                       </div>
                       <button

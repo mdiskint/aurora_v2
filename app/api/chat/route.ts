@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { requireUser } from '@/lib/authz';
+import { parseBoundedJson } from '@/lib/requestBound';
+import { evalRateLimit } from '@/lib/rateLimit';
 import { callGeminiFlash } from '@/lib/gemini';
 import { searchWeb } from '@/lib/search';
 
@@ -138,19 +139,28 @@ function streamAICall(anthropic: Anthropic, openai: OpenAI, params: any, complex
   });
 }
 
+// BETA-09/DEC-03: per-user daily AI budget, enforced BEFORE any provider call
+// so a quota-exhausted or limiter-failing path never spends provider tokens.
+// Deny-closed: limiter error / missing config denies the request (503).
+const AI_DAILY_LIMIT = 100; // AI requests per user per day
+const AI_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+
 export async function POST(request: NextRequest) {
-  if (process.env.NODE_ENV === 'production') {
-    console.log('🔐 Checking auth session...');
-    try {
-      const session = await getServerSession(authOptions);
-      console.log('🔐 Session result:', session ? 'authenticated' : 'no session');
-      if (!session) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    } catch (authError: any) {
-      console.error('🔐 Auth check failed:', authError.message);
-      return NextResponse.json({ error: 'Auth check failed' }, { status: 500 });
-    }
+  const { user, response } = await requireUser();
+  if (response) return response;
+
+  const budgetKey = `rl:chat:user:${user.id ?? user.email ?? 'unknown'}`;
+  const budget = await evalRateLimit(budgetKey, AI_DAILY_LIMIT, AI_DAILY_WINDOW_SECONDS);
+  if (!budget.allowed) {
+    const status = budget.denyClosed ? 503 : 429;
+    return NextResponse.json(
+      {
+        error: budget.denyClosed
+          ? 'AI service temporarily unavailable'
+          : `Daily AI request limit reached (${AI_DAILY_LIMIT} requests/day). Please try again later.`,
+      },
+      { status }
+    );
   }
 
   try {
@@ -163,8 +173,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('✅ API key found, initializing clients');
-
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY || 'missing',
     });
@@ -173,24 +181,22 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.OPENAI_API_KEY || '',
     });
 
-    const body = await request.json();
-    console.log('📦 Full request body:', JSON.stringify(body, null, 2));
+    const parsed = await parseBoundedJson(request);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+    }
+    const body: any = parsed.body;
 
     const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery, atomize, stream } = body;
-    console.log('📨 Message count:', messages?.length);
-    console.log('🧠 Has context:', !!conversationContext);
-    console.log('🌌 Mode:', mode);
-    console.log('🎓 Exploration Mode:', explorationMode);
-    console.log('📋 Previous questions:', previousQuestions?.length || 0);
-    console.log('📚 Conversation history:', conversationHistory?.length || 0);
+    console.log('[chat] user=', user.id ?? user.email ?? 'unknown', 'mode=', mode, 'messages=', messages?.length);
 
     let userMessage: string;
 
     if (messages && Array.isArray(messages) && messages.length > 0) {
-      userMessage = messages[messages.length - 1].content;
-      console.log('📨 Extracted from messages array:', userMessage);
+      const last = messages[messages.length - 1];
+      userMessage = typeof last?.content === 'string' ? last.content : '';
     } else {
-      console.error('❌ No valid message found in request');
+      console.error('[chat] no valid message found in request');
       return NextResponse.json(
         { error: 'Message is required' },
         { status: 400 }
@@ -198,9 +204,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (!userMessage || userMessage.trim() === '') {
-      console.error('❌ Message is empty');
+      console.error('[chat] message is empty');
       return NextResponse.json(
         { error: 'Message cannot be empty' },
+        { status: 400 }
+      );
+    }
+
+    if (userMessage.length > 100_000) {
+      console.error('[chat] message exceeds size bound');
+      return NextResponse.json(
+        { error: 'Message too large' },
         { status: 400 }
       );
     }
@@ -272,7 +286,7 @@ ${input}`;
 
         try {
           const formatted = await callGeminiFlash(preprocessPrompt);
-          console.log('[Smart Paste] Gemini Flash returned:', formatted.substring(0, 200) + '...');
+          console.log('[Smart Paste] Gemini Flash returned', formatted.length, 'chars');
 
           // Validate output has * markers (new hierarchical format or legacy **)
           if (formatted.includes('*')) {
@@ -289,9 +303,9 @@ ${input}`;
       }
 
       // Preprocess the input before parsing (skip for atomize — always use AI mode)
-      let userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
+      const userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
 
-      console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
+      console.log('🎯 Topic for universe:', userTopic.length, 'chars');
 
 
       // 🔍 CHECK FOR MANUAL MODE: First non-empty line starts with *Title
@@ -303,7 +317,6 @@ ${input}`;
 
       if (isManualMode) {
         console.log('✋ MANUAL MODE: Parsing * hierarchy');
-        console.log('📝 Raw input (first 500):', userTopic.substring(0, 500));
 
         // Parse lines: *-prefixed lines start new nodes, other lines append as content
         const parsedLines: { title: string; content: string; starCount: number }[] = [];
@@ -366,8 +379,8 @@ ${input}`;
           }
         }
 
-        console.log('🏛️ Nexus title:', nexusTitle);
-        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i}: depth=${n.depth}, parentIndex=${n.parentIndex}, content="${n.content.substring(0, 60)}"`));
+        console.log('🏛️ Nexus title:', nexusTitle.length, 'chars');
+        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i}: depth=${n.depth}, parentIndex=${n.parentIndex}`));
 
         console.log('📦 Manual hierarchy mode — using raw content for all nodes (no enrichment)');
 
@@ -385,7 +398,6 @@ ${input}`;
         };
 
         console.log('✅ Parsed and enriched hierarchical structure:');
-        console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
         console.log(`   - Nodes: ${spatialData.nodes.length} (hierarchical, enriched L2+)`);
 
         return NextResponse.json({
@@ -450,7 +462,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('📝 Raw AI response:', rawResponse);
+      console.log('📝 Raw AI response:', rawResponse.length, 'chars');
 
       try {
         // Sanitize JSON: Try parsing as-is first, then with cleanup if needed
@@ -459,7 +471,7 @@ IMPORTANT:
         try {
           spatialData = JSON.parse(rawResponse);
         } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
+          console.log('🧹 Cleaning response JSON');
 
           // Extract JSON from markdown code blocks if present
           let cleanedResponse = rawResponse.trim();
@@ -486,13 +498,13 @@ IMPORTANT:
             }
           );
 
-          console.log('🧹 Cleaned response (first 500 chars):', cleanedResponse.substring(0, 500));
+          console.log('🧹 Cleaned response:', cleanedResponse.length, 'chars');
 
           // Parse the cleaned response
           spatialData = JSON.parse(cleanedResponse);
         }
 
-        console.log('✅ Successfully parsed spatial JSON:', spatialData);
+        console.log('✅ Successfully parsed spatial JSON:', spatialData.nodes.length, 'nodes');
 
         return NextResponse.json({
           response: `Generated universe for: ${userTopic}`,
@@ -500,7 +512,6 @@ IMPORTANT:
         });
       } catch (parseError) {
         console.error('❌ Failed to parse spatial JSON:', parseError);
-        console.error('Raw response was:', rawResponse);
 
         // Attempt to salvage truncated JSON by extracting complete nodes
         try {
@@ -556,7 +567,6 @@ IMPORTANT:
       console.log('🚀 BREAK-OFF MODE ACTIVATED - Generating new universe from node');
 
       const nodeContent = userMessage;
-      console.log('📄 Node content:', nodeContent);
 
       const breakOffPrompt = `A user is breaking off this node into its own universe. The node contains:
 "${nodeContent}"
@@ -594,7 +604,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('📝 Raw AI response:', rawResponse);
+      console.log('[break-off] raw AI response', rawResponse.length, 'chars');
 
       try {
         let newUniverse;
@@ -624,7 +634,7 @@ IMPORTANT:
           newUniverse = JSON.parse(cleanedResponse);
         }
 
-        console.log('✅ Successfully parsed break-off universe:', newUniverse);
+        console.log('✅ Successfully parsed break-off universe:', newUniverse.nodes?.length, 'nodes');
 
         return NextResponse.json({
           response: `Generated new universe from node`,
@@ -632,7 +642,6 @@ IMPORTANT:
         });
       } catch (parseError) {
         console.error('❌ Failed to parse break-off JSON:', parseError);
-        console.error('Raw response was:', rawResponse);
         return NextResponse.json(
           { error: 'Failed to parse break-off universe structure from AI' },
           { status: 500 }
@@ -688,7 +697,7 @@ CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
       const textContent = response.content.find((block) => block.type === 'text');
       const question = textContent && 'text' in textContent ? textContent.text.trim() : 'Unable to generate question.';
 
-      console.log('✅ Generated deep thinking question:', question.substring(0, 80) + '...');
+      console.log('[deep-thinking] generated question', question.length, 'chars');
 
       return NextResponse.json({
         response: question,
@@ -714,8 +723,7 @@ CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
       const question = questionMatch[1];
       const userAnswer = answerMatch[1];
 
-      console.log('❓ Question:', question.substring(0, 50) + '...');
-      console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
+      console.log('[deep-thinking] dialogue', question.length, 'question chars', userAnswer.length, 'answer chars');
 
       const deepThinkingPrompt = `You are a Socratic teacher guiding a student through deep exploration and discovery.
 
@@ -764,7 +772,7 @@ Keep it conversational and Socratic - you're exploring ideas together, not testi
       const textContent = response.content.find((block) => block.type === 'text');
       const fullResponse = textContent && 'text' in textContent ? textContent.text : 'Unable to continue exploration.';
 
-      console.log('✅ Deep thinking response:', fullResponse.substring(0, 100) + '...');
+      console.log('[deep-thinking] response', fullResponse.length, 'chars');
 
       return NextResponse.json({
         response: fullResponse,
@@ -857,8 +865,7 @@ Now ask your question (QUESTION ONLY, NO ANSWER):`;
 
       console.log(hasCompletedCycle
         ? '🎉 Generated completion message'
-        : `✅ Generated diverse question (${questionCount + 1}/${maxQuestions}):`,
-        question.substring(0, 80) + '...');
+        : `✅ Generated diverse question (${questionCount + 1}/${maxQuestions})`);
 
       return NextResponse.json({
         response: question,
@@ -1004,7 +1011,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('✅ MC quiz response received:', rawResponse.substring(0, 200));
+      console.log('[quiz-mc] generated response', rawResponse.length, 'chars');
 
       return NextResponse.json({ content: rawResponse });
     }
@@ -1054,7 +1061,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('✅ Short answer response received:', rawResponse.substring(0, 200));
+      console.log('[quiz-short-answer] generated response', rawResponse.length, 'chars');
 
       return NextResponse.json({ content: rawResponse });
     }
@@ -1383,7 +1390,7 @@ Return ONLY valid JSON, no other text.`;
         const parsed = JSON.parse(rawResponse);
         return NextResponse.json({ response: parsed });
       } catch {
-        console.error('Failed to parse intuition question JSON:', rawResponse);
+        console.error('[intuition-question] failed to parse intuition question JSON');
         return NextResponse.json({
           response: {
             question: "What's your gut reaction to this doctrine? Does it feel fair or problematic?",
@@ -1423,7 +1430,7 @@ Write in a warm, encouraging tone that celebrates the student's progress while b
       }, 'low');
 
       const masterySummary = response.content[0].type === 'text' ? response.content[0].text : '';
-      console.log('✨ Mastery summary generated:', masterySummary.substring(0, 100) + '...');
+      console.log('✨ Mastery summary generated:', masterySummary.length, 'chars');
 
       return NextResponse.json({ message: masterySummary, response: masterySummary });
     }
@@ -1473,7 +1480,7 @@ Remember: Return ONLY the JSON object, nothing else.`,
       });
 
       const applicationLab = response.content[0].type === 'text' ? response.content[0].text : '';
-      console.log('✨ Application Lab generated:', applicationLab.substring(0, 150) + '...');
+      console.log('✨ Application Lab generated:', applicationLab.length, 'chars');
 
       return NextResponse.json({ message: applicationLab, response: applicationLab });
     }
@@ -1497,8 +1504,7 @@ Remember: Return ONLY the JSON object, nothing else.`,
       const question = questionMatch[1];
       const userAnswer = answerMatch[1];
 
-      console.log('❓ Question:', question.substring(0, 50) + '...');
-      console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
+      console.log('[quiz-grading] dialogue', question.length, 'question chars', userAnswer.length, 'answer chars');
 
       const gradingPrompt = `You are a knowledgeable educator grading a student's answer.
 
@@ -1535,7 +1541,7 @@ Would you like another question?`;
       const textContent = response.content.find((block) => block.type === 'text');
       const feedback = textContent && 'text' in textContent ? textContent.text : 'Unable to grade answer.';
 
-      console.log('✅ Quiz feedback:', feedback.substring(0, 100) + '...');
+      console.log('✅ Quiz feedback:', feedback.length, 'chars');
 
       return NextResponse.json({
         response: feedback,
@@ -1557,7 +1563,7 @@ Would you like another question?`;
       const textContent = response.content.find((block) => block.type === 'text');
       const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
 
-      console.log('✅ Doctrine mode response:', aiResponse.substring(0, 100) + '...');
+      console.log('[doctrine] response', aiResponse.length, 'chars');
 
       return NextResponse.json({ response: aiResponse });
     }
@@ -1567,7 +1573,7 @@ Would you like another question?`;
       console.log('🌐 ASK-WITH-SEARCH MODE: Running Tavily search before Claude');
 
       const searchQuery = clientSearchQuery || userMessage.substring(0, 300);
-      console.log('🔎 Tavily search query:', searchQuery.substring(0, 120));
+      console.log('🔎 Tavily search query:', searchQuery.length, 'chars');
 
       let webContext = '';
       try {
@@ -1608,7 +1614,7 @@ ${webContext}`
       const textContent = response.content.find((block: any) => block.type === 'text');
       const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
 
-      console.log('✅ Ask-with-search response:', aiResponse.substring(0, 100) + '...');
+      console.log('[ask-with-search] response', aiResponse.length, 'chars');
 
       return NextResponse.json({ response: aiResponse });
     }
@@ -1649,13 +1655,10 @@ ${webContext}`
 
     return NextResponse.json({ response: aiResponse });
   } catch (error: any) {
-    console.error('❌ Error calling Anthropic API:', error);
-    console.error('Error type:', error.constructor.name);
-    console.error('Error message:', error.message);
-    console.error('Error status:', error.status);
+    console.error('[chat] error:', error?.constructor?.name, error?.message);
 
     return NextResponse.json(
-      { error: error.message || 'Failed to get response from Claude' },
+      { error: error?.message || 'Failed to get response from Claude' },
       { status: 500 }
     );
   }
