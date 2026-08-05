@@ -2,6 +2,10 @@ import prisma from '@/lib/prisma'
 import { BETA_SIGNUP_STATUS, hashInviteToken } from '@/lib/betaAccess'
 import JoinButton from './JoinButton'
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export default async function JoinPage({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
   const { token } = await searchParams
   if (!token) return <JoinError message="Invalid invite link." />
