@@ -207,7 +207,7 @@ const MATRIX: MatrixCell[] = [
     expected: 'redirect',
     unitCovered: false,
     liveOnly: true,
-    unitTestFiles: ['../../middleware.ts'],
+    unitTestFiles: ['../../proxy.ts'],
   },
   {
     id: 'AM-02.2',
