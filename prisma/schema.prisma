@@ -88,6 +88,40 @@ model BetaSignup {
   @@index([status])
 }
 
+// OPS-06: Beta operator audit trail. Records every approve/revoke/reinvite
+// action an operator performs on a BetaSignup row (with a non-null `signupId`),
+// plus admin-table add/remove actions (with a null `signupId` and the affected
+// email in `targetEmail`). `operatorEmail` is the operator identity (ADMIN_EMAILS
+// allowlist or Admin-table member). `ip` is the request source (x-forwarded-for),
+// best-effort. Only target emails are stored, never a token or user content.
+model AdminActionLog {
+  id            String   @id @default(cuid())
+  operatorEmail String
+  action        String
+  signupId      String?
+  targetEmail   String
+  ip            String?
+  createdAt     DateTime @default(now())
+
+  @@index([operatorEmail])
+  @@index([signupId])
+  @@index([action])
+}
+
+// OPS-06 round-2: operator management. `email` is unique and is another source
+// of operator identity in addition to the ADMIN_EMAILS env allowlist. Operators
+// may self-manage this table from the /admin UI (add/remove). Access still
+// requires an approved, non-revoked BetaSignup record (tightened operator gate).
+model Admin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  // Operator email that added this admin row (auditable origin).
+  addedBy   String
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
 model Universe {
   // Server-owned immutable row id (cuid). Never client-controlled.
   id        String   @id @default(cuid())

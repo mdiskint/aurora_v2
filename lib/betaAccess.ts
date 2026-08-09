@@ -47,12 +47,14 @@ export function hashInviteToken(token: string): string {
  * and not past its invite expiry. A "redeemed" row is still granted access
  * (the account has already claimed it); revocation is the only way to strip it.
  */
+export type BetaSignupAccessRow = {
+  status: string;
+  revokedAt: Date | null;
+  inviteExpires: Date | null;
+};
+
 export function isBetaAccessGranted(
-  signup: {
-    status: string;
-    revokedAt: Date | null;
-    inviteExpires: Date | null;
-  },
+  signup: BetaSignupAccessRow,
   now: Date = new Date(),
 ): boolean {
   if (signup.status === BETA_SIGNUP_STATUS.REVOKED) return false;
@@ -62,6 +64,26 @@ export function isBetaAccessGranted(
   }
   if (signup.revokedAt) return false;
   if (signup.inviteExpires && signup.inviteExpires <= now) return false;
+  return true;
+}
+
+/**
+ * Operator access verdict for a BetaSignup row (OPS-06 decision-A).
+ *
+ * Operators are exempt from the invite-expiry check so they can never lock
+ * themselves out of /admin; they still require the row to be approved (or
+ * redeemed) and non-revoked. The expiry condition is the only distinction
+ * from `isBetaAccessGranted`. The guessed-email protection is preserved: the
+ * caller must still be a real operator identity (env allowlist / Admin table)
+ * with an approved, non-revoked BetaSignup — only expiry is waived here.
+ */
+export function isBetaAccessGrantedForOperator(signup: BetaSignupAccessRow): boolean {
+  if (signup.status === BETA_SIGNUP_STATUS.REVOKED) return false;
+  if (signup.status !== BETA_SIGNUP_STATUS.APPROVED &&
+      signup.status !== BETA_SIGNUP_STATUS.REDEEMED) {
+    return false;
+  }
+  if (signup.revokedAt) return false;
   return true;
 }
 

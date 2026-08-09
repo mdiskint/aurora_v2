@@ -2,11 +2,12 @@
 
 import { signIn } from 'next-auth/react';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function SignIn() {
-    const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
+    const [email, setEmail] = useState('');
+    const [emailLoading, setEmailLoading] = useState(false);
+    const [magicSent, setMagicSent] = useState(false);
 
     const handleGoogleSignIn = async () => {
         setIsLoading(true);
@@ -16,6 +17,24 @@ export default function SignIn() {
             console.error('Sign in error:', error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleEmailSignIn = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email.trim()) return;
+        setEmailLoading(true);
+        setMagicSent(false);
+        try {
+            // Magic-link: NextAuth sends a verification email; then shows the
+            // built-in "check your email" interstitial. Same sign-in gate runs.
+            await signIn('email', { email, redirect: false, callbackUrl: '/' });
+            setMagicSent(true);
+        } catch (error) {
+            console.error('Email sign-in error:', error);
+            setMagicSent(false);
+        } finally {
+            setEmailLoading(false);
         }
     };
 
@@ -60,15 +79,40 @@ export default function SignIn() {
                         <span>Continue with Google</span>
                     </button>
 
-                    {/* Microsoft button placeholder - disabled for now */}
+                    {/* Divider */}
                     <div className="relative py-4">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-gray-800"></div>
                         </div>
                         <div className="relative flex justify-center text-sm">
-                            <span className="px-2 bg-[#1a1a1a] text-gray-500">More options coming soon</span>
+                            <span className="px-2 bg-[#1a1a1a] text-gray-500">or</span>
                         </div>
                     </div>
+
+                    {/* Magic-link (email) sign-in */}
+                    <form onSubmit={handleEmailSignIn} className="space-y-3">
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="you@example.com"
+                            className="w-full rounded-xl border border-gray-700 bg-[#1a1a1a] px-4 py-3 text-sm text-gray-200 placeholder:text-gray-500 focus:border-[#00ffd4]/50 focus:outline-none"
+                            aria-label="Email"
+                            autoComplete="email"
+                        />
+                        <button
+                            type="submit"
+                            disabled={emailLoading || !email.trim()}
+                            className="w-full rounded-xl border border-[#00ffd4]/40 bg-[#00ffd4]/10 py-3 text-sm font-medium text-[#00ffd4] transition hover:bg-[#00ffd4]/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {emailLoading ? 'Sending link…' : 'Continue with email'}
+                        </button>
+                        {magicSent && (
+                            <p className="text-center text-xs text-emerald-300">
+                                Check your inbox for a sign-in link.
+                            </p>
+                        )}
+                    </form>
                 </div>
 
                 <div className="mt-8 text-center text-sm text-gray-500">
