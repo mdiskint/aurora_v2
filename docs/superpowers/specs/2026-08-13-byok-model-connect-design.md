@@ -90,6 +90,14 @@ New `lib/__tests__/modelConfig.test.ts` (matching the existing no-framework `tsx
 - Access-gate logic: has-config vs. not, in isolation from the DB/HTTP layer
 - `baseUrl` validation: reject non-`http(s)` schemes and other malformed input — this is a user-supplied URL the server will make outbound requests to, a real SSRF surface worth a bounded allowlist-style check (reject private/link-local IP literals, require http/https)
 
+## Aurora → Astryon rename (folded into this branch)
+
+The app is branded Astryon; "Aurora" is legacy naming still present throughout the codebase and should be updated wherever it appears, scoped to **code and user-facing text only** — not infrastructure or stored data:
+
+- In scope: UI copy (e.g. `app/auth/signin/page.tsx`'s "Welcome to Aurora"), code comments, CLAUDE.md/AGENTS.md docs, variable/function names where reasonable to change without churn for its own sake, README content.
+- Out of scope (unchanged, to avoid touching live infra or breaking existing user data): the GitHub repo name (`aurora_v2`), the Vercel project name (`aurora-v2`), the `aurora-portal-data` `localStorage` key, and `window.auroraDebug` — renaming any of these needs its own migration/infra-change discussion and isn't part of this pass.
+- Done as part of `feature/byok-model-connect` per your call, even though it's a separate concern from BYOK itself — keep the rename as its own commit(s) within the branch so it stays easy to review independently of the BYOK changes.
+
 ## Open questions for implementation time
 
 - Exact wording/UX for the "check your API key/model in Settings" error surfaced to users mid-lesson when a call fails.
