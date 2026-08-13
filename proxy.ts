@@ -36,7 +36,7 @@ function isPublicPath(pathname: string): boolean {
   );
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isPublicPath(pathname)) {
@@ -44,10 +44,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // Authenticated users pass through. Uses the same JWT session token that
-  // NextAuth issues (session strategy: "jwt").
+  // NextAuth issues (session strategy: "jwt"). secureCookie is explicit
+  // rather than left to auto-detect from NEXTAUTH_URL: a misconfigured
+  // NEXTAUTH_URL (e.g. an http:// dev value) would otherwise make getToken()
+  // look for the unprefixed cookie name and silently never find a session.
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
+    secureCookie: true,
   });
   if (token) {
     return NextResponse.next();

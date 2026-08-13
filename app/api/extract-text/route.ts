@@ -3,10 +3,6 @@ import { requireUser } from '@/lib/authz';
 import { parseBoundedJson } from '@/lib/requestBound';
 import { evalRateLimit } from '@/lib/rateLimit';
 
-export const config = {
-  api: { bodyParser: { sizeLimit: '50mb' } },
-};
-
 // BETA-09/DEC-03: per-user daily extraction cap on this CPU-heavy parser
 // path. Deny-closed: limiter error / missing config denies the request (503).
 const EXTRACT_DAILY_LIMIT = 50; // extracted files per user per day
