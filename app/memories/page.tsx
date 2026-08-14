@@ -2,11 +2,14 @@
 
 import { useCanvasStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import { listBackups, restoreBackup } from '@/lib/db';
 
 export default function MemoriesPage() {
   const router = useRouter();
+  const { data: session, status: sessionStatus } = useSession();
+  const setUserContext = useCanvasStore(state => state.setUserContext);
 
   const folders = useCanvasStore(state => state.folders);
   const universeLibrary = useCanvasStore(state => state.universeLibrary);
@@ -56,8 +59,18 @@ export default function MemoriesPage() {
 
   // 🚀 LOAD DATA FROM LOCALSTORAGE WHEN PAGE OPENS
   useEffect(() => {
+    // Wait for the session to resolve so we scope persistence to the signed-in
+    // account before loading (never the anonymous namespace by mistake).
+    if (sessionStatus === 'loading') return;
+    // 🔒 BETA-06: point persistence at the signed-in account before loading.
+    // setUserContext owns the reset + rehydration (page-agnostic): it
+    // synchronously drops the previous account's in-memory library and
+    // reloads the target namespace, so saves/autosaves can never run with
+    // another account's in-memory data. Calling loadFromLocalStorage here too
+    // would double-load; the hydration triggered by setUserContext populates
+    // the library this page subscribes to.
+    setUserContext(session?.user?.id ?? null);
     console.log('📚 MEMORIES PAGE LOADED:', new Date().toLocaleTimeString());
-    useCanvasStore.getState().loadFromLocalStorage();
 
     // Expand all folders by default
     const folderIds = Object.keys(useCanvasStore.getState().folders);
@@ -65,7 +78,7 @@ export default function MemoriesPage() {
 
     // Load available backups
     listBackups().then(setBackups);
-  }, []);
+  }, [sessionStatus, session?.user?.id, setUserContext]);
 
   const toggleFolder = (folderId: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -762,7 +775,7 @@ export default function MemoriesPage() {
 
             <p style={{ color: '#E5E7EB', marginBottom: '24px' }}>
               Restore your universes from an automatic backup snapshot.
-              Aurora creates backups every 5 saves.
+              Astryon creates backups every 5 saves.
             </p>
 
             {backups.length === 0 ? (
@@ -932,7 +945,7 @@ export default function MemoriesPage() {
                       fontSize: '14px',
                       marginBottom: '16px'
                     }}>
-                      📁 All new universes will be saved in the <strong>"Atomized"</strong> folder.
+                      📁 All new universes will be saved in the <strong>&quot;Atomized&quot;</strong> folder.
                     </p>
 
                     <p style={{ color: '#9CA3AF', fontSize: '14px' }}>

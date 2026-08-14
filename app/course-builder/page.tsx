@@ -227,9 +227,14 @@ export default function CourseBuilderPage() {
     try {
       // 1. Upload to Vercel Blob (Client Side - Supports 500MB+)
       console.log('☁️ Uploading to Vercel Blob...');
-      const blob = await upload(selectedFile.name, selectedFile, {
+      // Generate an opaque per-upload id used to bind this upload (and the
+      // later analysis) to the current user's pending upload record.
+      const uploadId = crypto.randomUUID();
+      const ext = (selectedFile.name.split('.').pop() || 'mp4').toLowerCase();
+      const blob = await upload(`videos/${uploadId}.${ext}`, selectedFile, {
         access: 'public',
         handleUploadUrl: '/api/upload',
+        clientPayload: uploadId,
       });
 
       console.log('✅ Video uploaded to Vercel Blob:', blob.url);
@@ -242,7 +247,7 @@ export default function CourseBuilderPage() {
       const response = await fetch('/api/analyze-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blobUrl: blob.url }),
+        body: JSON.stringify({ uploadId, blobUrl: blob.url }),
       });
 
       if (response.ok) {
@@ -287,9 +292,12 @@ export default function CourseBuilderPage() {
     setIsUploadingManualVideo(true);
 
     try {
-      const blob = await upload(manualVideoFile.name, manualVideoFile, {
+      const manualUploadId = crypto.randomUUID();
+      const manualExt = (manualVideoFile.name.split('.').pop() || 'mp4').toLowerCase();
+      const blob = await upload(`videos/${manualUploadId}.${manualExt}`, manualVideoFile, {
         access: 'public',
         handleUploadUrl: '/api/upload',
+        clientPayload: manualUploadId,
       });
 
       setCourseData(prev => ({
@@ -1299,8 +1307,8 @@ export default function CourseBuilderPage() {
                   <div>
                     <div className="font-bold text-cyan-300">Next: Generate Questions</div>
                     <div className="text-sm text-cyan-200/80 mt-1">
-                      Click "Generate Questions" to create {courseData.mcqCount} MCQs and {courseData.shortAnswerCount} short answer questions for each section using AI.
-                      You'll be able to review and edit all questions before finalizing the course.
+                      Click &quot;Generate Questions&quot; to create {courseData.mcqCount} MCQs and {courseData.shortAnswerCount} short answer questions for each section using AI.
+                      You&apos;ll be able to review and edit all questions before finalizing the course.
                     </div>
                   </div>
                 </div>

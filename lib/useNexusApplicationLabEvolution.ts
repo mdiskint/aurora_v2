@@ -54,9 +54,10 @@ export function useNexusApplicationLabEvolution() {
 
         console.log(`🎓 [useNexusApplicationLabEvolution] Sending ${nexusNodes.length} nodes to API for Application Lab generation`);
 
-        // Call API to generate Application Lab
-        const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
-        const response = await fetch(`${serverUrl}/api/chat`, {
+        // Call the protected same-origin /api/chat route handler (Next.js).
+        // Express/Socket.IO is local-development-only and is NOT part of the
+        // production beta path, so no external server URL is used here.
+        const response = await fetch('/api/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

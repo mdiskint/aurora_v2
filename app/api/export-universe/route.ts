@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { requireUser } from '@/lib/authz';
+import { parseBoundedJson } from '@/lib/requestBound';
 
 interface ExportNode {
   id: string;
@@ -26,25 +26,39 @@ interface ExportRequest {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const { user, response } = await requireUser();
+  if (response) return response;
 
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
-      console.error('❌ ANTHROPIC_API_KEY is not defined');
+      console.error('[export-universe] ANTHROPIC_API_KEY is not defined');
       return NextResponse.json(
         { error: 'API key not configured' },
         { status: 500 }
       );
     }
 
-    const { exportType, nexus, nodes }: ExportRequest = await request.json();
+    const parsed = await parseBoundedJson(request);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+    }
+    const { exportType, nexus, nodes } = parsed.body as unknown as ExportRequest;
 
-    if (!exportType || !nexus || !nodes) {
+    if (!exportType || !nexus || !nodes || !Array.isArray(nodes)) {
       return NextResponse.json(
         { error: 'Missing required fields: exportType, nexus, nodes' },
+        { status: 400 }
+      );
+    }
+    if (exportType !== 'full' && exportType !== 'analysis') {
+      return NextResponse.json(
+        { error: 'Invalid exportType' },
+        { status: 400 }
+      );
+    }
+    if (nodes.length > 100_000) {
+      return NextResponse.json(
+        { error: 'Too many nodes' },
         { status: 400 }
       );
     }
@@ -64,7 +78,7 @@ export async function POST(request: NextRequest) {
     let markdown = '';
 
     // ALWAYS generate the literal tree for now to satisfy the user's requirement for a bullet-pointed study guide
-    console.log('🚀 Generating hierarchical tree export for universe:', nexus.title);
+    console.log('[export-universe] user=', user.id ?? user.email ?? 'unknown', 'mode=', exportType);
     markdown = `# ${nexus.title}\n\n`;
 
     const generateMarkdownTree = (node: ExportNode, depth: number = 0): string => {
@@ -109,7 +123,7 @@ export async function POST(request: NextRequest) {
 
     markdown += rootNodes.map(node => generateMarkdownTree(node, 0)).join('\n');
 
-    console.log('✅ Generated document (first 100 chars):', markdown.slice(0, 100) + '...');
+    console.log('[export-universe] generated markdown', markdown.length, 'chars');
 
     // Parse markdown into structured data for Word/PDF export
     const structuredData = parseMarkdownToStructured(markdown, nexus.title);
@@ -120,9 +134,9 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ Error exporting universe:', error);
+    console.error('[export-universe] error:', error?.constructor?.name, error?.message);
     return NextResponse.json(
-      { error: error.message || 'Failed to export universe' },
+      { error: error?.message || 'Failed to export universe' },
       { status: 500 }
     );
   }

@@ -45,16 +45,44 @@ chrome.action.onClicked.addListener(async (tab) => {
       if (tabId === newTab.id && changeInfo.status === 'complete') {
         chrome.tabs.onUpdated.removeListener(listener);
 
-        // Inject a script that writes the data to the page's localStorage
+        // Inject a script that writes the data to the page's localStorage.
+        // BETA-06: scope the key to the app's active account namespace so a
+        // pending import never leaks across accounts. The marker holds only the
+        // namespace id (never user data). Poll briefly for the marker because
+        // the app session may still be resolving when the page finishes loading.
         chrome.scripting.executeScript({
           target: { tabId: newTab.id },
           func: (jsonData, key) => {
-            localStorage.setItem(key, JSON.stringify(jsonData));
-            // Dispatch a storage event so the React app can detect it
-            window.dispatchEvent(new StorageEvent('storage', {
-              key: key,
-              newValue: JSON.stringify(jsonData)
-            }));
+            const marker = 'aurora-active-namespace';
+            const targetKey = () => {
+              let ns = null;
+              try {
+                ns = window.localStorage.getItem(marker);
+              } catch (e) {
+                ns = null;
+              }
+              return ns ? key + ':' + ns : key;
+            };
+            // Wait up to ~3s for the app to publish its active namespace marker.
+            const deadline = Date.now() + 3000;
+            const write = () => {
+              const k = targetKey();
+              window.localStorage.setItem(k, JSON.stringify(jsonData));
+              window.dispatchEvent(new StorageEvent('storage', {
+                key: k,
+                newValue: JSON.stringify(jsonData)
+              }));
+            };
+            if (targetKey() !== key) {
+              write();
+              return;
+            }
+            const timer = setInterval(() => {
+              if (targetKey() !== key || Date.now() >= deadline) {
+                clearInterval(timer);
+                write();
+              }
+            }, 100);
           },
           args: [data, storageKey]
         });

@@ -1,136 +1,27 @@
-import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { requireUser } from '@/lib/authz';
+import { parseBoundedJson } from '@/lib/requestBound';
+import { evalRateLimit } from '@/lib/rateLimit';
 import { callGeminiFlash } from '@/lib/gemini';
 import { searchWeb } from '@/lib/search';
+import { callUserModel, type CallUserModelParams, type UserModelConfig } from '@/lib/callUserModel';
+import { decryptApiKey } from '@/lib/modelConfigCrypto';
+import prisma from '@/lib/prisma';
 
 export const maxDuration = 300;
 
-const MODEL_CONFIG = {
-  high: { anthropic: 'claude-opus-4-7', openai: 'gpt-4o' },
-  mid: { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o' },
-  low: { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' },
-};
-
-async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const modelToUse = MODEL_CONFIG[complexity];
-
-  // Cache the system prompt — stable across requests in each mode, so repeat
-  // calls with the same mode read instead of re-paying full input cost.
-  // Silently no-ops when the prefix is below the model's cache minimum.
-  const systemBlocks = typeof params.system === 'string'
-    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
-    : params.system;
-
-  const currentParams = { ...params, system: systemBlocks, model: modelToUse.anthropic };
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      console.log(`🤖 Attempting Anthropic call (${complexity} tier: ${modelToUse.anthropic})...`);
-      const response = await anthropic.messages.create(currentParams);
-      if (response.usage) {
-        console.log(`💾 Cache: read=${response.usage.cache_read_input_tokens ?? 0} write=${response.usage.cache_creation_input_tokens ?? 0} input=${response.usage.input_tokens} output=${response.usage.output_tokens}`);
-      }
-      return response;
-    } catch (error: any) {
-      console.error('❌ Anthropic failed:', error.message);
-      if (!process.env.OPENAI_API_KEY) throw error;
-      console.log(`🔄 Fallback condition met, switching to OpenAI (${modelToUse.openai})...`);
-    }
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    console.log(`🚀 Executing OpenAI fallback (${modelToUse.openai})...`);
-    const completion = await openai.chat.completions.create({
-      model: modelToUse.openai,
-      messages: [
-        ...(params.system ? [{ role: "system", content: params.system }] : []),
-        ...params.messages
-      ],
-      max_tokens: params.max_tokens,
-      temperature: params.temperature || 0.7,
-    });
-
-    return {
-      content: [{ type: 'text', text: completion.choices[0].message.content || '' }]
-    };
-  }
-
-  throw new Error('No valid AI provider key available');
-}
-
-function buildAnthropicParams(params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const modelToUse = MODEL_CONFIG[complexity];
-  const systemBlocks = typeof params.system === 'string'
-    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
-    : params.system;
-
-  return { ...params, system: systemBlocks, model: modelToUse.anthropic };
-}
-
-function getOpenAISystemContent(system: any) {
-  if (!system) return '';
-  if (typeof system === 'string') return system;
-  if (Array.isArray(system)) {
-    return system.map((block) => block?.text || '').filter(Boolean).join('\n\n');
-  }
-  return String(system);
-}
-
-function streamAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
+/** Wraps callUserModel's streaming path in the same ReadableStream/controller shape every stream call site already expects. */
+function streamUserModel(modelConfig: UserModelConfig, params: CallUserModelParams): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const modelToUse = MODEL_CONFIG[complexity];
 
   return new ReadableStream({
     async start(controller) {
       try {
-        if (process.env.ANTHROPIC_API_KEY) {
-          try {
-            console.log(`🌊 Streaming Anthropic response (${complexity} tier: ${modelToUse.anthropic})...`);
-            const stream = anthropic.messages.stream(buildAnthropicParams(params, complexity));
-
-            for await (const event of stream as any) {
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-                controller.enqueue(encoder.encode(event.delta.text));
-              }
-            }
-
-            controller.close();
-            return;
-          } catch (error: any) {
-            console.error('❌ Anthropic stream failed:', error.message);
-            if (!process.env.OPENAI_API_KEY) throw error;
-            console.log(`🔄 Streaming fallback to OpenAI (${modelToUse.openai})...`);
-          }
+        const chunks = await callUserModel(modelConfig, params, { stream: true });
+        for await (const text of chunks) {
+          controller.enqueue(encoder.encode(text));
         }
-
-        if (process.env.OPENAI_API_KEY) {
-          const systemContent = getOpenAISystemContent(params.system);
-          const completion = await openai.chat.completions.create({
-            model: modelToUse.openai,
-            messages: [
-              ...(systemContent ? [{ role: 'system' as const, content: systemContent }] : []),
-              ...params.messages,
-            ],
-            max_tokens: params.max_tokens,
-            temperature: params.temperature || 0.7,
-            stream: true,
-          });
-
-          for await (const chunk of completion) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) {
-              controller.enqueue(encoder.encode(text));
-            }
-          }
-
-          controller.close();
-          return;
-        }
-
-        throw new Error('No valid AI provider key available');
+        controller.close();
       } catch (error: any) {
         controller.error(error);
       }
@@ -138,59 +29,86 @@ function streamAICall(anthropic: Anthropic, openai: OpenAI, params: any, complex
   });
 }
 
+/**
+ * Map a session user id to a DB user id. The session JWT may carry the id
+ * directly; fall back to email lookup to stay compatible with BETA-02.
+ * (Mirrors app/api/upload/route.ts's userIdForSession.)
+ */
+async function userIdForSession(
+  sessionUserId: string | null | undefined,
+  sessionEmail: string | null | undefined
+): Promise<string | null> {
+  if (sessionUserId) {
+    const byId = await prisma.user.findUnique({ where: { id: sessionUserId } });
+    if (byId) return byId.id;
+  }
+  if (sessionEmail) {
+    const byEmail = await prisma.user.findUnique({ where: { email: sessionEmail } });
+    if (byEmail) return byEmail.id;
+  }
+  return null;
+}
+
+// BETA-09/DEC-03: per-user daily AI budget, enforced BEFORE any provider call
+// so a quota-exhausted or limiter-failing path never spends provider tokens.
+// Deny-closed: limiter error / missing config denies the request (503).
+const AI_DAILY_LIMIT = 100; // AI requests per user per day
+const AI_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+
 export async function POST(request: NextRequest) {
-  if (process.env.NODE_ENV === 'production') {
-    console.log('🔐 Checking auth session...');
-    try {
-      const session = await getServerSession(authOptions);
-      console.log('🔐 Session result:', session ? 'authenticated' : 'no session');
-      if (!session) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    } catch (authError: any) {
-      console.error('🔐 Auth check failed:', authError.message);
-      return NextResponse.json({ error: 'Auth check failed' }, { status: 500 });
-    }
+  const { user, response } = await requireUser();
+  if (response) return response;
+
+  // BYOK mandatory gate (belt-and-suspenders alongside the middleware-level
+  // redirect gate): JWT claims can go stale between a save and token
+  // refresh, so re-check the DB directly before spending any provider call.
+  const dbUserId = await userIdForSession(user.id, user.email);
+  const modelConfigRow = dbUserId
+    ? await prisma.modelConfig.findUnique({ where: { userId: dbUserId } })
+    : null;
+  if (!modelConfigRow) {
+    return NextResponse.json(
+      { error: 'No model configured. Add your API key in Settings.' },
+      { status: 400 }
+    );
+  }
+  const userModelConfig: UserModelConfig = {
+    baseUrl: modelConfigRow.baseUrl,
+    model: modelConfigRow.model,
+    apiKey: await decryptApiKey(modelConfigRow.apiKeyCiphertext, modelConfigRow.apiKeyIv),
+  };
+
+  const budgetKey = `rl:chat:user:${user.id ?? user.email ?? 'unknown'}`;
+  const budget = await evalRateLimit(budgetKey, AI_DAILY_LIMIT, AI_DAILY_WINDOW_SECONDS);
+  if (!budget.allowed) {
+    const status = budget.denyClosed ? 503 : 429;
+    return NextResponse.json(
+      {
+        error: budget.denyClosed
+          ? 'AI service temporarily unavailable'
+          : `Daily AI request limit reached (${AI_DAILY_LIMIT} requests/day). Please try again later.`,
+      },
+      { status }
+    );
   }
 
   try {
-    // Force rebuild
-    if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
-      console.error('❌ No API keys defined');
-      return NextResponse.json(
-        { error: 'API key not configured' },
-        { status: 500 }
-      );
+    const parsed = await parseBoundedJson(request);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
-
-    console.log('✅ API key found, initializing clients');
-
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY || 'missing',
-    });
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || '',
-    });
-
-    const body = await request.json();
-    console.log('📦 Full request body:', JSON.stringify(body, null, 2));
+    const body: any = parsed.body;
 
     const { messages, conversationContext, mode, explorationMode, previousQuestions, conversationHistory, nodeDepth, searchQuery: clientSearchQuery, atomize, stream } = body;
-    console.log('📨 Message count:', messages?.length);
-    console.log('🧠 Has context:', !!conversationContext);
-    console.log('🌌 Mode:', mode);
-    console.log('🎓 Exploration Mode:', explorationMode);
-    console.log('📋 Previous questions:', previousQuestions?.length || 0);
-    console.log('📚 Conversation history:', conversationHistory?.length || 0);
+    console.log('[chat] user=', user.id ?? user.email ?? 'unknown', 'mode=', mode, 'messages=', messages?.length);
 
     let userMessage: string;
 
     if (messages && Array.isArray(messages) && messages.length > 0) {
-      userMessage = messages[messages.length - 1].content;
-      console.log('📨 Extracted from messages array:', userMessage);
+      const last = messages[messages.length - 1];
+      userMessage = typeof last?.content === 'string' ? last.content : '';
     } else {
-      console.error('❌ No valid message found in request');
+      console.error('[chat] no valid message found in request');
       return NextResponse.json(
         { error: 'Message is required' },
         { status: 400 }
@@ -198,9 +116,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (!userMessage || userMessage.trim() === '') {
-      console.error('❌ Message is empty');
+      console.error('[chat] message is empty');
       return NextResponse.json(
         { error: 'Message cannot be empty' },
+        { status: 400 }
+      );
+    }
+
+    if (userMessage.length > 100_000) {
+      console.error('[chat] message exceeds size bound');
+      return NextResponse.json(
+        { error: 'Message too large' },
         { status: 400 }
       );
     }
@@ -272,7 +198,7 @@ ${input}`;
 
         try {
           const formatted = await callGeminiFlash(preprocessPrompt);
-          console.log('[Smart Paste] Gemini Flash returned:', formatted.substring(0, 200) + '...');
+          console.log('[Smart Paste] Gemini Flash returned', formatted.length, 'chars');
 
           // Validate output has * markers (new hierarchical format or legacy **)
           if (formatted.includes('*')) {
@@ -289,9 +215,9 @@ ${input}`;
       }
 
       // Preprocess the input before parsing (skip for atomize — always use AI mode)
-      let userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
+      const userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
 
-      console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
+      console.log('🎯 Topic for universe:', userTopic.length, 'chars');
 
 
       // 🔍 CHECK FOR MANUAL MODE: First non-empty line starts with *Title
@@ -303,7 +229,6 @@ ${input}`;
 
       if (isManualMode) {
         console.log('✋ MANUAL MODE: Parsing * hierarchy');
-        console.log('📝 Raw input (first 500):', userTopic.substring(0, 500));
 
         // Parse lines: *-prefixed lines start new nodes, other lines append as content
         const parsedLines: { title: string; content: string; starCount: number }[] = [];
@@ -366,8 +291,8 @@ ${input}`;
           }
         }
 
-        console.log('🏛️ Nexus title:', nexusTitle);
-        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i}: depth=${n.depth}, parentIndex=${n.parentIndex}, content="${n.content.substring(0, 60)}"`));
+        console.log('🏛️ Nexus title:', nexusTitle.length, 'chars');
+        parsedNodes.forEach((n, i) => console.log(`📦 Node ${i}: depth=${n.depth}, parentIndex=${n.parentIndex}`));
 
         console.log('📦 Manual hierarchy mode — using raw content for all nodes (no enrichment)');
 
@@ -385,7 +310,6 @@ ${input}`;
         };
 
         console.log('✅ Parsed and enriched hierarchical structure:');
-        console.log(`   - Nexus: "${spatialData.nexusTitle}"`);
         console.log(`   - Nodes: ${spatialData.nodes.length} (hierarchical, enriched L2+)`);
 
         return NextResponse.json({
@@ -438,19 +362,19 @@ IMPORTANT:
 
       console.log('📤 Sending spatial universe generation prompt...');
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 16384, // Large enough for atomized children with quiz diversity
         system: 'You are Astryon AI, a structured learning architect. Generate learning universes organized into core concepts. Always return ONLY valid JSON with properly escaped newlines (\\n).',
         messages: [{ role: 'user', content: spatialPrompt }],
-      }, 'mid');
+      });
 
       console.log('✅ Got response from Claude');
 
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('📝 Raw AI response:', rawResponse);
+      console.log('📝 Raw AI response:', rawResponse.length, 'chars');
 
       try {
         // Sanitize JSON: Try parsing as-is first, then with cleanup if needed
@@ -459,7 +383,7 @@ IMPORTANT:
         try {
           spatialData = JSON.parse(rawResponse);
         } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
+          console.log('🧹 Cleaning response JSON');
 
           // Extract JSON from markdown code blocks if present
           let cleanedResponse = rawResponse.trim();
@@ -486,13 +410,13 @@ IMPORTANT:
             }
           );
 
-          console.log('🧹 Cleaned response (first 500 chars):', cleanedResponse.substring(0, 500));
+          console.log('🧹 Cleaned response:', cleanedResponse.length, 'chars');
 
           // Parse the cleaned response
           spatialData = JSON.parse(cleanedResponse);
         }
 
-        console.log('✅ Successfully parsed spatial JSON:', spatialData);
+        console.log('✅ Successfully parsed spatial JSON:', spatialData.nodes.length, 'nodes');
 
         return NextResponse.json({
           response: `Generated universe for: ${userTopic}`,
@@ -500,7 +424,6 @@ IMPORTANT:
         });
       } catch (parseError) {
         console.error('❌ Failed to parse spatial JSON:', parseError);
-        console.error('Raw response was:', rawResponse);
 
         // Attempt to salvage truncated JSON by extracting complete nodes
         try {
@@ -556,7 +479,6 @@ IMPORTANT:
       console.log('🚀 BREAK-OFF MODE ACTIVATED - Generating new universe from node');
 
       const nodeContent = userMessage;
-      console.log('📄 Node content:', nodeContent);
 
       const breakOffPrompt = `A user is breaking off this node into its own universe. The node contains:
 "${nodeContent}"
@@ -582,7 +504,7 @@ IMPORTANT:
 
       console.log('📤 Sending break-off universe generation prompt...');
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 4096,
         system: 'You are Astryon AI, a universe architect. Generate structured spatial knowledge graphs that explore content deeply. Always return ONLY valid JSON with properly escaped newlines (\\n).',
@@ -594,7 +516,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('📝 Raw AI response:', rawResponse);
+      console.log('[break-off] raw AI response', rawResponse.length, 'chars');
 
       try {
         let newUniverse;
@@ -624,7 +546,7 @@ IMPORTANT:
           newUniverse = JSON.parse(cleanedResponse);
         }
 
-        console.log('✅ Successfully parsed break-off universe:', newUniverse);
+        console.log('✅ Successfully parsed break-off universe:', newUniverse.nodes?.length, 'nodes');
 
         return NextResponse.json({
           response: `Generated new universe from node`,
@@ -632,7 +554,6 @@ IMPORTANT:
         });
       } catch (parseError) {
         console.error('❌ Failed to parse break-off JSON:', parseError);
-        console.error('Raw response was:', rawResponse);
         return NextResponse.json(
           { error: 'Failed to parse break-off universe structure from AI' },
           { status: 500 }
@@ -678,17 +599,17 @@ Question types to use:
 
 CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 400,
         system: 'You are a Socratic teacher who guides deep exploration through progressively deeper questions. Each question should build on what came before.',
         messages: [{ role: 'user', content: deepThinkingQuestionPrompt }],
-      }, 'high');
+      });
 
       const textContent = response.content.find((block) => block.type === 'text');
       const question = textContent && 'text' in textContent ? textContent.text.trim() : 'Unable to generate question.';
 
-      console.log('✅ Generated deep thinking question:', question.substring(0, 80) + '...');
+      console.log('[deep-thinking] generated question', question.length, 'chars');
 
       return NextResponse.json({
         response: question,
@@ -714,8 +635,7 @@ CRITICAL: Output ONLY the question, nothing else. No preamble, no explanation.`;
       const question = questionMatch[1];
       const userAnswer = answerMatch[1];
 
-      console.log('❓ Question:', question.substring(0, 50) + '...');
-      console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
+      console.log('[deep-thinking] dialogue', question.length, 'question chars', userAnswer.length, 'answer chars');
 
       const deepThinkingPrompt = `You are a Socratic teacher guiding a student through deep exploration and discovery.
 
@@ -754,17 +674,17 @@ Format your response exactly like this:
 
 Keep it conversational and Socratic - you're exploring ideas together, not testing them.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 800,
         system: 'You are a Socratic teacher who engages deeply with student thinking. Build on their insights and guide discovery through thoughtful questions.',
         messages: [{ role: 'user', content: deepThinkingPrompt }],
-      }, 'high');
+      });
 
       const textContent = response.content.find((block) => block.type === 'text');
       const fullResponse = textContent && 'text' in textContent ? textContent.text : 'Unable to continue exploration.';
 
-      console.log('✅ Deep thinking response:', fullResponse.substring(0, 100) + '...');
+      console.log('[deep-thinking] response', fullResponse.length, 'chars');
 
       return NextResponse.json({
         response: fullResponse,
@@ -843,7 +763,7 @@ Example BAD output:
 
 Now ask your question (QUESTION ONLY, NO ANSWER):`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: hasCompletedCycle ? 500 : 300,  // More tokens for completion message
         system: hasCompletedCycle
@@ -857,8 +777,7 @@ Now ask your question (QUESTION ONLY, NO ANSWER):`;
 
       console.log(hasCompletedCycle
         ? '🎉 Generated completion message'
-        : `✅ Generated diverse question (${questionCount + 1}/${maxQuestions}):`,
-        question.substring(0, 80) + '...');
+        : `✅ Generated diverse question (${questionCount + 1}/${maxQuestions})`);
 
       return NextResponse.json({
         response: question,
@@ -994,7 +913,7 @@ IMPORTANT:
 
       console.log('📤 Sending MC quiz generation prompt...');
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 6144,
         system: `You are an expert exam question writer creating multiple choice questions with varied difficulty levels (easy, medium, hard). Infer the subject domain from the content provided and tailor questions appropriately. Your questions test understanding through application, with appropriately complex scenarios and clear explanations. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
@@ -1004,7 +923,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('✅ MC quiz response received:', rawResponse.substring(0, 200));
+      console.log('[quiz-mc] generated response', rawResponse.length, 'chars');
 
       return NextResponse.json({ content: rawResponse });
     }
@@ -1044,7 +963,7 @@ IMPORTANT:
 
       console.log('📤 Sending short answer generation prompt...');
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 4096,
         system: `You are an expert exam question writer creating thoughtful short answer questions for students. You excel at creating questions that test deep understanding and require explanation rather than simple recall. Always return questions in the EXACT markdown format requested with NO additional text, introductions, or conversational responses.`,
@@ -1054,7 +973,7 @@ IMPORTANT:
       const textContent = response.content.find((block) => block.type === 'text');
       const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
 
-      console.log('✅ Short answer response received:', rawResponse.substring(0, 200));
+      console.log('[quiz-short-answer] generated response', rawResponse.length, 'chars');
 
       return NextResponse.json({ content: rawResponse });
     }
@@ -1093,12 +1012,12 @@ Return ONLY valid JSON in this exact format:
 Content to analyze:
 ${userContent}`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 8096,
         system: 'You are an expert educator who analyzes and categorizes academic content across any subject domain. Always return ONLY valid JSON with no additional text.',
         messages: [{ role: 'user', content: analyzePrompt }],
-      }, 'low');
+      });
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('🔬 Analysis complete');
@@ -1128,7 +1047,7 @@ Return ONLY valid JSON in this exact format:
   "question": "The full scenario text (3-5 paragraphs)"
 }`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 4096,
         system: 'You are an expert educator creating practice scenarios appropriate to the subject domain. Always return ONLY valid JSON with no additional text.',
@@ -1160,12 +1079,12 @@ Provide constructive feedback that:
 
 Format your feedback in a clear, structured way (but NOT as JSON - just formatted text with paragraphs and bullet points if needed).`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 4096,
         system: 'You are a supportive educator providing detailed, constructive feedback on student analysis. Adapt your tone and terminology to the subject domain.',
         messages: [{ role: 'user', content: gradingPrompt }],
-      }, 'high');
+      });
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('🎯 Grading complete');
@@ -1206,7 +1125,7 @@ Return ONLY this exact JSON structure:
 
 Your entire response must be valid, parseable JSON starting with { and ending with }. Nothing else.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 6000,
         system: 'You are an experienced educator creating comprehensive assessments appropriate to the subject domain. CRITICAL: Your response must be ONLY valid, parseable JSON with no markdown code blocks, no explanation text, and no additional formatting. Start with { and end with }. Nothing else.',
@@ -1239,12 +1158,12 @@ Provide comprehensive feedback that:
 
 Format your feedback in clear, structured paragraphs with headers. Be constructive, specific, and encouraging while maintaining academic rigor.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 6000,
         system: 'You are an experienced educator providing detailed, constructive feedback on application essays. Adapt your tone and terminology to the subject domain. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
         messages: [{ role: 'user', content: gradingPrompt }],
-      }, 'high');
+      });
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('📊 Essay graded successfully');
@@ -1272,12 +1191,12 @@ Provide comprehensive feedback that:
 
 Format your feedback in clear, structured paragraphs with headers. Be constructive, specific, and encouraging while maintaining academic rigor.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 6000,
         system: 'You are an experienced educator providing detailed, constructive feedback on application essays. Adapt your tone and terminology to the subject domain. Your feedback should be thorough, specific, and help students understand both their strengths and areas for improvement.',
         messages: [{ role: 'user', content: gradingPrompt }],
-      }, 'high');
+      });
 
       const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
       console.log('📊 Essay graded successfully (basic mode)');
@@ -1317,7 +1236,7 @@ EXAMPLES OF WHAT NOT TO DO:
 
 DO NOT include answer guidance, rubrics, or discussion of issues - ONLY the scenario and question.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 2048,
         system: 'You are an experienced educator who writes realistic exam questions. Infer the subject domain from the content and tailor your question style accordingly. Your questions always include detailed scenarios that require students to identify issues, apply relevant principles to facts, and analyze outcomes - NOT abstract essays asking students to explain concepts.',
@@ -1368,7 +1287,7 @@ Make the options represent genuinely different perspectives, not just variations
 
 Return ONLY valid JSON, no other text.`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 1024,
         system: 'You are a thoughtful educator who creates engaging questions that help students connect emotionally and personally with the material they are studying. Infer the subject domain from the content and tailor your questions accordingly. Your questions should provoke genuine reflection. Return only valid JSON.',
@@ -1383,7 +1302,7 @@ Return ONLY valid JSON, no other text.`;
         const parsed = JSON.parse(rawResponse);
         return NextResponse.json({ response: parsed });
       } catch {
-        console.error('Failed to parse intuition question JSON:', rawResponse);
+        console.error('[intuition-question] failed to parse intuition question JSON');
         return NextResponse.json({
           response: {
             question: "What's your gut reaction to this doctrine? Does it feel fair or problematic?",
@@ -1404,7 +1323,7 @@ Return ONLY valid JSON, no other text.`;
 
       const summaryPrompt = `${userMessage}`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 4096,
         system: `You are an expert learning scientist creating personalized "What You've Learned" summaries.
@@ -1420,10 +1339,10 @@ Your task is to synthesize a learning conversation into a comprehensive mastery 
 
 Write in a warm, encouraging tone that celebrates the student's progress while being substantive and specific.`,
         messages: [{ role: 'user', content: summaryPrompt }],
-      }, 'low');
+      });
 
       const masterySummary = response.content[0].type === 'text' ? response.content[0].text : '';
-      console.log('✨ Mastery summary generated:', masterySummary.substring(0, 100) + '...');
+      console.log('✨ Mastery summary generated:', masterySummary.length, 'chars');
 
       return NextResponse.json({ message: masterySummary, response: masterySummary });
     }
@@ -1434,7 +1353,7 @@ Write in a warm, encouraging tone that celebrates the student's progress while b
 
       const labPrompt = `${userMessage}`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 8192,
         system: `You are an expert learning scientist creating personalized Application Labs that help students apply what they've learned.
@@ -1473,7 +1392,7 @@ Remember: Return ONLY the JSON object, nothing else.`,
       });
 
       const applicationLab = response.content[0].type === 'text' ? response.content[0].text : '';
-      console.log('✨ Application Lab generated:', applicationLab.substring(0, 150) + '...');
+      console.log('✨ Application Lab generated:', applicationLab.length, 'chars');
 
       return NextResponse.json({ message: applicationLab, response: applicationLab });
     }
@@ -1497,8 +1416,7 @@ Remember: Return ONLY the JSON object, nothing else.`,
       const question = questionMatch[1];
       const userAnswer = answerMatch[1];
 
-      console.log('❓ Question:', question.substring(0, 50) + '...');
-      console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
+      console.log('[quiz-grading] dialogue', question.length, 'question chars', userAnswer.length, 'answer chars');
 
       const gradingPrompt = `You are a knowledgeable educator grading a student's answer.
 
@@ -1525,7 +1443,7 @@ The Complete Answer:
 
 Would you like another question?`;
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 1000,
         system: 'You are a supportive educator providing quiz feedback. Be encouraging but honest. Always teach what the correct answer is so students learn from their mistakes.',
@@ -1535,7 +1453,7 @@ Would you like another question?`;
       const textContent = response.content.find((block) => block.type === 'text');
       const feedback = textContent && 'text' in textContent ? textContent.text : 'Unable to grade answer.';
 
-      console.log('✅ Quiz feedback:', feedback.substring(0, 100) + '...');
+      console.log('✅ Quiz feedback:', feedback.length, 'chars');
 
       return NextResponse.json({
         response: feedback,
@@ -1547,7 +1465,7 @@ Would you like another question?`;
     if (mode === 'doctrine') {
       console.log('⚖️ DOCTRINE MODE ACTIVATED - Generating doctrinal map');
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
 
         max_tokens: 4096,
         system: 'You are a legal research assistant. Generate comprehensive doctrinal analysis in valid JSON format with properly escaped newlines (\\n).',
@@ -1557,7 +1475,7 @@ Would you like another question?`;
       const textContent = response.content.find((block) => block.type === 'text');
       const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
 
-      console.log('✅ Doctrine mode response:', aiResponse.substring(0, 100) + '...');
+      console.log('[doctrine] response', aiResponse.length, 'chars');
 
       return NextResponse.json({ response: aiResponse });
     }
@@ -1567,7 +1485,7 @@ Would you like another question?`;
       console.log('🌐 ASK-WITH-SEARCH MODE: Running Tavily search before Claude');
 
       const searchQuery = clientSearchQuery || userMessage.substring(0, 300);
-      console.log('🔎 Tavily search query:', searchQuery.substring(0, 120));
+      console.log('🔎 Tavily search query:', searchQuery.length, 'chars');
 
       let webContext = '';
       try {
@@ -1587,11 +1505,11 @@ ${webContext}`
         : 'You are Astryon AI, helping users explore ideas in 3D space. You have access to the full conversation universe context.';
 
       if (stream) {
-        return new Response(streamAICall(anthropic, openai, {
+        return new Response(streamUserModel(userModelConfig, {
           max_tokens: 2048,
           system: systemPrompt,
           messages: [{ role: 'user', content: userMessage }],
-        }, 'high'), {
+        }), {
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-cache, no-transform',
@@ -1599,16 +1517,16 @@ ${webContext}`
         });
       }
 
-      const response = await safeAICall(anthropic, openai, {
+      const response = await callUserModel(userModelConfig, {
         max_tokens: 2048,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
-      }, 'high');
+      });
 
       const textContent = response.content.find((block: any) => block.type === 'text');
       const aiResponse = textContent && 'text' in textContent ? textContent.text : 'No response';
 
-      console.log('✅ Ask-with-search response:', aiResponse.substring(0, 100) + '...');
+      console.log('[ask-with-search] response', aiResponse.length, 'chars');
 
       return NextResponse.json({ response: aiResponse });
     }
@@ -1622,7 +1540,7 @@ ${webContext}`
       : 'You are Astryon AI, helping users explore ideas in 3D space.';
 
     if (stream) {
-      return new Response(streamAICall(anthropic, openai, {
+      return new Response(streamUserModel(userModelConfig, {
         max_tokens: 2048,
         system: systemMessage,
         messages: [{ role: 'user', content: userMessage }],
@@ -1634,9 +1552,7 @@ ${webContext}`
       });
     }
 
-    console.log('🤖 Using Anthropic Claude');
-
-    const response = await safeAICall(anthropic, openai, {
+    const response = await callUserModel(userModelConfig, {
       max_tokens: 2048,
       system: systemMessage,
       messages: [{ role: 'user', content: userMessage }],
@@ -1649,13 +1565,10 @@ ${webContext}`
 
     return NextResponse.json({ response: aiResponse });
   } catch (error: any) {
-    console.error('❌ Error calling Anthropic API:', error);
-    console.error('Error type:', error.constructor.name);
-    console.error('Error message:', error.message);
-    console.error('Error status:', error.status);
+    console.error('[chat] error:', error?.constructor?.name, error?.message);
 
     return NextResponse.json(
-      { error: error.message || 'Failed to get response from Claude' },
+      { error: error?.message || 'Failed to get response from Claude' },
       { status: 500 }
     );
   }

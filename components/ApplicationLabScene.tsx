@@ -685,7 +685,7 @@ ${analysis.principles.map(p => `- ${p.name}: ${p.explanation}`).join('\n')}
                   marginBottom: '20px',
                   lineHeight: '1.6'
                 }}>
-                  Apply the doctrines and principles you've learned to new scenarios
+                  Apply the doctrines and principles you&apos;ve learned to new scenarios
                 </p>
 
                 {/* Essay Question Section */}

@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+See [AGENTS.md](./AGENTS.md) for the full development guide — commands, architecture, env vars, patterns, and troubleshooting.
+
 ## Project Overview
 
-Aurora is a 3D spatial conversation and knowledge visualization platform built with Next.js 15, React Three Fiber, and Socket.IO. It enables users to create and explore interconnected ideas in a 3D space, with AI-powered conversational threads and academic paper visualization.
+Astryon is a 3D spatial conversation and knowledge visualization platform built with Next.js 15, React Three Fiber, and Socket.IO. It enables users to create and explore interconnected ideas in a 3D space, with AI-powered conversational threads and academic paper visualization.
 
 ## Development Commands
 

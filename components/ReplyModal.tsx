@@ -660,7 +660,7 @@ Answer using information from ANY node in the universe, not just the selected on
               marginBottom: '12px',
               fontStyle: 'italic',
             }}>
-              "{selectedContent.slice(0, 100)}{selectedContent.length > 100 ? '...' : ''}"
+              &quot;{selectedContent.slice(0, 100)}{selectedContent.length > 100 ? '...' : ''}&quot;
             </div>
             <div style={{
               color: '#FFD700',

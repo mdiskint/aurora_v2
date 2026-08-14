@@ -1,6 +1,8 @@
-# Quick Deployment Guide - Aurora Portal
+# Quick Deployment Guide - Astryon Portal
 
-Your code is already pushed to GitHub! Now just follow these steps to deploy.
+Your code is already pushed to GitHub! Just follow these steps to deploy.
+
+> **Beta policy:** Next.js route handlers are the sole production backend. The Express/Socket.IO service in `server/` is **local-development-only** and is **not** deployed for the production beta. There is no Railway step and no `NEXT_PUBLIC_SERVER_URL`.
 
 ---
 
@@ -9,7 +11,7 @@ Your code is already pushed to GitHub! Now just follow these steps to deploy.
 ### 1.1 Import Project
 1. Go to: https://vercel.com/new
 2. Log in with GitHub if needed
-3. Find **mdiskint/aurora_v2** in the repository list
+3. Find your repository in the list
 4. Click **"Import"**
 
 ### 1.2 Configure Project
@@ -21,146 +23,127 @@ On the "Configure Project" page:
 4. **Output Directory**: Leave as default
 
 ### 1.3 Add Environment Variables
-Click **"Environment Variables"** and add these **4 variables**:
+Click **"Environment Variables"** and add your required variables:
 
 | Name | Value |
 |------|-------|
-| `AURORA_PASSWORD` | Choose a secure password (e.g., `MySecurePass123!`) |
-| `AUTH_SECRET` | `iFDAbQTw8fA06e/aJPC7jKrAyiIfPNI/9ln//qjWFNk=` |
-| `NEXT_PUBLIC_SERVER_URL` | `http://localhost:3001` (we'll update this after Railway) |
+| `GOOGLE_CLIENT_ID` | Your Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Your Google OAuth client secret |
+| `NEXTAUTH_SECRET` | Generate a secret (e.g., `openssl rand -base64 32`) |
+| `NEXTAUTH_URL` | Your Vercel URL, e.g., `https://aurora-v2-xxx.vercel.app` |
+| `DATABASE_URL` | Your NeonDB (PostgreSQL) connection string |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key |
+| `RESEND_API_KEY` | Your Resend API key |
+| `UPSTASH_REDIS_REST_URL` | Your Upstash Redis REST URL |
+| `UPSTASH_REDIS_REST_TOKEN` | Your Upstash Redis REST token |
+| `ADMIN_EMAILS` | Comma-separated beta operator emails, e.g., `admin@astryon.com` |
+
+`ADMIN_EMAILS` is required by the production startup assertion (see `lib/auth.ts`). The operator email must also be an **approved BetaSignup row** server-side, otherwise the beta operator control surface (BETA-14) can never approve applicants.
+
+Optional (only if the feature is used):
+
+| Name | Value |
+|------|-------|
+| `GEMINI_API_KEY` | Your Gemini API key |
+| `OPENAI_API_KEY` | Your OpenAI API key |
+| `BLOB_READ_WRITE_TOKEN` | Your Vercel Blob token |
+
+Do **not** add `NEXT_PUBLIC_SERVER_URL` — the production beta has no external server, and leaving the variable out keeps any Express/Socket.IO URL out of the browser bundle.
 
 ### 1.4 Deploy
 1. Click **"Deploy"**
 2. Wait 2-3 minutes for deployment
 3. **Copy your Vercel URL** (e.g., `https://aurora-v2-xxx.vercel.app`)
-4. **Save this URL** - you'll need it!
+4. **Save this URL** — you'll need it for `NEXTAUTH_URL` on any redeploy
 
 ---
 
-## Step 2: Deploy Backend to Railway (5 minutes)
+## Step 2: Test Your Deployment (2 minutes)
 
-### 2.1 Create New Project
-1. Go to: https://railway.app
-2. Click **"New Project"**
-3. Select **"Deploy from GitHub repo"**
-4. Choose **mdiskint/aurora_v2**
-
-### 2.2 Configure Service
-1. Click on your new service
-2. Go to **"Settings"** → **"Service Settings"**
-3. Set **"Root Directory"** to: `server`
-4. Click **"Save"**
-
-### 2.3 Add Environment Variables
-Go to **"Variables"** tab and add these **3 variables**:
-
-| Name | Value |
-|------|-------|
-| `CLIENT_URL` | `http://localhost:3000,https://YOUR-VERCEL-URL` |
-| `PORT` | `3001` |
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
-
-**Important**: Replace `YOUR-VERCEL-URL` with the URL you got from Step 1.4
-
-### 2.4 Generate Domain
-1. Go to **"Settings"** → **"Networking"**
-2. Click **"Generate Domain"**
-3. **Copy the Railway URL** (e.g., `https://aurora-server-production.up.railway.app`)
-4. **Save this URL** - you need it for the next step!
-
----
-
-## Step 3: Update Vercel with Railway URL (2 minutes)
-
-### 3.1 Update Environment Variable
-1. Go back to Vercel: https://vercel.com
-2. Go to your project → **"Settings"** → **"Environment Variables"**
-3. Find `NEXT_PUBLIC_SERVER_URL`
-4. Click **"Edit"**
-5. Change value from `http://localhost:3001` to **your Railway URL** from Step 2.4
-6. Click **"Save"**
-
-### 3.2 Redeploy
-1. Go to **"Deployments"** tab
-2. Click the **three dots** (⋯) on the latest deployment
-3. Click **"Redeploy"**
-4. Wait 1-2 minutes
-
----
-
-## Step 4: Test Your Deployment (2 minutes)
-
-### 4.1 Visit Your App
+### 2.1 Visit Your App
 1. Go to your Vercel URL (from Step 1.4)
-2. You should see the **login page** ✅
-3. Enter the password you set in Step 1.3
+2. You should see the **sign-in page** ✅
+3. Sign in with the configured provider
 4. You should be redirected to the **main app** ✅
 
-### 4.2 Test WebSocket Connection
+### 2.2 Verify No Realtime Connection
 1. Press **F12** to open browser console
 2. Create a new universe or nexus
-3. Look for: `✅ Connected to WebSocket: [socket-id]` ✅
+3. Confirm there are **no** WebSocket/Socket.IO connection messages and **no** network calls to an external server (`localhost:3001` or any Express host)
+4. All AI traffic hits the same-origin `/api/chat` ✅
+
+Realtime collaboration is intentionally disabled in production for the beta.
 
 ---
 
-## Step 5: Share with Users
+## Step 3: Share with Users
 
 Send your users:
 
 ```
-🌟 Welcome to Aurora Portal!
+🌟 Welcome to Astryon Portal!
 
 URL: https://your-vercel-url.vercel.app
-Password: [your-password-from-step-1.3]
+Sign-in: [per your configured auth provider]
 
-Just visit the URL, enter the password, and start exploring!
+Just visit the URL, sign in, and start exploring!
 ```
 
 ---
 
 ## Troubleshooting
 
-### "Invalid password" error
-- Make sure you're entering the exact password from Step 1.3 (case-sensitive)
+### Can't sign in
+- Verify `NEXTAUTH_SECRET` and `NEXTAUTH_URL` match your deployment
 - Check Vercel environment variables are saved correctly
 
-### WebSocket not connecting
-- Verify `NEXT_PUBLIC_SERVER_URL` in Vercel matches your Railway URL
-- Check `CLIENT_URL` in Railway includes your Vercel URL
-- Look for CORS errors in browser console
+### AI responses fail
+- Verify `ANTHROPIC_API_KEY` is set in Vercel
+- Confirm you are signed in — `/api/chat` requires a session (401 otherwise)
 
-### Railway service not running
-- Check Railway dashboard - service should show "Active"
-- View logs in Railway to see any errors
+### Browser tries to reach an external server
+- Remove `NEXT_PUBLIC_SERVER_URL` from Vercel environment variables and redeploy
+- The production build gates the Socket.IO client off via `NODE_ENV === 'production'`; no external connection should appear in the network tab
+
+---
+
+## Local Development Only (not for production)
+
+The `server/` directory runs Express + Socket.IO for local development:
+
+```bash
+# Terminal 1 (from app/)
+npm run dev
+
+# Terminal 2 (from app/server/)
+npm run dev     # Express/Socket.IO on :3001
+```
+
+Local realtime needs `NEXT_PUBLIC_SERVER_URL=http://localhost:3001` in `app/.env.local` (default). Do not deploy `server/` for the beta.
 
 ---
 
 ## Quick Reference
 
-**Your URLs:**
+**Your URL:**
 - Frontend (Vercel): `https://your-app.vercel.app`
-- Backend (Railway): `https://your-server.railway.app`
 
-**Environment Variables:**
-
-Vercel:
+**Environment Variables (Vercel):**
 ```
-AURORA_PASSWORD=your-chosen-password
-AUTH_SECRET=iFDAbQTw8fA06e/aJPC7jKrAyiIfPNI/9ln//qjWFNk=
-NEXT_PUBLIC_SERVER_URL=https://your-railway-url
+GOOGLE_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
+NEXTAUTH_SECRET=<generated-secret>
+NEXTAUTH_URL=https://your-app.vercel.app
+DATABASE_URL=your-neondb-connection-string
 ANTHROPIC_API_KEY=your-api-key
-```
-
-Railway:
-```
-CLIENT_URL=http://localhost:3000,https://your-vercel-url
-PORT=3001
-ANTHROPIC_API_KEY=your-api-key
+RESEND_API_KEY=your-resend-api-key
+UPSTASH_REDIS_REST_URL=your-upstash-rest-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-rest-token
+ADMIN_EMAILS=admin@astryon.com
 ```
 
 ---
 
-**Total Time: ~15 minutes** ⏱️
+**Total Time: ~7 minutes** ⏱️
 
 Good luck! 🚀
