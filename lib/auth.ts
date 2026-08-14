@@ -222,9 +222,22 @@ export const authOptions: NextAuthOptions = {
       cookieStore.delete(INVITE_TICKET_COOKIE);
       return true;
     },
+    async jwt({ token, user }: any) {
+      // Initial sign-in: `user` is the freshly authenticated user row.
+      // Subsequent calls (session refresh / client update() trigger): re-check
+      // from the DB via the JWT subject so a config added/removed after sign-in
+      // is reflected without forcing a fresh login.
+      const userId = user?.id ?? token.sub;
+      if (userId) {
+        const config = await prisma.modelConfig.findUnique({ where: { userId } });
+        token.hasModelConfig = Boolean(config);
+      }
+      return token;
+    },
     async session({ session, token }: any) {
       if (session.user) {
         session.user.id = token.sub;
+        session.user.hasModelConfig = Boolean(token.hasModelConfig);
       }
       return session;
     },
