@@ -47,7 +47,7 @@ export async function safeAICall(
         ...params.messages,
       ],
       max_tokens: params.max_tokens,
-      temperature: params.temperature || 0.7,
+      temperature: params.temperature ?? 0.7,
     });
 
     return {
@@ -117,7 +117,7 @@ export function streamAICall(
               ...params.messages,
             ],
             max_tokens: params.max_tokens,
-            temperature: params.temperature || 0.7,
+            temperature: params.temperature ?? 0.7,
             stream: true,
           });
 
@@ -144,4 +144,3 @@ export function getTextFromAIResponse(response: any) {
   const textContent = response.content?.find((block: any) => block.type === 'text');
   return textContent && 'text' in textContent ? textContent.text : '';
 }
-

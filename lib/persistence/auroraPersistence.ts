@@ -25,6 +25,10 @@ export function buildAuroraSnapshot(state: {
 }
 
 export function serializeAuroraSnapshot(snapshot: AuroraPersistedSnapshot) {
+  if (!snapshot || typeof snapshot.universeLibrary !== 'object' || snapshot.universeLibrary === null) {
+    throw new Error('Astryon snapshot is missing a valid universe library');
+  }
+
   const serialized = JSON.stringify(snapshot);
 
   if (
@@ -32,7 +36,7 @@ export function serializeAuroraSnapshot(snapshot: AuroraPersistedSnapshot) {
     serialized === '{}' ||
     serialized === '{"universeLibrary":{},"activatedConversations":[]}'
   ) {
-    throw new Error('Serialized Aurora snapshot is empty or null');
+    throw new Error('Serialized Astryon snapshot is empty or null');
   }
 
   return serialized;
@@ -63,8 +67,15 @@ export function backupStoredLibrary() {
   const current = getStoredAuroraSnapshot();
 
   if (current && current !== 'null') {
-    localStorage.setItem(AURORA_BACKUP_KEY, current);
-    return true;
+    try {
+      const parsed = parseAuroraSnapshot(current);
+      if (parsed.universeLibrary && typeof parsed.universeLibrary === 'object') {
+        localStorage.setItem(AURORA_BACKUP_KEY, current);
+        return true;
+      }
+    } catch {
+      return false;
+    }
   }
 
   return false;
@@ -79,7 +90,7 @@ export function recoverStoredLibraryFromBackup() {
 
   try {
     const parsed = parseAuroraSnapshot(backup);
-    if (!parsed.universeLibrary) {
+    if (!parsed.universeLibrary || typeof parsed.universeLibrary !== 'object') {
       return { recovered: false, reason: 'Backup is corrupted (missing universeLibrary)' };
     }
   } catch {
@@ -92,21 +103,28 @@ export function recoverStoredLibraryFromBackup() {
 
 export function createDebouncedPersistence<T>(
   persistNow: (snapshot: T) => Promise<void> | void,
-  delayMs = 500
+  delayMs = 500,
+  onError: (error: unknown) => void = error => {
+    console.error('Astryon secondary persistence failed:', error);
+  }
 ) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendingSnapshot: T | null = null;
+
+  const persistPending = async () => {
+    if (!pendingSnapshot) return;
+    const snapshotToPersist = pendingSnapshot;
+    pendingSnapshot = null;
+    await persistNow(snapshotToPersist);
+  };
 
   return {
     schedule(snapshot: T) {
       pendingSnapshot = snapshot;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(async () => {
-        if (!pendingSnapshot) return;
-        const snapshotToPersist = pendingSnapshot;
-        pendingSnapshot = null;
+      timer = setTimeout(() => {
         timer = null;
-        await persistNow(snapshotToPersist);
+        void persistPending().catch(onError);
       }, delayMs);
     },
     async flush() {
@@ -114,15 +132,15 @@ export function createDebouncedPersistence<T>(
         clearTimeout(timer);
         timer = null;
       }
-      if (!pendingSnapshot) return;
-      const snapshotToPersist = pendingSnapshot;
-      pendingSnapshot = null;
-      await persistNow(snapshotToPersist);
+      await persistPending();
     },
     cancel() {
       if (timer) clearTimeout(timer);
       timer = null;
       pendingSnapshot = null;
+    },
+    hasPending() {
+      return pendingSnapshot !== null;
     },
   };
 }

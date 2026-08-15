@@ -114,7 +114,8 @@ function splitParagraphs(text: string) {
 function splitOversizedSection(section: { title: string; text: string }) {
   if (section.text.length <= MAX_CHARS) return [section];
 
-  const sentences = section.text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [section.text];
+  const sentences = (section.text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [section.text])
+    .flatMap(sentence => splitLongSegment(sentence.trim()));
   const chunks: Array<{ title: string; text: string }> = [];
   let current = '';
 
@@ -126,7 +127,7 @@ function splitOversizedSection(section: { title: string; text: string }) {
       });
       current = '';
     }
-    current += sentence;
+    current += `${current ? ' ' : ''}${sentence}`;
   }
 
   if (current.trim()) {
@@ -136,6 +137,24 @@ function splitOversizedSection(section: { title: string; text: string }) {
     });
   }
 
+  return chunks;
+}
+
+function splitLongSegment(text: string) {
+  if (text.length <= MAX_CHARS) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text.trim();
+
+  while (remaining.length > MAX_CHARS) {
+    const candidate = remaining.slice(0, TARGET_CHARS);
+    const lastWhitespace = candidate.lastIndexOf(' ');
+    const splitAt = lastWhitespace > TARGET_CHARS * 0.6 ? lastWhitespace : TARGET_CHARS;
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  if (remaining) chunks.push(remaining);
   return chunks;
 }
 

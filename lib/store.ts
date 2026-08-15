@@ -1341,7 +1341,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           return;
         }
       } catch (e) {
-        console.warn('⚠️ Could not parse existing data, proceeding with save');
+        if (Object.keys(state.universeLibrary).length === 0) {
+          console.error('❌ REFUSING TO SAVE: Existing storage is unreadable and the new library is empty');
+          return;
+        }
+        console.warn('⚠️ Existing storage is unreadable; replacing it with the non-empty in-memory library');
       }
     }
 
@@ -5780,4 +5784,19 @@ if (typeof window !== 'undefined' && (window as any).auroraDebug) {
     console.log('🛡️ Attempting to recover library from backup...');
     return useCanvasStore.getState().recoverFromBackup();
   };
+}
+
+if (typeof window !== 'undefined' && !(window as any).__astryonPersistenceFlushInstalled) {
+  (window as any).__astryonPersistenceFlushInstalled = true;
+  const flushSecondaryPersistence = () => {
+    if (!secondaryPersistence.hasPending()) return;
+    void secondaryPersistence.flush().catch(error => {
+      console.error('❌ Failed to flush Astryon secondary persistence:', error);
+    });
+  };
+
+  window.addEventListener('pagehide', flushSecondaryPersistence);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSecondaryPersistence();
+  });
 }
