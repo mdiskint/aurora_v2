@@ -27,7 +27,7 @@ export default function ChatPage() {
         height: '100vh',
         position: 'relative',
         background: '#000'
-      }}>
+        }}>
         {/* 3D Canvas */}
         <CanvasScene />
 

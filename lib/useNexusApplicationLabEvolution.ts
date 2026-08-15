@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { useCanvasStore } from './store';
+import { applicationLabSchema } from './ai/chatModeRegistry';
+import { parseAIJson } from './ai/json';
 
 /**
  * 🎓 APPLICATION LAB EVOLUTION - Hook to watch for completed nexuses and generate Application Labs
@@ -119,23 +121,12 @@ IMPORTANT: Return ONLY valid JSON, no additional text before or after.`
 
         console.log(`🎓 [useNexusApplicationLabEvolution] Received Application Lab response (${labResponse.length} chars)`);
 
-        // Parse the JSON response
         let applicationLabConfig;
         try {
-          // Try to extract JSON from the response (in case there's extra text)
-          const jsonMatch = labResponse.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            throw new Error('No JSON found in response');
-          }
-          applicationLabConfig = JSON.parse(jsonMatch[0]);
+          applicationLabConfig = parseAIJson(labResponse, applicationLabSchema);
         } catch (parseError) {
           console.error(`❌ [useNexusApplicationLabEvolution] Failed to parse JSON:`, parseError);
           throw new Error(`Failed to parse Application Lab JSON: ${parseError}`);
-        }
-
-        // Validate the structure
-        if (!applicationLabConfig.doctrineSummary || !Array.isArray(applicationLabConfig.scenarios) || !applicationLabConfig.finalEssayPrompt) {
-          throw new Error('Application Lab response missing required fields');
         }
 
         // Ensure scenario IDs are unique

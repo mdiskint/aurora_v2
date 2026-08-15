@@ -14,6 +14,11 @@ import {
 } from '@/lib/guidedPracticeHelpers';
 import { generateUniverseStudyGuide, UniverseDefinition } from '@/lib/studyGuideGenerator';
 import { StudyGuideWriteUp } from '@/lib/types';
+import {
+  buildNexusContext,
+  buildUniverseContext,
+  getSelectionActionKind,
+} from '@/lib/nexusActionHelpers';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -91,7 +96,9 @@ function VideoPlayer({ videoUrl, startTime, endTime }: {
       setVideoDuration(video.duration);
 
       // Debug: Check for audio tracks
-      const audioTracks = video.audioTracks;
+      const audioTracks = (video as HTMLVideoElement & {
+        audioTracks?: { length: number };
+      }).audioTracks;
       const hasAudio = audioTracks && audioTracks.length > 0;
       console.log('🎵 Video audio debug:', {
         hasAudioTracks: hasAudio,
@@ -449,7 +456,6 @@ export default function UnifiedNodeModal() {
   const deleteNode = useCanvasStore((state) => state.deleteNode);
   const addMessageToNode = useCanvasStore((state) => state.addMessageToNode);
   const updateMessageInNode = useCanvasStore((state) => state.updateMessageInNode);
-  const breakOffFromNode = useCanvasStore((state) => state.breakOffFromNode);
   const getNodeMessages = useCanvasStore((state) => state.getNodeMessages);
 
   // Delete confirmation state
@@ -472,7 +478,7 @@ export default function UnifiedNodeModal() {
   // Chat thread state
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [threadSelectedText, setThreadSelectedText] = useState('');
-  const [showBreakOffButton, setShowBreakOffButton] = useState(false);
+  const [markedThreadSections, setMarkedThreadSections] = useState<AtomizeMarkedSection[]>([]);
   const [noteMode, setNoteMode] = useState(false);
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
@@ -740,6 +746,8 @@ export default function UnifiedNodeModal() {
   const isExploreEditorMode = pathname === '/explore';
   const isThreadNode = node && !nexus && !node.isConnectionNode && !isExploreEditorMode;
   const threadMessages: ThreadMessage[] = isThreadNode ? getNodeMessages(node) : [];
+  const atomizeMarkedCount = isThreadNode ? markedThreadSections.length : atomizeMarkerSummary.sections.length;
+  const hasIncompleteAtomizeMarkers = !isThreadNode && atomizeMarkerSummary.incompleteMarkers > 0;
 
   // Auto-scroll thread to bottom when messages change
   const prevMessageCount = useRef(0);
@@ -749,6 +757,11 @@ export default function UnifiedNodeModal() {
     }
     prevMessageCount.current = threadMessages.length;
   }, [threadMessages.length]);
+
+  useEffect(() => {
+    setMarkedThreadSections([]);
+    setThreadSelectedText('');
+  }, [selectedId]);
 
   console.log('🎨 UnifiedNodeModal render:', {
     selectedId,
@@ -1158,7 +1171,19 @@ export default function UnifiedNodeModal() {
 
   const handleMarkAtomizeSelection = () => {
     const textarea = textareaRef.current;
-    if (!textarea || textarea.selectionStart === textarea.selectionEnd) return;
+    if (!textarea) {
+      if (!isThreadNode || !threadSelectedText.trim()) return;
+
+      const markerId = String(markedThreadSections.length + 1);
+      setMarkedThreadSections(current => [...current, { markerId, text: threadSelectedText.trim() }]);
+      setThreadSelectedText('');
+      setSelectedContentText('');
+      window.getSelection()?.removeAllRanges();
+      showToastNotification(`Marked section ${markerId} for atomizing`);
+      return;
+    }
+
+    if (textarea.selectionStart === textarea.selectionEnd) return;
 
     const markerId = getNextAtomizeMarkerId(textarea.value);
     insertAtomizeTextAtSelection(
@@ -1171,6 +1196,41 @@ export default function UnifiedNodeModal() {
   const handleAtomizeMarkedSections = () => {
     const parentId = node ? node.id : nexus?.id;
     if (!parentId) return;
+
+    if (isThreadNode) {
+      if (markedThreadSections.length === 0) {
+        showToastNotification('Mark at least one section before atomizing');
+        return;
+      }
+
+      const newNodeIds = addNodes(markedThreadSections.map(section => ({
+        content: section.text,
+        parentId,
+        nodeType: 'user-reply' as NodeType,
+      })));
+
+      newNodeIds.forEach((newNodeId, index) => {
+        const section = markedThreadSections[index];
+        if (section) {
+          addAtomizedRange(parentId, section.text, newNodeId);
+        }
+      });
+
+      setMarkedThreadSections([]);
+      setThreadSelectedText('');
+      setSelectedContentText('');
+      showToastNotification(`Atomized ${newNodeIds.length} marked section${newNodeIds.length === 1 ? '' : 's'} into child nodes`);
+
+      selectNode(null, false);
+
+      if (newNodeIds.length > 0) {
+        const targetNodeId = newNodeIds[0];
+        setTimeout(() => {
+          selectNode(targetNodeId, true);
+        }, 4000);
+      }
+      return;
+    }
 
     const currentValue = textareaRef.current?.value || editedContent || displayContent || '';
     const { sections, cleanContent, incompleteMarkers } = parseAtomizeMarkedSections(currentValue);
@@ -1298,13 +1358,27 @@ export default function UnifiedNodeModal() {
     return elements;
   };
 
-  // 💬 USER REPLY - Now adds message to in-node thread instead of creating child node
+  // 💬 USER REPLY - Nexus replies create children; node replies stay in-thread
   const handleUserReply = () => {
-    if (!inputContent.trim() || !selectedId || !node) return;
+    const actionKind = getSelectionActionKind(node, nexus);
+    if (!inputContent.trim() || !selectedId || actionKind === 'none') return;
 
     const content = quotedText
       ? `> ${quotedText}\n\n${inputContent.trim()}`
       : inputContent.trim();
+
+    if (actionKind === 'nexus-child') {
+      const newNodeId = addNode(content, selectedId, quotedText || undefined, 'user-reply');
+      useCanvasStore.getState().saveCurrentUniverse();
+      setInputContent('');
+      setActionMode(null);
+      setQuotedText(null);
+
+      setTimeout(() => selectNode(newNodeId, true), 150);
+      return;
+    }
+
+    if (!node) return;
 
     // Initialize thread if this is a legacy node (no messages yet)
     if (!node.messages || node.messages.length === 0) {
@@ -1321,70 +1395,96 @@ export default function UnifiedNodeModal() {
     setQuotedText(null);
   };
 
-  // 🤖 ASK AI - Now adds messages to in-node thread instead of creating child node
+  // 🤖 ASK AI - Nexus questions create AI children; node questions stay in-thread
   const handleAskAI = async () => {
-    if (!inputContent.trim() || !selectedId || !node) return;
+    const actionKind = getSelectionActionKind(node, nexus);
+    if (!inputContent.trim() || !selectedId || actionKind === 'none') return;
 
     setIsLoadingAI(true);
 
     try {
       const userQuestion = inputContent.trim();
-      const contextContent = displayContent || '';
+      const contextContent = actionKind === 'nexus-child' && nexus
+        ? buildNexusContext(nexus, nodes)
+        : displayContent || '';
+      const universeSnapshot = buildUniverseContext(nexuses, nodes);
+      let threadContext = '';
+      let useSearch = false;
 
-      // Initialize thread if this is a legacy node (no messages yet)
-      if (!node.messages || node.messages.length === 0) {
-        if (node.content) {
-          const role = node.isAI || node.nodeType === 'ai-response' ? 'assistant' as const : 'user' as const;
-          addMessageToNode(selectedId, { role, content: node.content });
+      if (actionKind === 'node-thread' && node) {
+        // Initialize thread if this is a legacy node (no messages yet)
+        if (!node.messages || node.messages.length === 0) {
+          if (node.content) {
+            const role = node.isAI || node.nodeType === 'ai-response' ? 'assistant' as const : 'user' as const;
+            addMessageToNode(selectedId, { role, content: node.content });
+          }
         }
+
+        addMessageToNode(selectedId, { role: 'user', content: userQuestion });
+
+        const currentNode = useCanvasStore.getState().nodes[selectedId];
+        threadContext = (currentNode?.messages || [])
+          .map(m => `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'AI' : 'Note'}: ${m.content}`)
+          .join('\n\n');
+
+        // Deeper node questions can supplement the universe with web search.
+        let askDepth = 1;
+        let walkAskId: string | undefined = node.parentId;
+        const nexusIdsForAsk = new Set(nexuses.map(n => n.id));
+        while (walkAskId && !nexusIdsForAsk.has(walkAskId) && nodes[walkAskId]) {
+          askDepth++;
+          walkAskId = nodes[walkAskId].parentId;
+        }
+        useSearch = askDepth >= 2;
+        console.log(`🔍 Ask AI: node depth=${askDepth}, useSearch=${useSearch}`);
       }
 
-      // Add user message to thread
-      addMessageToNode(selectedId, { role: 'user', content: userQuestion });
-
-      // Build full universe context so AI can search across all nodes
-      const universeContext: string[] = [];
-      nexuses.forEach(nex => {
-        universeContext.push(`[Nexus: ${nex.title}]\n${nex.content}`);
-        const children = Object.values(nodes).filter(n => n.parentId === nex.id);
-        children.forEach(child => {
-          universeContext.push(`  [Node: ${child.title || child.id}]\n  ${child.content.substring(0, 500)}`);
-        });
-      });
-      const universeSnapshot = universeContext.join('\n\n');
-
-      // Build thread context for AI
-      const currentNode = useCanvasStore.getState().nodes[selectedId];
-      const threadContext = (currentNode?.messages || [])
-        .map(m => `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Claude' : 'Note'}: ${m.content}`)
-        .join('\n\n');
-
-      // Calculate node depth to decide if we should use web search
-      let askDepth = 1;
-      let walkAskId: string | undefined = node?.parentId;
-      const nexusIdsForAsk = new Set(nexuses.map(n => n.id));
-      while (walkAskId && !nexusIdsForAsk.has(walkAskId) && nodes[walkAskId]) {
-        askDepth++;
-        walkAskId = nodes[walkAskId].parentId;
-      }
-      const useSearch = askDepth >= 2;
-      console.log(`🔍 Ask AI: node depth=${askDepth}, useSearch=${useSearch}`);
-
-      const fullPrompt = `You have access to the user's full conversation universe and the current in-node conversation thread.
+      const fullPrompt = `You have access to the user's full conversation universe${actionKind === 'node-thread' ? ' and the current in-node conversation thread' : ''}.
 
 === FULL UNIVERSE ===
 ${universeSnapshot}
 
-=== CURRENT NODE CONTENT ===
+=== CURRENT SELECTION CONTENT ===
 ${contextContent}
 
-=== CONVERSATION THREAD ===
-${threadContext}
-
+${threadContext ? `=== CONVERSATION THREAD ===\n${threadContext}\n` : ''}
 === USER QUESTION ===
 ${userQuestion}
 
 Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.${useSearch ? ' If the universe lacks sufficient information, use web search results to supplement your answer with real-world facts, citations, or current developments.' : ''}`;
+
+      if (actionKind === 'nexus-child') {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: fullPrompt }],
+            mode: 'standard',
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get AI response');
+
+        const data = await response.json();
+        const answer = String(data.response || data.content || '').trim();
+        if (!answer) throw new Error('AI returned an empty response');
+
+        const aiNodeId = addNode(
+          `Question: ${userQuestion}\n\nAnswer: ${answer}`,
+          selectedId,
+          undefined,
+          'ai-response',
+          undefined,
+          [{ kind: 'ai-generated', sourceNodeId: selectedId }]
+        );
+        useCanvasStore.getState().saveCurrentUniverse();
+        setInputContent('');
+        setActionMode(null);
+        setIsLoadingAI(false);
+
+        setTimeout(() => selectNode(aiNodeId, true), 150);
+        return;
+      }
 
       // Create placeholder AI message for streaming
       const aiMessageId = addMessageToNode(selectedId, { role: 'assistant', content: '' });
@@ -1728,8 +1828,10 @@ Be conversational and human, not formulaic.`;
     setIsLoadingAI(true);
 
     try {
-      // Use displayContent to get all connected nodes' content for connection nodes
-      const contextContent = displayContent;
+      // Nexus quizzes cover the nexus itself and every descendant node.
+      const contextContent = nexus
+        ? buildNexusContext(nexus, nodes)
+        : displayContent;
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -1830,6 +1932,13 @@ Be conversational and human, not formulaic.`;
       // For quiz mode: Get grading feedback
       // For deep-thinking mode: Get next question
       const isQuizMode = explorationMode === 'quiz';
+      const quizRootNexus = nexuses.find(candidate => candidate.id === socraticRootId);
+      const quizRootNode = nodes[socraticRootId];
+      const quizSourceContext = quizRootNexus
+        ? buildNexusContext(quizRootNexus, nodes)
+        : quizRootNode?.isConnectionNode
+          ? displayContent
+          : quizRootNode?.content || displayContent;
       console.log(`🤖 Requesting ${isQuizMode ? 'quiz grading' : 'next question'} from AI...`);
 
       const response = await fetch('/api/chat', {
@@ -1845,6 +1954,7 @@ Be conversational and human, not formulaic.`;
           }],
           mode: isQuizMode ? 'quiz' : explorationMode === 'deep-thinking' ? 'deep-thinking' : 'socratic',
           explorationMode,
+          conversationContext: isQuizMode ? quizSourceContext : undefined,
           conversationHistory: explorationMode === 'deep-thinking' ? deepThinkingHistory : undefined  // Pass history for progressive depth
         }),
       });
@@ -1907,6 +2017,7 @@ Be conversational and human, not formulaic.`;
         const quizNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n${feedback}`;
         console.log('📝 Creating quiz answer node with feedback...');
         addNode(quizNode, socraticRootId);
+        useCanvasStore.getState().saveCurrentUniverse();
 
         // Keep modal open to show feedback
         setTimeout(() => {
@@ -1958,6 +2069,7 @@ Be conversational and human, not formulaic.`;
         const exchangeNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n💡 ${engagement}`;
         console.log('📝 Creating deep thinking exchange node...');
         addNode(exchangeNode, socraticRootId);
+        useCanvasStore.getState().saveCurrentUniverse();
 
         // Keep modal open to show engagement
         setTimeout(() => {
@@ -2005,7 +2117,7 @@ Be conversational and human, not formulaic.`;
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: displayContent  // Send content directly
+            content: nexus ? buildNexusContext(nexus, nodes) : displayContent
           }],
           mode: 'quiz',
           explorationMode: 'quiz',
@@ -2069,30 +2181,6 @@ Be conversational and human, not formulaic.`;
   };
 
   // 📝 MULTIPLE CHOICE QUIZ
-  // Gather all descendant content from a nexus or connection node
-  const gatherUniverseContent = (rootId: string): string => {
-    const parts: string[] = [];
-    const visited = new Set<string>();
-
-    const collectChildren = (nodeId: string) => {
-      if (visited.has(nodeId)) return;
-      visited.add(nodeId);
-      const n = nodes[nodeId];
-      if (!n) return;
-      if (n.content) parts.push(n.content);
-      if (n.children) n.children.forEach(collectChildren);
-    };
-
-    // Collect from all nodes whose parentId matches rootId
-    Object.values(nodes).forEach(n => {
-      if (n.parentId === rootId && !visited.has(n.id)) {
-        collectChildren(n.id);
-      }
-    });
-
-    return parts.join('\n\n---\n\n');
-  };
-
   const handleStartMultipleChoice = async () => {
     if (!selectedId) return;
 
@@ -2101,11 +2189,11 @@ Be conversational and human, not formulaic.`;
     setIsLoadingAI(true);
 
     try {
-      // Nexus or connection node → quiz on all children; regular node → quiz on just that node
+      // Nexus → quiz on the root and all descendants; regular node → just that node
       let contextContent: string;
       if (nexus) {
-        console.log('📝 Quiz from NEXUS — gathering all child content');
-        contextContent = gatherUniverseContent(nexus.id);
+        console.log('📝 Quiz from NEXUS — gathering root and descendant content');
+        contextContent = buildNexusContext(nexus, nodes);
       } else if (node?.isConnectionNode) {
         console.log('📝 Quiz from CONNECTION NODE — gathering all connected content');
         contextContent = displayContent || '';
@@ -2263,6 +2351,7 @@ Be conversational and human, not formulaic.`;
 
     console.log('📝 Creating MC answer node...');
     addNode(mcAnswerNode, socraticRootId);
+    useCanvasStore.getState().saveCurrentUniverse();
 
     setMcAnswered(true);
 
@@ -2383,7 +2472,7 @@ Be conversational and human, not formulaic.`;
         // No next sibling - return to the nexus
         // Find the nexus by traversing up the tree
         let currentId: string | undefined = node.parentId;
-        let foundNexus = null;
+        let foundNexus: (typeof nexuses)[number] | undefined;
 
         while (currentId) {
           foundNexus = nexuses.find(n => n.id === currentId);
@@ -2595,24 +2684,9 @@ Be conversational and human, not formulaic.`;
     const selection = window.getSelection();
     const highlighted = selection?.toString().trim() || '';
     setThreadSelectedText(highlighted);
-    setShowBreakOffButton(!!highlighted);
 
     // Also track for atomize
     setSelectedContentText(highlighted);
-  };
-
-  // ✂️ BREAK OFF - Create child node from selected thread text
-  const handleBreakOff = () => {
-    if (!threadSelectedText || !selectedId) return;
-
-    const newNodeId = breakOffFromNode(selectedId, threadSelectedText);
-    setThreadSelectedText('');
-    setShowBreakOffButton(false);
-
-    // Navigate to the new node
-    setTimeout(() => {
-      selectNode(newNodeId, true);
-    }, 300);
   };
 
   // Don't show if nothing selected or overlay is hidden
@@ -2736,20 +2810,20 @@ Be conversational and human, not formulaic.`;
                     </button>
                     <button
                       onClick={handleAtomizeMarkedSections}
-                      disabled={atomizeMarkerSummary.sections.length === 0 || atomizeMarkerSummary.incompleteMarkers > 0}
+                      disabled={atomizeMarkedCount === 0 || hasIncompleteAtomizeMarkers}
                       className={`px-3 py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-xs
-                        ${atomizeMarkerSummary.sections.length > 0 && atomizeMarkerSummary.incompleteMarkers === 0
+                        ${atomizeMarkedCount > 0 && !hasIncompleteAtomizeMarkers
                           ? 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'
                           : 'bg-slate-800/40 border-2 border-slate-700 text-slate-500 cursor-not-allowed'}`}
                       title={
-                        atomizeMarkerSummary.incompleteMarkers > 0
+                        hasIncompleteAtomizeMarkers
                           ? 'Finish each marked section with matching begin and end markers'
-                          : atomizeMarkerSummary.sections.length > 0
+                          : atomizeMarkedCount > 0
                             ? 'Create one child node for each marked section'
                             : 'Add begin/end markers before atomizing'
                       }
                     >
-                      ⚛️ Atomize Marked ({atomizeMarkerSummary.sections.length})
+                      ⚛️ Atomize Marked ({atomizeMarkedCount})
                     </button>
                   </div>
                 )}
@@ -2827,16 +2901,9 @@ Be conversational and human, not formulaic.`;
                     <div ref={threadEndRef} />
                   </div>
 
-                  {/* Break-off button - appears when text is selected in thread */}
-                  {showBreakOffButton && threadSelectedText && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleBreakOff}
-                        className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50
-                                 text-amber-300 rounded-lg transition-all text-sm font-medium flex items-center gap-2"
-                      >
-                        ✂️ Break Off Selection into New Node
-                      </button>
+                  {markedThreadSections.length > 0 && (
+                    <div className="mt-3 text-center text-xs text-amber-300">
+                      {markedThreadSections.length} marked section{markedThreadSections.length === 1 ? '' : 's'} ready
                     </div>
                   )}
                 </div>
@@ -2873,7 +2940,7 @@ Be conversational and human, not formulaic.`;
                     <div className="space-y-6">
                       {/* Doctrine Summary */}
                       <div>
-                        <h3 className="text-lg font-semibold text-yellow-300 mb-3">📚 What You've Learned</h3>
+                        <h3 className="text-lg font-semibold text-yellow-300 mb-3">📚 What You&apos;ve Learned</h3>
                         <div className="text-gray-200 text-base leading-relaxed whitespace-pre-wrap">
                           {nexus.applicationLabConfig.doctrineSummary}
                         </div>
@@ -3605,7 +3672,7 @@ Be conversational and human, not formulaic.`;
 
                     {/* Node content preview */}
                     <div className="p-3 bg-purple-900/20 border-l-4 border-purple-500 rounded text-sm text-gray-300 mb-4 max-h-24 overflow-auto">
-                      "{node.content.slice(0, 150)}{node.content.length > 150 ? '...' : ''}"
+                      &ldquo;{node.content.slice(0, 150)}{node.content.length > 150 ? '...' : ''}&rdquo;
                     </div>
 
                     {/* Children warning */}
@@ -4139,7 +4206,7 @@ Be conversational and human, not formulaic.`;
                       </div>
                       <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                         <p className="text-sm text-blue-200">
-                          💡 <strong>Tip:</strong> Study this pattern carefully - you'll apply it in the next step.
+                          💡 <strong>Tip:</strong> Study this pattern carefully - you&apos;ll apply it in the next step.
                         </p>
                       </div>
                     </div>
@@ -4243,7 +4310,7 @@ Be conversational and human, not formulaic.`;
                       <h3 className="text-lg font-semibold text-purple-300">📝 Test Your Understanding</h3>
                       <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
                         <p className="text-sm text-purple-200">
-                          Click the button below to take the quiz for this section. You'll return here when complete.
+                          Click the button below to take the quiz for this section. You&apos;ll return here when complete.
                         </p>
                       </div>
                       <button

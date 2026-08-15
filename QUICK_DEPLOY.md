@@ -1,4 +1,4 @@
-# Quick Deployment Guide - Aurora Portal
+# Quick Deployment Guide - Astryon
 
 Your code is already pushed to GitHub! Now just follow these steps to deploy.
 
@@ -33,7 +33,7 @@ Click **"Environment Variables"** and add these **4 variables**:
 ### 1.4 Deploy
 1. Click **"Deploy"**
 2. Wait 2-3 minutes for deployment
-3. **Copy your Vercel URL** (e.g., `https://aurora-v2-xxx.vercel.app`)
+3. **Copy your Vercel URL** (for example, the preview URL Vercel creates for the project)
 4. **Save this URL** - you'll need it!
 
 ---
@@ -66,7 +66,7 @@ Go to **"Variables"** tab and add these **3 variables**:
 ### 2.4 Generate Domain
 1. Go to **"Settings"** → **"Networking"**
 2. Click **"Generate Domain"**
-3. **Copy the Railway URL** (e.g., `https://aurora-server-production.up.railway.app`)
+3. **Copy the Railway URL** created for the Astryon WebSocket service
 4. **Save this URL** - you need it for the next step!
 
 ---
@@ -109,7 +109,7 @@ Go to **"Variables"** tab and add these **3 variables**:
 Send your users:
 
 ```
-🌟 Welcome to Aurora Portal!
+🌟 Welcome to Astryon!
 
 URL: https://your-vercel-url.vercel.app
 Password: [your-password-from-step-1.3]

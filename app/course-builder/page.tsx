@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useCanvasStore } from '@/lib/store';
 import { MCQ, ShortAnswer, ApplicationEssay, NodeType } from '@/lib/types';
 import { upload } from '@vercel/blob/client';
+import { applicationEssaySchema } from '@/lib/ai/chatModeRegistry';
+import { parseAIJson } from '@/lib/ai/json';
 
 interface SectionQuestions {
   mcqs: MCQ[];
@@ -171,27 +173,9 @@ export default function CourseBuilderPage() {
       const data = await response.json();
       console.log('📚 Atomization response:', data);
 
-      // Clean and parse JSON
-      const cleanJsonString = (str: string): string => {
-        let cleaned = str.trim();
-        if (cleaned.startsWith('```json')) {
-          cleaned = cleaned.substring(7);
-        } else if (cleaned.startsWith('```')) {
-          cleaned = cleaned.substring(3);
-        }
-        if (cleaned.endsWith('```')) {
-          cleaned = cleaned.substring(0, cleaned.length - 3);
-        }
-        cleaned = cleaned.trim();
-        cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-        return cleaned;
-      };
-
       try {
-        const cleanedContent = cleanJsonString(data.message || data.response);
-        console.log('🧹 Cleaned atomization JSON (first 500 chars):', cleanedContent.substring(0, 500));
-
-        const blueprint = JSON.parse(cleanedContent) as AtomizationBlueprint;
+        const atomizationResponse = data.message || data.response || '';
+        const blueprint = parseAIJson<AtomizationBlueprint>(atomizationResponse);
 
         if (!blueprint.topic || !blueprint.doctrines || !Array.isArray(blueprint.doctrines)) {
           throw new Error('Invalid atomization blueprint structure');
@@ -551,42 +535,13 @@ export default function CourseBuilderPage() {
       const data = await response.json();
       console.log('📝 API response:', data);
 
-      // Helper function to strip markdown code blocks and fix common JSON issues
-      const cleanJsonString = (str: string): string => {
-        // Remove ```json or ``` wrappers if present
-        let cleaned = str.trim();
-        if (cleaned.startsWith('```json')) {
-          cleaned = cleaned.substring(7);
-        } else if (cleaned.startsWith('```')) {
-          cleaned = cleaned.substring(3);
-        }
-        if (cleaned.endsWith('```')) {
-          cleaned = cleaned.substring(0, cleaned.length - 3);
-        }
-        cleaned = cleaned.trim();
-
-        // Remove trailing commas before closing braces/brackets (common AI mistake)
-        cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
-
-        return cleaned;
-      };
-
-      // Parse the response (expecting JSON with question and rubric)
       try {
-        const cleanedContent = cleanJsonString(data.content);
-        console.log('🧹 Cleaned JSON content (first 500 chars):', cleanedContent.substring(0, 500));
-
-        const parsed = JSON.parse(cleanedContent);
-        if (parsed.question && parsed.rubric) {
-          setCourseData({ ...courseData, applicationEssay: parsed });
-          console.log('✅ Application essay generated successfully');
-        } else {
-          throw new Error('Invalid response format: missing question or rubric');
-        }
+        const parsed = parseAIJson<ApplicationEssay>(data.content || '', applicationEssaySchema);
+        setCourseData({ ...courseData, applicationEssay: parsed });
+        console.log('✅ Application essay generated successfully');
       } catch (parseError: any) {
         console.error('❌ Failed to parse application essay response:', parseError);
         console.error('❌ Raw content:', data.content);
-        console.error('❌ Cleaned content:', cleanJsonString(data.content));
         throw new Error(`Failed to parse AI response: ${parseError.message}`);
       }
     } catch (error) {
@@ -662,6 +617,14 @@ export default function CourseBuilderPage() {
           videoEnd: chunk.end,
           isLocked: false, // All nodes unlocked immediately
           title: `Section ${index + 1}`,
+          sources: [{
+            kind: 'video',
+            sourceTitle: courseData.title,
+            section: `Section ${index + 1}`,
+            timestampStart: chunk.start,
+            timestampEnd: chunk.end,
+            quotedText: sectionContent.slice(0, 500),
+          }],
           // Store questions in the node
           mcqQuestions: sectionQuestions?.mcqs || [],
           shortAnswerQuestions: sectionQuestions?.shortAnswers || [],
@@ -1299,8 +1262,8 @@ export default function CourseBuilderPage() {
                   <div>
                     <div className="font-bold text-cyan-300">Next: Generate Questions</div>
                     <div className="text-sm text-cyan-200/80 mt-1">
-                      Click "Generate Questions" to create {courseData.mcqCount} MCQs and {courseData.shortAnswerCount} short answer questions for each section using AI.
-                      You'll be able to review and edit all questions before finalizing the course.
+                      Click &quot;Generate Questions&quot; to create {courseData.mcqCount} MCQs and {courseData.shortAnswerCount} short answer questions for each section using AI.
+                      You&apos;ll be able to review and edit all questions before finalizing the course.
                     </div>
                   </div>
                 </div>

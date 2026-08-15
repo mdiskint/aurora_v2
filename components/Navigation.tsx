@@ -7,7 +7,7 @@ export default function Navigation() {
   const router = useRouter();
   const enableApplicationLabMode = useCanvasStore((state) => state.enableApplicationLabMode);
   const hasUniverse = useCanvasStore((state) => {
-    const activeUniverseId = state.activeUniverseId;
+    const activeUniverseId = state.activeUniverseId || state.activeUniverseIds[0];
     return activeUniverseId ? Object.keys(state.universeLibrary[activeUniverseId]?.nexuses || {}).length > 0 : false;
   });
   const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);

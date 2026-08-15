@@ -2,141 +2,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import { callGeminiFlash } from '@/lib/gemini';
 import { searchWeb } from '@/lib/search';
+import { breakOffUniverseSchema, getChatModeDefinition, intuitionQuestionSchema, spatialDataSchema } from '@/lib/ai/chatModeRegistry';
+import { getTextFromAIResponse, safeAICall, streamAICall } from '@/lib/ai/providers';
+import { parseAIJson } from '@/lib/ai/json';
 
 export const maxDuration = 300;
-
-const MODEL_CONFIG = {
-  high: { anthropic: 'claude-opus-4-7', openai: 'gpt-4o' },
-  mid: { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o' },
-  low: { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' },
-};
-
-async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const modelToUse = MODEL_CONFIG[complexity];
-
-  // Cache the system prompt — stable across requests in each mode, so repeat
-  // calls with the same mode read instead of re-paying full input cost.
-  // Silently no-ops when the prefix is below the model's cache minimum.
-  const systemBlocks = typeof params.system === 'string'
-    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
-    : params.system;
-
-  const currentParams = { ...params, system: systemBlocks, model: modelToUse.anthropic };
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      console.log(`🤖 Attempting Anthropic call (${complexity} tier: ${modelToUse.anthropic})...`);
-      const response = await anthropic.messages.create(currentParams);
-      if (response.usage) {
-        console.log(`💾 Cache: read=${response.usage.cache_read_input_tokens ?? 0} write=${response.usage.cache_creation_input_tokens ?? 0} input=${response.usage.input_tokens} output=${response.usage.output_tokens}`);
-      }
-      return response;
-    } catch (error: any) {
-      console.error('❌ Anthropic failed:', error.message);
-      if (!process.env.OPENAI_API_KEY) throw error;
-      console.log(`🔄 Fallback condition met, switching to OpenAI (${modelToUse.openai})...`);
-    }
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    console.log(`🚀 Executing OpenAI fallback (${modelToUse.openai})...`);
-    const completion = await openai.chat.completions.create({
-      model: modelToUse.openai,
-      messages: [
-        ...(params.system ? [{ role: "system", content: params.system }] : []),
-        ...params.messages
-      ],
-      max_tokens: params.max_tokens,
-      temperature: params.temperature || 0.7,
-    });
-
-    return {
-      content: [{ type: 'text', text: completion.choices[0].message.content || '' }]
-    };
-  }
-
-  throw new Error('No valid AI provider key available');
-}
-
-function buildAnthropicParams(params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const modelToUse = MODEL_CONFIG[complexity];
-  const systemBlocks = typeof params.system === 'string'
-    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
-    : params.system;
-
-  return { ...params, system: systemBlocks, model: modelToUse.anthropic };
-}
-
-function getOpenAISystemContent(system: any) {
-  if (!system) return '';
-  if (typeof system === 'string') return system;
-  if (Array.isArray(system)) {
-    return system.map((block) => block?.text || '').filter(Boolean).join('\n\n');
-  }
-  return String(system);
-}
-
-function streamAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const encoder = new TextEncoder();
-  const modelToUse = MODEL_CONFIG[complexity];
-
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        if (process.env.ANTHROPIC_API_KEY) {
-          try {
-            console.log(`🌊 Streaming Anthropic response (${complexity} tier: ${modelToUse.anthropic})...`);
-            const stream = anthropic.messages.stream(buildAnthropicParams(params, complexity));
-
-            for await (const event of stream as any) {
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-                controller.enqueue(encoder.encode(event.delta.text));
-              }
-            }
-
-            controller.close();
-            return;
-          } catch (error: any) {
-            console.error('❌ Anthropic stream failed:', error.message);
-            if (!process.env.OPENAI_API_KEY) throw error;
-            console.log(`🔄 Streaming fallback to OpenAI (${modelToUse.openai})...`);
-          }
-        }
-
-        if (process.env.OPENAI_API_KEY) {
-          const systemContent = getOpenAISystemContent(params.system);
-          const completion = await openai.chat.completions.create({
-            model: modelToUse.openai,
-            messages: [
-              ...(systemContent ? [{ role: 'system' as const, content: systemContent }] : []),
-              ...params.messages,
-            ],
-            max_tokens: params.max_tokens,
-            temperature: params.temperature || 0.7,
-            stream: true,
-          });
-
-          for await (const chunk of completion) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) {
-              controller.enqueue(encoder.encode(text));
-            }
-          }
-
-          controller.close();
-          return;
-        }
-
-        throw new Error('No valid AI provider key available');
-      } catch (error: any) {
-        controller.error(error);
-      }
-    },
-  });
-}
 
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
@@ -203,6 +76,13 @@ export async function POST(request: NextRequest) {
         { error: 'Message cannot be empty' },
         { status: 400 }
       );
+    }
+
+    const modeDefinition = getChatModeDefinition(mode);
+    if (mode && !modeDefinition) {
+      console.warn(`⚠️ Unknown chat mode received: ${mode}`);
+    } else if (modeDefinition && !modeDefinition.implemented) {
+      console.warn(`⚠️ Chat mode ${mode} is registered but not implemented in this route`);
     }
 
     // 🌌 SPATIAL MODE: Explicitly triggered by mode parameter
@@ -289,7 +169,7 @@ ${input}`;
       }
 
       // Preprocess the input before parsing (skip for atomize — always use AI mode)
-      let userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
+      const userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
 
       console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
 
@@ -447,50 +327,12 @@ IMPORTANT:
 
       console.log('✅ Got response from Claude');
 
-      const textContent = response.content.find((block) => block.type === 'text');
-      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+      const rawResponse = getTextFromAIResponse(response);
 
       console.log('📝 Raw AI response:', rawResponse);
 
       try {
-        // Sanitize JSON: Try parsing as-is first, then with cleanup if needed
-        // Updated: Fixed regex pattern for newline handling
-        let spatialData;
-        try {
-          spatialData = JSON.parse(rawResponse);
-        } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
-
-          // Extract JSON from markdown code blocks if present
-          let cleanedResponse = rawResponse.trim();
-          if (cleanedResponse.startsWith('```json')) {
-            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
-          } else if (cleanedResponse.startsWith('```')) {
-            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
-          }
-
-          // 🔥 FIX: Sanitize literal newlines in JSON strings
-          // Replace literal newlines inside JSON string values with escaped \n
-          console.log('🧹 Sanitizing literal newlines in JSON...');
-
-          // Strategy: Replace newlines inside quoted strings only
-          // Use a more robust regex that handles newlines within strings
-          cleanedResponse = cleanedResponse.replace(
-            /"((?:[^"\\]|\\.)*)"/g,  // Match string values with proper escaping
-            (match) => {
-              return match
-                .replace(/\r\n/g, '\\n')  // Windows line endings
-                .replace(/\n/g, '\\n')    // Unix line endings
-                .replace(/\r/g, '\\n')    // Old Mac line endings
-                .replace(/\t/g, '\\t');   // Tabs
-            }
-          );
-
-          console.log('🧹 Cleaned response (first 500 chars):', cleanedResponse.substring(0, 500));
-
-          // Parse the cleaned response
-          spatialData = JSON.parse(cleanedResponse);
-        }
+        const spatialData = parseAIJson(rawResponse, spatialDataSchema);
 
         console.log('✅ Successfully parsed spatial JSON:', spatialData);
 
@@ -591,38 +433,12 @@ IMPORTANT:
 
       console.log('✅ Got response from Claude for break-off');
 
-      const textContent = response.content.find((block) => block.type === 'text');
-      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+      const rawResponse = getTextFromAIResponse(response);
 
       console.log('📝 Raw AI response:', rawResponse);
 
       try {
-        let newUniverse;
-        try {
-          newUniverse = JSON.parse(rawResponse);
-        } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
-
-          let cleanedResponse = rawResponse.trim();
-          if (cleanedResponse.startsWith('```json')) {
-            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
-          } else if (cleanedResponse.startsWith('```')) {
-            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
-          }
-
-          cleanedResponse = cleanedResponse.replace(
-            /"((?:[^"\\]|\\.)*)"/g,
-            (match) => {
-              return match
-                .replace(/\r\n/g, '\\n')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\n')
-                .replace(/\t/g, '\\t');
-            }
-          );
-
-          newUniverse = JSON.parse(cleanedResponse);
-        }
+        const newUniverse = parseAIJson(rawResponse, breakOffUniverseSchema);
 
         console.log('✅ Successfully parsed break-off universe:', newUniverse);
 
@@ -1375,12 +1191,11 @@ Return ONLY valid JSON, no other text.`;
         messages: [{ role: 'user', content: intuitionPrompt }],
       });
 
-      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      const rawResponse = getTextFromAIResponse(response);
       console.log('💡 Intuition question generated');
 
-      // Parse JSON from response
       try {
-        const parsed = JSON.parse(rawResponse);
+        const parsed = parseAIJson(rawResponse, intuitionQuestionSchema);
         return NextResponse.json({ response: parsed });
       } catch {
         console.error('Failed to parse intuition question JSON:', rawResponse);
@@ -1501,6 +1316,14 @@ Remember: Return ONLY the JSON object, nothing else.`,
       console.log('✍️ User answer:', userAnswer.substring(0, 50) + '...');
 
       const gradingPrompt = `You are a knowledgeable educator grading a student's answer.
+
+${conversationContext ? `Source material for this quiz:
+"""
+${conversationContext}
+"""
+
+Treat the source material as the ground truth for this quiz, including any product-specific, fictional, or course-specific concepts it defines.
+` : ''}
 
 Question: "${question}"
 Student's Answer: "${userAnswer}"

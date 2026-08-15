@@ -762,7 +762,7 @@ export default function MemoriesPage() {
 
             <p style={{ color: '#E5E7EB', marginBottom: '24px' }}>
               Restore your universes from an automatic backup snapshot.
-              Aurora creates backups every 5 saves.
+              Astryon creates backups every 5 saves.
             </p>
 
             {backups.length === 0 ? (
@@ -932,7 +932,7 @@ export default function MemoriesPage() {
                       fontSize: '14px',
                       marginBottom: '16px'
                     }}>
-                      📁 All new universes will be saved in the <strong>"Atomized"</strong> folder.
+                      📁 All new universes will be saved in the <strong>&ldquo;Atomized&rdquo;</strong> folder.
                     </p>
 
                     <p style={{ color: '#9CA3AF', fontSize: '14px' }}>

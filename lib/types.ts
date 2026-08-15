@@ -37,12 +37,25 @@ export interface ApplicationEssay {
   rubric: string;
 }
 
+export type SourceReference = {
+  kind: 'document' | 'video' | 'conversation' | 'manual' | 'ai-generated';
+  sourceTitle?: string;
+  fileName?: string;
+  pageNumber?: number;
+  section?: string;
+  timestampStart?: number;
+  timestampEnd?: number;
+  quotedText?: string;
+  sourceNodeId?: string;
+};
+
 export interface Node {
   id: string;
   position: [number, number, number];
   title: string;
   content: string;
   quotedText?: string;
+  sources?: SourceReference[];
   parentId: string;
   children: string[];
   audioUrl?: string;

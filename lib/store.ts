@@ -1,23 +1,61 @@
 import { create } from 'zustand';
-import { Node, NodeType, ThreadMessage, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
+import {
+  Node,
+  NodeType,
+  SourceReference,
+  ThreadMessage,
+  ApplicationEssay,
+  UniverseRun,
+  StudyGuideWriteUp,
+} from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
 import { transformConversation, transformHighlightImport, HighlightImportData } from './conversationTransformer';
 import { calculateL1Position, calculateL2Position, calculateMetaPosition, validatePosition } from './nodePositioning';
+import { universeAnalysisSchema } from './ai/chatModeRegistry';
+import { parseAIJson } from './ai/json';
+import {
+  AURORA_STORAGE_KEY,
+  backupStoredLibrary,
+  buildAuroraSnapshot,
+  createDebouncedPersistence,
+  getStoredAuroraSnapshot,
+  parseAuroraSnapshot,
+  recoverStoredLibraryFromBackup,
+  serializeAuroraSnapshot,
+  wouldOverwriteExistingLibraryWithEmpty,
+  writeStoredAuroraSnapshot,
+} from './persistence/auroraPersistence';
+
+const secondaryPersistence = createDebouncedPersistence(async (snapshot: {
+  universeLibrary: Record<string, any>;
+  backupSnapshot: any;
+  shouldCreateBackup: boolean;
+}) => {
+  for (const [id, universeData] of Object.entries(snapshot.universeLibrary)) {
+    await saveUniverse(id, universeData);
+    await saveToCloud(id, universeData, universeData.nexuses[0]?.videoUrl);
+  }
+
+  if (snapshot.shouldCreateBackup) {
+    await createBackup(snapshot.backupSnapshot, 'auto');
+  }
+}, 500);
+
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
   (window as any).auroraDebug = {
     showLibrary: () => {
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data) {
         console.log('📚 No aurora-portal-data found in localStorage');
         return;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       const library = parsed.universeLibrary || {};
       console.log('📚 ==========================================');
-      console.log('📚 AURORA LIBRARY');
+      console.log('📚 ASTRYON LIBRARY');
       console.log('📚   Total universes:', Object.keys(library).length);
       console.table(Object.entries(library).map(([id, data]: any) => ({
         id: id.substring(0, 20) + '...',
@@ -34,12 +72,12 @@ if (typeof window !== 'undefined') {
       console.log('📁 FOLDER DIAGNOSTICS');
 
       // Check localStorage
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data) {
         console.log('📁 ❌ No aurora-portal-data found in localStorage');
         return;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       const foldersInStorage = parsed.folders || {};
       console.log('📁 Folders in localStorage:', Object.keys(foldersInStorage).length);
       Object.entries(foldersInStorage).forEach(([id, folder]: any) => {
@@ -60,7 +98,7 @@ if (typeof window !== 'undefined') {
       return { storage: foldersInStorage, state: store?.getState().folders };
     },
     clearLibrary: () => {
-      localStorage.removeItem('aurora-portal-data');
+      localStorage.removeItem(AURORA_STORAGE_KEY);
       console.log('🗑️ Library cleared from localStorage');
     },
     recoverLibrary: () => {
@@ -104,25 +142,25 @@ if (typeof window !== 'undefined') {
       console.log('   Try refreshing the page or check back in a moment');
     },
     dumpRaw: () => {
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data) {
         console.log('No data found');
         return null;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       console.log('Raw aurora-portal-data:', parsed);
       return parsed;
     },
     checkNow: () => {
       console.log('🔍 ==========================================');
       console.log('🔍 DIAGNOSTIC CHECK:', new Date().toLocaleTimeString());
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data || data === 'null') {
         console.log('🔍 ❌ NO DATA IN LOCALSTORAGE!');
         console.log('🔍 ==========================================');
         return null;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       const universeCount = Object.keys(parsed.universeLibrary || {}).length;
       console.log('🔍 ✅ Data exists:', universeCount, 'universes');
       console.log('🔍 Data size:', (data.length / 1024).toFixed(2), 'KB');
@@ -133,9 +171,9 @@ if (typeof window !== 'undefined') {
     watchChanges: () => {
       console.log('👁️ STARTING LOCALSTORAGE WATCH MODE');
       console.log('👁️ Will log all changes to aurora-portal-data');
-      let lastValue = localStorage.getItem('aurora-portal-data');
+      let lastValue = getStoredAuroraSnapshot();
       const interval = setInterval(() => {
-        const currentValue = localStorage.getItem('aurora-portal-data');
+        const currentValue = getStoredAuroraSnapshot();
         if (currentValue !== lastValue) {
           console.log('🚨 ==========================================');
           console.log('🚨 LOCALSTORAGE CHANGED!', new Date().toLocaleTimeString());
@@ -167,7 +205,7 @@ if (typeof window !== 'undefined') {
             const itemSize = localStorage.getItem(key)?.length || 0;
             totalSize += itemSize + key.length;
 
-            if (key === 'aurora-portal-data') {
+            if (key === AURORA_STORAGE_KEY) {
               auroraSize = itemSize;
             }
           }
@@ -190,15 +228,15 @@ if (typeof window !== 'undefined') {
         console.log('💾   Size:', formatBytes(totalSize));
         console.log('💾   Estimated % of 5MB limit:', percentUsed + '%');
         console.log('💾');
-        console.log('💾 Aurora Portal data:');
+        console.log('💾 Astryon data:');
         console.log('💾   Size:', formatBytes(auroraSize));
         console.log('💾   % of total storage:', (auroraSize / totalSize * 100).toFixed(2) + '%');
         console.log('💾   % of 5MB limit:', auroraPercent + '%');
 
         // Get universe details
-        const auroraData = localStorage.getItem('aurora-portal-data');
+        const auroraData = getStoredAuroraSnapshot();
         if (auroraData) {
-          const parsed = JSON.parse(auroraData);
+          const parsed = parseAuroraSnapshot(auroraData);
           const universeCount = Object.keys(parsed.universeLibrary || {}).length;
           const avgPerUniverse = universeCount > 0 ? auroraSize / universeCount : 0;
 
@@ -271,7 +309,7 @@ if (typeof window !== 'undefined') {
   const originalClear = localStorage.clear.bind(localStorage);
 
   localStorage.setItem = function (key: string, value: string) {
-    if (key === 'aurora-portal-data') {
+    if (key === AURORA_STORAGE_KEY) {
       const stack = new Error().stack || '';
       const caller = stack.split('\n')[2]?.trim() || 'unknown';
       console.log('📝 ==========================================');
@@ -286,13 +324,13 @@ if (typeof window !== 'undefined') {
   };
 
   localStorage.removeItem = function (key: string) {
-    if (key === 'aurora-portal-data') {
+    if (key === AURORA_STORAGE_KEY) {
       const stack = new Error().stack || '';
       const caller = stack.split('\n')[2]?.trim() || 'unknown';
       console.log('🗑️ ==========================================');
       console.log('🗑️ LOCALSTORAGE.REMOVEITEM:', new Date().toLocaleTimeString());
       console.log('🗑️   Key:', key);
-      console.log('🗑️   ⚠️ AURORA DATA BEING REMOVED!');
+      console.log('🗑️   ⚠️ ASTRYON DATA BEING REMOVED!');
       console.log('🗑️   Called from:', caller);
       console.log('🗑️ Full call stack:', stack);
       console.log('🗑️ ==========================================');
@@ -315,7 +353,7 @@ if (typeof window !== 'undefined') {
   console.log('🚨 localStorage interceptors installed! All aurora-portal-data operations will be logged.');
 
   // Log helper availability
-  console.log('🐛 Aurora Debug helpers loaded! Try:');
+  console.log('🐛 Astryon debug helpers loaded! Try:');
   console.log('   auroraDebug.showLibrary()  - View all saved universes');
   console.log('   auroraDebug.showActive()   - View current canvas state');
   console.log('   auroraDebug.checkNow()     - Check localStorage right now');
@@ -358,6 +396,7 @@ interface Nexus {
   originalContent?: string | null;     // Preserves original professor/AI framing
   applicationLabConfig?: ApplicationLabConfig | null;  // Generated Application Lab content
   needsApplicationLab?: boolean;       // Flag to trigger Application Lab generation
+  masterySummary?: string;
 }
 
 interface Folder {
@@ -431,8 +470,8 @@ interface CanvasStore {
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   addAtomizedRange: (parentId: string, text: string, childNodeId: string) => void;
   exportToWordDoc: () => void;
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => string;
-  addNodes: (nodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => string[];
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number, sources?: SourceReference[]) => string;
+  addNodes: (nodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType; sources?: SourceReference[] }[]) => string[];
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -458,6 +497,7 @@ interface CanvasStore {
   // 🌱 EVOLVING NEXUS → APPLICATION LAB - Completion heuristics
   getNodesForNexus: (nexusId: string) => Node[];
   isNexusCompleted: (nexusId: string) => boolean;
+  setNexusMasterySummary: (nexusId: string, summary: string) => void;
   setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => void;
   addNodeFromWebSocket: (data: any) => void;
   addNexusFromWebSocket: (data: any) => void;
@@ -596,8 +636,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   connectionModeActive: false,
   selectedNodesForConnection: [],
 
-
-
   // 💾 SAVE TO LOCALSTORAGE + INDEXEDDB
   saveToLocalStorage: async () => {
     const state = get();
@@ -624,57 +662,43 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
 
     // 🛡️ CRITICAL: Never save empty library if one already exists
-    const existingData = localStorage.getItem('aurora-portal-data');
+    const existingData = getStoredAuroraSnapshot();
     if (existingData && existingData !== 'null') {
       try {
-        const existing = JSON.parse(existingData);
-        const existingCount = Object.keys(existing.universeLibrary || {}).length;
         const newCount = Object.keys(state.universeLibrary).length;
 
-        if (existingCount > 0 && newCount === 0) {
+        if (wouldOverwriteExistingLibraryWithEmpty(existingData, newCount)) {
+          const existingCount = Object.keys(parseAuroraSnapshot(existingData).universeLibrary || {}).length;
           console.error('❌ REFUSING TO SAVE: Would overwrite', existingCount, 'universes with empty library!');
           console.error('❌ If you want to clear the library, use window.auroraDebug.clearLibrary()');
           return;
         }
       } catch (e) {
-        console.warn('⚠️ Could not parse existing data, proceeding with save');
+        if (Object.keys(state.universeLibrary).length === 0) {
+          console.error('❌ REFUSING TO SAVE: Existing storage is unreadable and the new library is empty');
+          return;
+        }
+        console.warn('⚠️ Existing storage is unreadable; replacing it with the non-empty in-memory library');
       }
     }
 
-    const dataToSave = {
-      universeLibrary: state.universeLibrary,
-      originalSnapshots: state.originalSnapshots,
-      folders: state.folders,
-      activatedConversations: state.activatedConversations,
-      timestamp: Date.now(),
-    };
+    const dataToSave = buildAuroraSnapshot(state);
 
     try {
-      const serialized = JSON.stringify(dataToSave);
-
-      // 🛡️ CRITICAL: Verify serialization didn't produce 'null' or empty
-      if (serialized === 'null' || serialized === '{}' || serialized === '{"universeLibrary":{},"activatedConversations":[]}') {
-        console.error('❌ REFUSING TO SAVE: Serialized data is empty or null!');
-        return;
-      }
+      const serialized = serializeAuroraSnapshot(dataToSave);
 
       // 💾 Save to localStorage (backwards compatibility)
-      localStorage.setItem('aurora-portal-data', serialized);
+      writeStoredAuroraSnapshot(serialized);
 
-      // 💾 Save each universe to IndexedDB
       const universeCount = Object.keys(state.universeLibrary).length;
-      for (const [id, universeData] of Object.entries(state.universeLibrary)) {
-        await saveUniverse(id, universeData);
-        // ☁️ Sync to Cloud (NeonDB)
-        await saveToCloud(id, universeData, universeData.nexuses[0]?.videoUrl);
-      }
 
-      // 💾 Create backup snapshot every 5 saves
       const saveCounter = (window as any)._auroraSaveCount || 0;
       (window as any)._auroraSaveCount = saveCounter + 1;
-      if ((window as any)._auroraSaveCount % 5 === 0) {
-        await createBackup(dataToSave, 'auto');
-      }
+      secondaryPersistence.schedule({
+        universeLibrary: state.universeLibrary,
+        backupSnapshot: dataToSave,
+        shouldCreateBackup: (window as any)._auroraSaveCount % 5 === 0,
+      });
 
       // Comprehensive logging
       const foldersCount = Object.keys(state.folders).length;
@@ -694,15 +718,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         });
       }
       console.log('💾 Data size:', (serialized.length / 1024).toFixed(2), 'KB');
-      console.log('💾 Storage: localStorage + IndexedDB');
+      console.log('💾 Storage: localStorage immediately; IndexedDB + cloud sync debounced');
       console.log('💾 ==========================================');
 
       // 🔍 DIAGNOSTIC: Verify save worked by reading back
-      const verification = localStorage.getItem('aurora-portal-data');
+      const verification = getStoredAuroraSnapshot();
       if (!verification) {
         throw new Error('Save verification failed - data not in localStorage!');
       }
-      const verifiedData = JSON.parse(verification);
+      const verifiedData = parseAuroraSnapshot(verification);
       const verifiedCount = Object.keys(verifiedData.universeLibrary || {}).length;
       const verifiedFoldersCount = Object.keys(verifiedData.folders || {}).length;
       console.log('💾 ✅ VERIFICATION: Data confirmed in both storages');
@@ -768,7 +792,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       if (Object.keys(universeLibrary).length === 0) {
         console.log('📂 IndexedDB empty, checking localStorage for migration...');
 
-        const saved = localStorage.getItem('aurora-portal-data');
+        const saved = getStoredAuroraSnapshot();
 
         console.log('📂 Raw data status:', saved === null ? 'NULL' : saved === 'null' ? '"null" STRING' : 'EXISTS');
         if (saved) {
@@ -822,7 +846,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           return;
         }
 
-        const data = JSON.parse(saved);
+        const data = parseAuroraSnapshot(saved);
 
         // 🛡️ CRITICAL: Verify data structure
         if (!data || typeof data !== 'object') {
@@ -850,7 +874,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         // Migrate from localStorage to IndexedDB
         universeLibrary = data.universeLibrary || {};
         folders = data.folders || {};
-        activatedConversations = data.activatedConversations || [];
+        activatedConversations = (data.activatedConversations || []) as string[];
         originalSnapshots = data.originalSnapshots || {};
 
         console.log('📂 🔍 MIGRATION: Folders from localStorage:', Object.keys(folders).length);
@@ -873,9 +897,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       } else {
         // Load folders, snapshots and activated conversations from localStorage (could move to IndexedDB later)
         console.log('📂 IndexedDB has universes, loading folders from localStorage...');
-        const localData = localStorage.getItem('aurora-portal-data');
+        const localData = getStoredAuroraSnapshot();
         if (localData) {
-          const data = JSON.parse(localData);
+          const data = parseAuroraSnapshot(localData);
           console.log('📂 🔍 Raw localStorage data.folders:', data.folders);
           console.log('📂 🔍 Folders in localStorage:', Object.keys(data.folders || {}).length);
           if (data.folders) {
@@ -884,7 +908,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             });
           }
           folders = data.folders || {};
-          activatedConversations = data.activatedConversations || [];
+          activatedConversations = (data.activatedConversations || []) as string[];
           originalSnapshots = data.originalSnapshots || {};
         } else {
           console.warn('📂 ⚠️ No localStorage data found despite IndexedDB having universes!');
@@ -1047,36 +1071,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().clearCanvas();
 
     // 🌌 STEP 3: Create the new nexus
-    let newNexus: Nexus | null = null;
-    let newUniverseId = '';
+    const newUniverseId = `nexus-${Date.now()}`;
+    const newNexus: Nexus = {
+      id: newUniverseId,
+      position: [0, 0, 0],
+      title,
+      content,
+      videoUrl,
+      audioUrl,
+      fileUrl,
+      fileName,
+      type: 'social',
+      evolutionState: 'seed',
+      originalContent: content,
+      applicationLabConfig: null,
+      needsApplicationLab: false,
+    };
 
-    set((state) => {
-      const position: [number, number, number] = [0, 0, 0]; // First nexus always at origin
+    console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
 
-      newUniverseId = `nexus-${Date.now()}`;
-      newNexus = {
-        id: newUniverseId,
-        position,
-        title,
-        content,
-        videoUrl,
-        audioUrl,
-        fileUrl,
-        fileName,
-        type: 'social',
-        // 🌱 Initialize evolution state
-        evolutionState: 'seed',
-        originalContent: content, // Preserve original framing
-        applicationLabConfig: null,
-        needsApplicationLab: false,
-      };
-
-      console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
-
-      return {
-        nexuses: [newNexus], // Start fresh with just this nexus
-        activeUniverseId: newUniverseId // Set as active universe
-      };
+    set({
+      nexuses: [newNexus],
+      activeUniverseId: newUniverseId,
     });
 
     // 🌌 STEP 4: Auto-save the new universe to library
@@ -1087,15 +1103,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('🆕 ==========================================');
 
     // Broadcast nexus creation to WebSocket
-    if (newNexus) {
-      const socket = typeof window !== 'undefined' ? (window as any).socket : null;
-      if (socket) {
-        socket.emit('create_nexus', {
-          portalId: 'default-portal',
-          ...newNexus
-        });
-        console.log('📤 Broadcasting nexus creation:', newNexus.id);
-      }
+    const socket = typeof window !== 'undefined' ? (window as any).socket : null;
+    if (socket) {
+      socket.emit('create_nexus', {
+        portalId: 'default-portal',
+        ...newNexus,
+      });
+      console.log('📤 Broadcasting nexus creation:', newNexus.id);
     }
   },
 
@@ -1486,7 +1500,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // Initialize the new node with a seed message
     const seedMsg: ThreadMessage = {
       id: `msg-${Date.now()}-seed`,
-      role: 'note',
+      role: 'user',
       content: selectedText,
       timestamp: Date.now(),
     };
@@ -1512,7 +1526,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   getNodeMessages: (node: Node): ThreadMessage[] => {
     if (node.messages && node.messages.length > 0) {
-      return node.messages;
+      return node.messages.map(message => (
+        message.role === 'note' && message.id.includes('-seed')
+          ? { ...message, role: 'user' }
+          : message
+      ));
     }
     // Lazy migration: convert existing content to a single message
     if (!node.content) return [];
@@ -1566,7 +1584,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { Document, Paragraph, HeadingLevel, AlignmentType, Packer } = await import('docx');
 
     const sections = Object.values(nodes)
-      .filter((n) => n.type !== 'nexus')
       .sort((a, b) => {
         const aIndex = parseInt(a.id.split('-')[1]) || 0;
         const bIndex = parseInt(b.id.split('-')[1]) || 0;
@@ -1653,7 +1670,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => {
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number, sources?: SourceReference[]) => {
     let newNodeId = '';
     let isConnectionNodeParent = false;
 
@@ -1698,6 +1715,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         title: `Reply ${new Date().toLocaleTimeString()}`,
         content,
         quotedText,
+        sources: sources || (quotedText ? [{ kind: 'manual', quotedText, sourceNodeId: parentId }] : undefined),
         parentId,
         children: [],
         nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'), // Default based on context
@@ -1762,7 +1780,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return newNodeId;
   },
 
-  addNodes: (batchNodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => {
+  addNodes: (batchNodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType; sources?: SourceReference[] }[]) => {
     if (batchNodes.length === 0) return [];
 
     const timestamp = Date.now();
@@ -1775,7 +1793,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const batchSiblingCounts: Record<string, number> = {};
 
       for (let i = 0; i < batchNodes.length; i++) {
-        const { content, parentId, quotedText, nodeType } = batchNodes[i];
+        const { content, parentId, quotedText, nodeType, sources } = batchNodes[i];
         const newNodeId = `node-${timestamp}-${i}`;
         newNodeIds.push(newNodeId);
 
@@ -1817,6 +1835,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           title: `Reply ${new Date().toLocaleTimeString()}`,
           content,
           quotedText,
+          sources: sources || (quotedText ? [{ kind: 'manual', quotedText, sourceNodeId: parentId }] : undefined),
           parentId,
           children: [],
           nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'),
@@ -2722,6 +2741,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return completionRate >= COMPLETION_THRESHOLD;
   },
 
+  setNexusMasterySummary: (nexusId: string, summary: string) => {
+    set((state) => {
+      const nexuses = state.nexuses.map((nexus) =>
+        nexus.id === nexusId ? { ...nexus, masterySummary: summary } : nexus
+      );
+      const universeLibrary = Object.fromEntries(
+        Object.entries(state.universeLibrary).map(([universeId, universe]) => [
+          universeId,
+          {
+            ...universe,
+            nexuses: universe.nexuses.map((nexus) =>
+              nexus.id === nexusId ? { ...nexus, masterySummary: summary } : nexus
+            ),
+          },
+        ])
+      );
+
+      return { nexuses, universeLibrary };
+    });
+    get().saveToLocalStorage();
+  },
+
   // 🌱 EVOLVING NEXUS → APPLICATION LAB - Set Application Lab config and evolve nexus
   setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => {
     console.log(`🌱 [Nexus ${nexusId}] Setting Application Lab config`);
@@ -2974,9 +3015,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       get().saveToLocalStorage();
 
       // Final verification: Check localStorage
-      const lsData = localStorage.getItem('aurora-portal-data');
+      const lsData = getStoredAuroraSnapshot();
       if (lsData) {
-        const parsed = JSON.parse(lsData);
+        const parsed = parseAuroraSnapshot(lsData);
         if (parsed.universeLibrary && parsed.universeLibrary[nexusId]) {
           console.error('🗑️   ❌ ERROR: Universe still in localStorage!');
         } else {
@@ -3300,7 +3341,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('✅ Node marked as completed:', nodeId);
 
     // Unlock next node (only for course universes)
-    let unlockedNodeId = null;
+    let unlockedNodeId: string | null = null;
     if (isCourseUniverse) {
       unlockedNodeId = get().unlockNextNode(nodeId);
     }
@@ -4174,12 +4215,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       get().saveToLocalStorage();
 
       // FINAL VERIFICATION: Check localStorage
-      const lsData = localStorage.getItem('aurora-portal-data');
+      const lsData = getStoredAuroraSnapshot();
       if (!lsData) {
         throw new Error('localStorage is empty after save!');
       }
 
-      const parsedLS = JSON.parse(lsData);
+      const parsedLS = parseAuroraSnapshot(lsData);
       if (!parsedLS.universeLibrary) {
         throw new Error('universeLibrary missing from localStorage!');
       }
@@ -4762,15 +4803,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const data = await response.json();
       const analysisText = data.response;
 
-      // Parse JSON from response
       let analysisData;
       try {
-        // Try to extract JSON from markdown code blocks
-        const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/) ||
-          analysisText.match(/```\n([\s\S]*?)\n```/) ||
-          [null, analysisText];
-        const jsonStr = jsonMatch[1] || analysisText;
-        analysisData = JSON.parse(jsonStr);
+        analysisData = parseAIJson(analysisText, universeAnalysisSchema);
       } catch (e) {
         console.error('Failed to parse analysis JSON:', e);
         throw new Error('Failed to parse analysis results');
@@ -5003,11 +5038,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🛡️ BACKUP LIBRARY
   backupLibrary: () => {
     try {
-      const current = localStorage.getItem('aurora-portal-data');
-
-      // Only backup if data exists and is not null
-      if (current && current !== 'null') {
-        localStorage.setItem('aurora-portal-data-backup', current);
+      if (backupStoredLibrary()) {
         console.log('🛡️ Library backed up successfully');
       } else {
         console.log('🛡️ No valid data to backup');
@@ -5020,27 +5051,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🛡️ RECOVER FROM BACKUP
   recoverFromBackup: () => {
     try {
-      const backup = localStorage.getItem('aurora-portal-data-backup');
-
-      if (!backup || backup === 'null') {
-        console.error('❌ No backup found');
+      const result = recoverStoredLibraryFromBackup();
+      if (!result.recovered) {
+        console.error(`❌ ${result.reason}`);
         return false;
       }
 
-      // Verify backup is valid JSON
-      try {
-        const parsed = JSON.parse(backup);
-        if (!parsed.universeLibrary) {
-          console.error('❌ Backup is corrupted (missing universeLibrary)');
-          return false;
-        }
-      } catch (e) {
-        console.error('❌ Backup is corrupted (invalid JSON)');
-        return false;
-      }
-
-      // Restore from backup
-      localStorage.setItem('aurora-portal-data', backup);
       console.log('✅ Successfully recovered library from backup!');
       console.log('🛡️ Please reload the page to load recovered data');
 
@@ -5080,4 +5096,19 @@ if (typeof window !== 'undefined' && (window as any).auroraDebug) {
     console.log('🛡️ Attempting to recover library from backup...');
     return useCanvasStore.getState().recoverFromBackup();
   };
+}
+
+if (typeof window !== 'undefined' && !(window as any).__astryonPersistenceFlushInstalled) {
+  (window as any).__astryonPersistenceFlushInstalled = true;
+  const flushSecondaryPersistence = () => {
+    if (!secondaryPersistence.hasPending()) return;
+    void secondaryPersistence.flush().catch(error => {
+      console.error('❌ Failed to flush Astryon secondary persistence:', error);
+    });
+  };
+
+  window.addEventListener('pagehide', flushSecondaryPersistence);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSecondaryPersistence();
+  });
 }
