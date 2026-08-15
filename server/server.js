@@ -141,7 +141,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { messages, portalNodes, activeMemories } = req.body;
 
-    let systemPrompt = "You are a helpful assistant in Aurora Portal, a 3D collaborative decision-making space. ";
+    let systemPrompt = "You are a helpful assistant in Astryon, a 3D collaborative decision-making space. ";
 
     if (portalNodes && portalNodes.length > 0) {
       systemPrompt += "\n\nCurrent nodes and nexuses in the portal:\n";

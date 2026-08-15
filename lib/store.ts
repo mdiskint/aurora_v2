@@ -159,7 +159,7 @@ if (typeof window !== 'undefined') {
       const parsed = parseAuroraSnapshot(data);
       const library = parsed.universeLibrary || {};
       console.log('📚 ==========================================');
-      console.log('📚 AURORA LIBRARY');
+      console.log('📚 ASTRYON LIBRARY');
       console.log('📚   Total universes:', Object.keys(library).length);
       console.table(Object.entries(library).map(([id, data]: any) => ({
         id: id.substring(0, 20) + '...',
@@ -332,7 +332,7 @@ if (typeof window !== 'undefined') {
         console.log('💾   Size:', formatBytes(totalSize));
         console.log('💾   Estimated % of 5MB limit:', percentUsed + '%');
         console.log('💾');
-        console.log('💾 Aurora Portal data:');
+        console.log('💾 Astryon data:');
         console.log('💾   Size:', formatBytes(auroraSize));
         console.log('💾   % of total storage:', (auroraSize / totalSize * 100).toFixed(2) + '%');
         console.log('💾   % of 5MB limit:', auroraPercent + '%');
@@ -434,7 +434,7 @@ if (typeof window !== 'undefined') {
       console.log('🗑️ ==========================================');
       console.log('🗑️ LOCALSTORAGE.REMOVEITEM:', new Date().toLocaleTimeString());
       console.log('🗑️   Key:', key);
-      console.log('🗑️   ⚠️ AURORA DATA BEING REMOVED!');
+      console.log('🗑️   ⚠️ ASTRYON DATA BEING REMOVED!');
       console.log('🗑️   Called from:', caller);
       console.log('🗑️ Full call stack:', stack);
       console.log('🗑️ ==========================================');
@@ -457,7 +457,7 @@ if (typeof window !== 'undefined') {
   console.log('🚨 localStorage interceptors installed! All aurora-portal-data operations will be logged.');
 
   // Log helper availability
-  console.log('🐛 Aurora Debug helpers loaded! Try:');
+  console.log('🐛 Astryon debug helpers loaded! Try:');
   console.log('   auroraDebug.showLibrary()  - View all saved universes');
   console.log('   auroraDebug.showActive()   - View current canvas state');
   console.log('   auroraDebug.checkNow()     - Check localStorage right now');

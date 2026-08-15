@@ -1,10 +1,10 @@
-# Aurora Architecture
+# Astryon Architecture
 
-This document explains how Aurora is put together so another engineer or chatbot can reason accurately about the system.
+This document explains how Astryon is put together so another engineer or chatbot can reason accurately about the system.
 
 ## System Summary
 
-Aurora is a Next.js app that represents knowledge as 3D universes. A universe has one or more root **nexuses** and many child **nodes**. Users can create these universes manually, through AI, from imported conversations, from JSON academic papers, or from generated course content. The core app experience is a Three.js canvas plus a rich modal for reading, editing, chatting, quizzing, and atomizing nodes.
+Astryon is a Next.js app that represents knowledge as 3D universes. A universe has one or more root **nexuses** and many child **nodes**. Users can create these universes manually, through AI, from imported conversations, from JSON academic papers, or from generated course content. The core app experience is a Three.js canvas plus a rich modal for reading, editing, chatting, quizzing, and atomizing nodes.
 
 The main architecture is:
 

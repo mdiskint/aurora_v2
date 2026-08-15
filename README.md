@@ -1,10 +1,10 @@
-# Aurora
+# Astryon
 
-Aurora is a 3D spatial learning and conversation system. It turns conversations, course material, academic papers, video segments, and AI-generated study structures into interactive 3D "universes" made of root hubs called **nexuses** and child **nodes**.
+Astryon is a 3D spatial learning and conversation system. It turns conversations, course material, academic papers, video segments, and AI-generated study structures into interactive 3D "universes" made of root hubs called **nexuses** and child **nodes**.
 
 This README is written so a human or chatbot can quickly understand the system and give accurate advice.
 
-## What Aurora Does
+## What Astryon Does
 
 - Creates 3D knowledge graphs from free-form prompts, structured text, imported conversations, uploaded JSON papers, and course-builder content.
 - Lets users open any nexus or node in a large modal, edit content, chat inside nodes, atomize highlighted text into child nodes, quiz themselves, and generate AI practice flows.
@@ -32,7 +32,8 @@ npm run dev        # Start Next.js frontend on http://localhost:3000
 npm run build      # prisma generate && next build
 npm start          # Start production frontend
 npm run lint       # Run ESLint
-npm run test       # Run study-guide and lifecycle tests
+npm run test       # Run AI, Cartographer, persistence, study-guide, and lifecycle tests
+npm run typecheck  # Run TypeScript without emitting files
 ```
 
 Backend:
@@ -57,11 +58,15 @@ DATABASE_URL=
 AUTH_SECRET=
 NEXTAUTH_SECRET=
 NEXTAUTH_URL=http://localhost:3000
+NEXT_PUBLIC_WEB_URL=http://localhost:3000
 NEXT_PUBLIC_SERVER_URL=http://localhost:3001
+NEXT_PUBLIC_CARTOGRAPHER_ENABLED=true
+CARTOGRAPHER_ENABLED=true
 BLOB_READ_WRITE_TOKEN=
 TAVILY_API_KEY=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+RESEND_API_KEY=
 ```
 
 Backend `server/.env`:
@@ -249,7 +254,7 @@ Modal logic lives in `components/UnifiedNodeModal.tsx`. That component is large 
 Primary persistence layers:
 
 - IndexedDB via Dexie in `lib/db.ts`
-- localStorage key: `aurora-portal-data`
+- legacy localStorage key: `aurora-portal-data` (kept intentionally so existing users do not lose data)
 - optional cloud persistence through `/api/universes` and Prisma/NeonDB
 - Vercel Blob for uploaded video/media
 
@@ -261,7 +266,7 @@ The store has significant defensive code to prevent overwriting non-empty librar
 - `/api/chat/route.ts` is also very large and has many mode-specific prompt branches.
 - Several save paths still call `saveToLocalStorage()` directly while newer flows prefer `saveCurrentUniverse()`.
 - Course builder sends `mode: 'atomize-content'`, but the current `/api/chat/route.ts` scan does not show a matching explicit branch for that mode. Treat that as a likely bug or unfinished feature.
-- `lib/useNexusEvolution.ts` references `setNexusMasterySummary` and nexus fields such as `masterySummary`, but those are not visible in the current `CanvasStore` interface scan. Treat that hook as needing verification before relying on it.
-- Lint currently reports existing issues across generated/worktree files and pre-existing JSX escaping errors. Do not assume lint is clean.
+- Cartographer can be disabled independently with `NEXT_PUBLIC_CARTOGRAPHER_ENABLED=false` and `CARTOGRAPHER_ENABLED=false`.
+- Lint passes with warnings; CI treats lint errors, type errors, test failures, and build failures as release blockers.
 
 For deeper system details, read `ARCHITECTURE.md`.

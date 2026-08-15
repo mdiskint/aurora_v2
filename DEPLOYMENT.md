@@ -1,6 +1,6 @@
-# Aurora Portal - Deployment Guide
+# Astryon - Deployment Guide
 
-This guide will help you deploy Aurora Portal for select users with password protection.
+This guide will help you deploy Astryon for select users with password protection.
 
 ## Architecture
 
@@ -148,7 +148,7 @@ Send your users:
 2. **Password**: The password you set in `AURORA_PASSWORD`
 3. **Instructions**:
    ```
-   Welcome to Aurora Portal!
+   Welcome to Astryon!
    
    1. Visit: https://your-app-name.vercel.app
    2. Enter the access code: [your-password]
