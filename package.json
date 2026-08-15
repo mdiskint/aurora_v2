@@ -8,11 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx lib/__tests__/aiFoundation.test.ts && tsx lib/__tests__/persistence.test.ts && tsx lib/__tests__/studyGuideGenerator.test.ts && tsx lib/__tests__/universeRunLifecycle.test.ts",
+    "test": "tsx lib/__tests__/aiFoundation.test.ts && tsx lib/__tests__/persistence.test.ts && tsx lib/__tests__/studyGuideGenerator.test.ts && tsx lib/__tests__/universeRunLifecycle.test.ts && tsx lib/__tests__/nexusActions.test.ts",
     "test:ai": "tsx lib/__tests__/aiFoundation.test.ts",
     "test:persistence": "tsx lib/__tests__/persistence.test.ts",
     "test:guide": "tsx lib/__tests__/studyGuideGenerator.test.ts",
-    "test:lifecycle": "tsx lib/__tests__/universeRunLifecycle.test.ts"
+    "test:lifecycle": "tsx lib/__tests__/universeRunLifecycle.test.ts",
+    "test:nexus-actions": "tsx lib/__tests__/nexusActions.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.0",

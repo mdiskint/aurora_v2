@@ -14,6 +14,11 @@ import {
 } from '@/lib/guidedPracticeHelpers';
 import { generateUniverseStudyGuide, UniverseDefinition } from '@/lib/studyGuideGenerator';
 import { StudyGuideWriteUp } from '@/lib/types';
+import {
+  buildNexusContext,
+  buildUniverseContext,
+  getSelectionActionKind,
+} from '@/lib/nexusActionHelpers';
 
 type ActionMode = 'user-reply' | 'ask-ai' | 'explore-together' | null;
 
@@ -1353,13 +1358,27 @@ export default function UnifiedNodeModal() {
     return elements;
   };
 
-  // 💬 USER REPLY - Now adds message to in-node thread instead of creating child node
+  // 💬 USER REPLY - Nexus replies create children; node replies stay in-thread
   const handleUserReply = () => {
-    if (!inputContent.trim() || !selectedId || !node) return;
+    const actionKind = getSelectionActionKind(node, nexus);
+    if (!inputContent.trim() || !selectedId || actionKind === 'none') return;
 
     const content = quotedText
       ? `> ${quotedText}\n\n${inputContent.trim()}`
       : inputContent.trim();
+
+    if (actionKind === 'nexus-child') {
+      const newNodeId = addNode(content, selectedId, quotedText || undefined, 'user-reply');
+      useCanvasStore.getState().saveCurrentUniverse();
+      setInputContent('');
+      setActionMode(null);
+      setQuotedText(null);
+
+      setTimeout(() => selectNode(newNodeId, true), 150);
+      return;
+    }
+
+    if (!node) return;
 
     // Initialize thread if this is a legacy node (no messages yet)
     if (!node.messages || node.messages.length === 0) {
@@ -1376,70 +1395,96 @@ export default function UnifiedNodeModal() {
     setQuotedText(null);
   };
 
-  // 🤖 ASK AI - Now adds messages to in-node thread instead of creating child node
+  // 🤖 ASK AI - Nexus questions create AI children; node questions stay in-thread
   const handleAskAI = async () => {
-    if (!inputContent.trim() || !selectedId || !node) return;
+    const actionKind = getSelectionActionKind(node, nexus);
+    if (!inputContent.trim() || !selectedId || actionKind === 'none') return;
 
     setIsLoadingAI(true);
 
     try {
       const userQuestion = inputContent.trim();
-      const contextContent = displayContent || '';
+      const contextContent = actionKind === 'nexus-child' && nexus
+        ? buildNexusContext(nexus, nodes)
+        : displayContent || '';
+      const universeSnapshot = buildUniverseContext(nexuses, nodes);
+      let threadContext = '';
+      let useSearch = false;
 
-      // Initialize thread if this is a legacy node (no messages yet)
-      if (!node.messages || node.messages.length === 0) {
-        if (node.content) {
-          const role = node.isAI || node.nodeType === 'ai-response' ? 'assistant' as const : 'user' as const;
-          addMessageToNode(selectedId, { role, content: node.content });
+      if (actionKind === 'node-thread' && node) {
+        // Initialize thread if this is a legacy node (no messages yet)
+        if (!node.messages || node.messages.length === 0) {
+          if (node.content) {
+            const role = node.isAI || node.nodeType === 'ai-response' ? 'assistant' as const : 'user' as const;
+            addMessageToNode(selectedId, { role, content: node.content });
+          }
         }
+
+        addMessageToNode(selectedId, { role: 'user', content: userQuestion });
+
+        const currentNode = useCanvasStore.getState().nodes[selectedId];
+        threadContext = (currentNode?.messages || [])
+          .map(m => `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'AI' : 'Note'}: ${m.content}`)
+          .join('\n\n');
+
+        // Deeper node questions can supplement the universe with web search.
+        let askDepth = 1;
+        let walkAskId: string | undefined = node.parentId;
+        const nexusIdsForAsk = new Set(nexuses.map(n => n.id));
+        while (walkAskId && !nexusIdsForAsk.has(walkAskId) && nodes[walkAskId]) {
+          askDepth++;
+          walkAskId = nodes[walkAskId].parentId;
+        }
+        useSearch = askDepth >= 2;
+        console.log(`🔍 Ask AI: node depth=${askDepth}, useSearch=${useSearch}`);
       }
 
-      // Add user message to thread
-      addMessageToNode(selectedId, { role: 'user', content: userQuestion });
-
-      // Build full universe context so AI can search across all nodes
-      const universeContext: string[] = [];
-      nexuses.forEach(nex => {
-        universeContext.push(`[Nexus: ${nex.title}]\n${nex.content}`);
-        const children = Object.values(nodes).filter(n => n.parentId === nex.id);
-        children.forEach(child => {
-          universeContext.push(`  [Node: ${child.title || child.id}]\n  ${child.content.substring(0, 500)}`);
-        });
-      });
-      const universeSnapshot = universeContext.join('\n\n');
-
-      // Build thread context for AI
-      const currentNode = useCanvasStore.getState().nodes[selectedId];
-      const threadContext = (currentNode?.messages || [])
-        .map(m => `${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Claude' : 'Note'}: ${m.content}`)
-        .join('\n\n');
-
-      // Calculate node depth to decide if we should use web search
-      let askDepth = 1;
-      let walkAskId: string | undefined = node?.parentId;
-      const nexusIdsForAsk = new Set(nexuses.map(n => n.id));
-      while (walkAskId && !nexusIdsForAsk.has(walkAskId) && nodes[walkAskId]) {
-        askDepth++;
-        walkAskId = nodes[walkAskId].parentId;
-      }
-      const useSearch = askDepth >= 2;
-      console.log(`🔍 Ask AI: node depth=${askDepth}, useSearch=${useSearch}`);
-
-      const fullPrompt = `You have access to the user's full conversation universe and the current in-node conversation thread.
+      const fullPrompt = `You have access to the user's full conversation universe${actionKind === 'node-thread' ? ' and the current in-node conversation thread' : ''}.
 
 === FULL UNIVERSE ===
 ${universeSnapshot}
 
-=== CURRENT NODE CONTENT ===
+=== CURRENT SELECTION CONTENT ===
 ${contextContent}
 
-=== CONVERSATION THREAD ===
-${threadContext}
-
+${threadContext ? `=== CONVERSATION THREAD ===\n${threadContext}\n` : ''}
 === USER QUESTION ===
 ${userQuestion}
 
 Answer using information from ANY node in the universe, not just the selected one. If the answer draws from multiple nodes, reference which concepts you're connecting.${useSearch ? ' If the universe lacks sufficient information, use web search results to supplement your answer with real-world facts, citations, or current developments.' : ''}`;
+
+      if (actionKind === 'nexus-child') {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: fullPrompt }],
+            mode: 'standard',
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to get AI response');
+
+        const data = await response.json();
+        const answer = String(data.response || data.content || '').trim();
+        if (!answer) throw new Error('AI returned an empty response');
+
+        const aiNodeId = addNode(
+          `Question: ${userQuestion}\n\nAnswer: ${answer}`,
+          selectedId,
+          undefined,
+          'ai-response',
+          undefined,
+          [{ kind: 'ai-generated', sourceNodeId: selectedId }]
+        );
+        useCanvasStore.getState().saveCurrentUniverse();
+        setInputContent('');
+        setActionMode(null);
+        setIsLoadingAI(false);
+
+        setTimeout(() => selectNode(aiNodeId, true), 150);
+        return;
+      }
 
       // Create placeholder AI message for streaming
       const aiMessageId = addMessageToNode(selectedId, { role: 'assistant', content: '' });
@@ -1783,8 +1828,10 @@ Be conversational and human, not formulaic.`;
     setIsLoadingAI(true);
 
     try {
-      // Use displayContent to get all connected nodes' content for connection nodes
-      const contextContent = displayContent;
+      // Nexus quizzes cover the nexus itself and every descendant node.
+      const contextContent = nexus
+        ? buildNexusContext(nexus, nodes)
+        : displayContent;
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -1885,6 +1932,13 @@ Be conversational and human, not formulaic.`;
       // For quiz mode: Get grading feedback
       // For deep-thinking mode: Get next question
       const isQuizMode = explorationMode === 'quiz';
+      const quizRootNexus = nexuses.find(candidate => candidate.id === socraticRootId);
+      const quizRootNode = nodes[socraticRootId];
+      const quizSourceContext = quizRootNexus
+        ? buildNexusContext(quizRootNexus, nodes)
+        : quizRootNode?.isConnectionNode
+          ? displayContent
+          : quizRootNode?.content || displayContent;
       console.log(`🤖 Requesting ${isQuizMode ? 'quiz grading' : 'next question'} from AI...`);
 
       const response = await fetch('/api/chat', {
@@ -1900,6 +1954,7 @@ Be conversational and human, not formulaic.`;
           }],
           mode: isQuizMode ? 'quiz' : explorationMode === 'deep-thinking' ? 'deep-thinking' : 'socratic',
           explorationMode,
+          conversationContext: isQuizMode ? quizSourceContext : undefined,
           conversationHistory: explorationMode === 'deep-thinking' ? deepThinkingHistory : undefined  // Pass history for progressive depth
         }),
       });
@@ -1962,6 +2017,7 @@ Be conversational and human, not formulaic.`;
         const quizNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n${feedback}`;
         console.log('📝 Creating quiz answer node with feedback...');
         addNode(quizNode, socraticRootId);
+        useCanvasStore.getState().saveCurrentUniverse();
 
         // Keep modal open to show feedback
         setTimeout(() => {
@@ -2013,6 +2069,7 @@ Be conversational and human, not formulaic.`;
         const exchangeNode = `Q: ${socraticQuestion}\n\nA: ${userAnswerText}\n\n💡 ${engagement}`;
         console.log('📝 Creating deep thinking exchange node...');
         addNode(exchangeNode, socraticRootId);
+        useCanvasStore.getState().saveCurrentUniverse();
 
         // Keep modal open to show engagement
         setTimeout(() => {
@@ -2060,7 +2117,7 @@ Be conversational and human, not formulaic.`;
         body: JSON.stringify({
           messages: [{
             role: 'user',
-            content: displayContent  // Send content directly
+            content: nexus ? buildNexusContext(nexus, nodes) : displayContent
           }],
           mode: 'quiz',
           explorationMode: 'quiz',
@@ -2124,30 +2181,6 @@ Be conversational and human, not formulaic.`;
   };
 
   // 📝 MULTIPLE CHOICE QUIZ
-  // Gather all descendant content from a nexus or connection node
-  const gatherUniverseContent = (rootId: string): string => {
-    const parts: string[] = [];
-    const visited = new Set<string>();
-
-    const collectChildren = (nodeId: string) => {
-      if (visited.has(nodeId)) return;
-      visited.add(nodeId);
-      const n = nodes[nodeId];
-      if (!n) return;
-      if (n.content) parts.push(n.content);
-      if (n.children) n.children.forEach(collectChildren);
-    };
-
-    // Collect from all nodes whose parentId matches rootId
-    Object.values(nodes).forEach(n => {
-      if (n.parentId === rootId && !visited.has(n.id)) {
-        collectChildren(n.id);
-      }
-    });
-
-    return parts.join('\n\n---\n\n');
-  };
-
   const handleStartMultipleChoice = async () => {
     if (!selectedId) return;
 
@@ -2156,11 +2189,11 @@ Be conversational and human, not formulaic.`;
     setIsLoadingAI(true);
 
     try {
-      // Nexus or connection node → quiz on all children; regular node → quiz on just that node
+      // Nexus → quiz on the root and all descendants; regular node → just that node
       let contextContent: string;
       if (nexus) {
-        console.log('📝 Quiz from NEXUS — gathering all child content');
-        contextContent = gatherUniverseContent(nexus.id);
+        console.log('📝 Quiz from NEXUS — gathering root and descendant content');
+        contextContent = buildNexusContext(nexus, nodes);
       } else if (node?.isConnectionNode) {
         console.log('📝 Quiz from CONNECTION NODE — gathering all connected content');
         contextContent = displayContent || '';
@@ -2318,6 +2351,7 @@ Be conversational and human, not formulaic.`;
 
     console.log('📝 Creating MC answer node...');
     addNode(mcAnswerNode, socraticRootId);
+    useCanvasStore.getState().saveCurrentUniverse();
 
     setMcAnswered(true);
 

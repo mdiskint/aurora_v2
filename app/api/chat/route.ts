@@ -1317,6 +1317,14 @@ Remember: Return ONLY the JSON object, nothing else.`,
 
       const gradingPrompt = `You are a knowledgeable educator grading a student's answer.
 
+${conversationContext ? `Source material for this quiz:
+"""
+${conversationContext}
+"""
+
+Treat the source material as the ground truth for this quiz, including any product-specific, fictional, or course-specific concepts it defines.
+` : ''}
+
 Question: "${question}"
 Student's Answer: "${userAnswer}"
 
