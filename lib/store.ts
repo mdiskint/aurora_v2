@@ -1,20 +1,233 @@
 import { create } from 'zustand';
-import { Node, NodeType, ThreadMessage, ApplicationEssay, UniverseRun, StudyGuideWriteUp } from './types';
+import {
+  CartographerOverlay,
+  UniverseBlueprint,
+  ProposedBranch,
+  Node,
+  NodeType,
+  SourceReference,
+  ThreadMessage,
+  ApplicationEssay,
+  UniverseRun,
+  StudyGuideWriteUp,
+} from './types';
 import { generateSemanticTitle, generateSemanticTitles } from './titleGenerator';
 import { db, saveUniverse, loadAllUniverses, deleteUniverseFromDB, createBackup, saveToCloud, loadFromCloud } from './db';
 import { transformConversation, transformHighlightImport, HighlightImportData } from './conversationTransformer';
 import { calculateL1Position, calculateL2Position, calculateMetaPosition, validatePosition } from './nodePositioning';
+import { universeAnalysisSchema } from './ai/chatModeRegistry';
+import { parseAIJson } from './ai/json';
+import {
+  AURORA_STORAGE_KEY,
+  backupStoredLibrary,
+  buildAuroraSnapshot,
+  createDebouncedPersistence,
+  getStoredAuroraSnapshot,
+  parseAuroraSnapshot,
+  recoverStoredLibraryFromBackup,
+  serializeAuroraSnapshot,
+  wouldOverwriteExistingLibraryWithEmpty,
+  writeStoredAuroraSnapshot,
+} from './persistence/auroraPersistence';
+
+const secondaryPersistence = createDebouncedPersistence(async (snapshot: {
+  universeLibrary: Record<string, any>;
+  backupSnapshot: any;
+  shouldCreateBackup: boolean;
+}) => {
+  for (const [id, universeData] of Object.entries(snapshot.universeLibrary)) {
+    await saveUniverse(id, universeData);
+    await saveToCloud(id, universeData, universeData.nexuses[0]?.videoUrl);
+  }
+
+  if (snapshot.shouldCreateBackup) {
+    await createBackup(snapshot.backupSnapshot, 'auto');
+  }
+}, 500);
+
+function deriveNodeSources(node: Node): SourceReference[] {
+  const sources = [...(node.sources || [])];
+
+  if (node.videoUrl && !sources.some(source => source.kind === 'video')) {
+    sources.push({
+      kind: 'video',
+      sourceTitle: node.title || node.semanticTitle,
+      timestampStart: node.videoStart ?? undefined,
+      timestampEnd: node.videoEnd ?? undefined,
+      quotedText: node.quotedText || node.content.slice(0, 500),
+    });
+  }
+
+  if (node.quotedText && !sources.some(source => source.quotedText === node.quotedText)) {
+    sources.push({
+      kind: node.isAI ? 'ai-generated' : 'manual',
+      quotedText: node.quotedText,
+      sourceNodeId: node.parentId,
+    });
+  }
+
+  if (sources.length === 0) {
+    sources.push({
+      kind: node.isAI ? 'ai-generated' : 'manual',
+      quotedText: node.content.slice(0, 500),
+    });
+  }
+
+  return sources;
+}
+
+function cartographerEvidenceToSources(evidence?: Array<{ source?: SourceReference; excerpt?: string; nodeId?: string; nodeTitle?: string }>): SourceReference[] {
+  if (!evidence) return [];
+
+  return evidence.map(item => {
+    if (item.source) {
+      return {
+        ...item.source,
+        quotedText: item.source.quotedText || item.excerpt,
+        sourceNodeId: item.source.sourceNodeId || item.nodeId,
+      };
+    }
+
+    return {
+      kind: 'ai-generated' as const,
+      sourceTitle: item.nodeTitle,
+      quotedText: item.excerpt,
+      sourceNodeId: item.nodeId,
+    };
+  });
+}
+
+function normalizeCartographerOverlay(
+  rawOverlay: Omit<CartographerOverlay, 'universeId' | 'universeTitle' | 'generatedAt'>,
+  universeId: string,
+  universeTitle: string
+): CartographerOverlay {
+  const allowedGapTypes = new Set([
+    'missing-distinction',
+    'missing-example',
+    'missing-counterargument',
+    'missing-synthesis',
+    'orphaned-branch',
+    'other',
+  ]);
+  const allowedActions = new Set(['create-node', 'connect-nodes', 'revisit-node']);
+
+  return {
+    universeId,
+    universeTitle,
+    generatedAt: Date.now(),
+    clusters: rawOverlay.clusters.map((cluster, index) => ({
+      ...cluster,
+      id: cluster.id || `cluster-${index + 1}`,
+    })),
+    bridges: rawOverlay.bridges.map((bridge, index) => ({
+      ...bridge,
+      id: bridge.id || `bridge-${index + 1}`,
+    })),
+    gaps: rawOverlay.gaps.map((gap, index) => ({
+      ...gap,
+      id: gap.id || `gap-${index + 1}`,
+      type: allowedGapTypes.has(gap.type) ? gap.type : 'other',
+    })),
+    nextMoves: rawOverlay.nextMoves.slice(0, 3).map((move, index) => ({
+      ...move,
+      id: move.id || `move-${index + 1}`,
+      action: allowedActions.has(move.action) ? move.action : 'revisit-node',
+    })),
+  };
+}
+
+function normalizeProposedBranches(branches: any[], prefix = 'branch'): ProposedBranch[] {
+  return branches.map((branch, index) => ({
+    id: branch.id || `${prefix}-${index + 1}`,
+    title: branch.title,
+    rationale: branch.rationale,
+    kind: branch.kind || (branch.sourceChunkId || branch.sourceText ? 'source-chunk' : 'concept'),
+    sourceChunkId: branch.sourceChunkId,
+    sourceText: branch.sourceText,
+    sourceEvidence: branch.sourceEvidence || [],
+    selectedByDefault: branch.selectedByDefault !== false,
+    childNodes: Array.isArray(branch.childNodes)
+      ? normalizeProposedBranches(branch.childNodes, `${branch.id || `${prefix}-${index + 1}`}-child`)
+      : [],
+  }));
+}
+
+function normalizeUniverseBlueprint(
+  rawBlueprint: any,
+  nexusId: string,
+): UniverseBlueprint {
+  return {
+    nexusId,
+    proposedTitle: rawBlueprint.proposedTitle,
+    generatedAt: Date.now(),
+    branches: normalizeProposedBranches(rawBlueprint.branches || []),
+    suggestedConnections: (rawBlueprint.suggestedConnections || []).map((connection: any, index: number) => ({
+      id: connection.id || `connection-${index + 1}`,
+      title: connection.title,
+      rationale: connection.rationale,
+      branchIds: connection.branchIds || [],
+      sourceEvidence: connection.sourceEvidence || [],
+    })),
+    unresolvedQuestions: (rawBlueprint.unresolvedQuestions || []).map((gap: any, index: number) => ({
+      id: gap.id || `gap-${index + 1}`,
+      title: gap.title,
+      rationale: gap.rationale,
+      sourceEvidence: gap.sourceEvidence || [],
+    })),
+    sourceReferences: rawBlueprint.sourceReferences || [],
+  };
+}
+
+function formatSourceGrounding(sources?: SourceReference[], fallbackText?: string): string {
+  const excerpts = (sources || [])
+    .map(source => source.quotedText?.trim())
+    .filter((text): text is string => !!text)
+    .slice(0, 2);
+
+  if (excerpts.length > 0) {
+    return excerpts.map(excerpt => `- ${excerpt.slice(0, 500)}${excerpt.length > 500 ? '...' : ''}`).join('\n');
+  }
+
+  if (fallbackText?.trim()) {
+    const trimmed = fallbackText.trim();
+    return `- ${trimmed.slice(0, 500)}${trimmed.length > 500 ? '...' : ''}`;
+  }
+
+  return '- Source available in this node metadata.';
+}
+
+function formatCartographerCreatedContent(title: string, body: string, options?: {
+  label?: string;
+  sourceGrounding?: string;
+  relatedTitles?: string;
+}) {
+  const sections = [
+    title,
+    `${options?.label || 'Cartographer reading'}:\n${body.trim()}`,
+  ];
+
+  if (options?.relatedTitles) {
+    sections.push(`Related nodes:\n${options.relatedTitles}`);
+  }
+
+  if (options?.sourceGrounding) {
+    sections.push(`Source grounding:\n${options.sourceGrounding}`);
+  }
+
+  return sections.join('\n\n');
+}
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
 if (typeof window !== 'undefined') {
   (window as any).auroraDebug = {
     showLibrary: () => {
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data) {
         console.log('📚 No aurora-portal-data found in localStorage');
         return;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       const library = parsed.universeLibrary || {};
       console.log('📚 ==========================================');
       console.log('📚 AURORA LIBRARY');
@@ -34,12 +247,12 @@ if (typeof window !== 'undefined') {
       console.log('📁 FOLDER DIAGNOSTICS');
 
       // Check localStorage
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data) {
         console.log('📁 ❌ No aurora-portal-data found in localStorage');
         return;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       const foldersInStorage = parsed.folders || {};
       console.log('📁 Folders in localStorage:', Object.keys(foldersInStorage).length);
       Object.entries(foldersInStorage).forEach(([id, folder]: any) => {
@@ -60,7 +273,7 @@ if (typeof window !== 'undefined') {
       return { storage: foldersInStorage, state: store?.getState().folders };
     },
     clearLibrary: () => {
-      localStorage.removeItem('aurora-portal-data');
+      localStorage.removeItem(AURORA_STORAGE_KEY);
       console.log('🗑️ Library cleared from localStorage');
     },
     recoverLibrary: () => {
@@ -104,25 +317,25 @@ if (typeof window !== 'undefined') {
       console.log('   Try refreshing the page or check back in a moment');
     },
     dumpRaw: () => {
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data) {
         console.log('No data found');
         return null;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       console.log('Raw aurora-portal-data:', parsed);
       return parsed;
     },
     checkNow: () => {
       console.log('🔍 ==========================================');
       console.log('🔍 DIAGNOSTIC CHECK:', new Date().toLocaleTimeString());
-      const data = localStorage.getItem('aurora-portal-data');
+      const data = getStoredAuroraSnapshot();
       if (!data || data === 'null') {
         console.log('🔍 ❌ NO DATA IN LOCALSTORAGE!');
         console.log('🔍 ==========================================');
         return null;
       }
-      const parsed = JSON.parse(data);
+      const parsed = parseAuroraSnapshot(data);
       const universeCount = Object.keys(parsed.universeLibrary || {}).length;
       console.log('🔍 ✅ Data exists:', universeCount, 'universes');
       console.log('🔍 Data size:', (data.length / 1024).toFixed(2), 'KB');
@@ -133,9 +346,9 @@ if (typeof window !== 'undefined') {
     watchChanges: () => {
       console.log('👁️ STARTING LOCALSTORAGE WATCH MODE');
       console.log('👁️ Will log all changes to aurora-portal-data');
-      let lastValue = localStorage.getItem('aurora-portal-data');
+      let lastValue = getStoredAuroraSnapshot();
       const interval = setInterval(() => {
-        const currentValue = localStorage.getItem('aurora-portal-data');
+        const currentValue = getStoredAuroraSnapshot();
         if (currentValue !== lastValue) {
           console.log('🚨 ==========================================');
           console.log('🚨 LOCALSTORAGE CHANGED!', new Date().toLocaleTimeString());
@@ -167,7 +380,7 @@ if (typeof window !== 'undefined') {
             const itemSize = localStorage.getItem(key)?.length || 0;
             totalSize += itemSize + key.length;
 
-            if (key === 'aurora-portal-data') {
+            if (key === AURORA_STORAGE_KEY) {
               auroraSize = itemSize;
             }
           }
@@ -196,9 +409,9 @@ if (typeof window !== 'undefined') {
         console.log('💾   % of 5MB limit:', auroraPercent + '%');
 
         // Get universe details
-        const auroraData = localStorage.getItem('aurora-portal-data');
+        const auroraData = getStoredAuroraSnapshot();
         if (auroraData) {
-          const parsed = JSON.parse(auroraData);
+          const parsed = parseAuroraSnapshot(auroraData);
           const universeCount = Object.keys(parsed.universeLibrary || {}).length;
           const avgPerUniverse = universeCount > 0 ? auroraSize / universeCount : 0;
 
@@ -271,7 +484,7 @@ if (typeof window !== 'undefined') {
   const originalClear = localStorage.clear.bind(localStorage);
 
   localStorage.setItem = function (key: string, value: string) {
-    if (key === 'aurora-portal-data') {
+    if (key === AURORA_STORAGE_KEY) {
       const stack = new Error().stack || '';
       const caller = stack.split('\n')[2]?.trim() || 'unknown';
       console.log('📝 ==========================================');
@@ -286,7 +499,7 @@ if (typeof window !== 'undefined') {
   };
 
   localStorage.removeItem = function (key: string) {
-    if (key === 'aurora-portal-data') {
+    if (key === AURORA_STORAGE_KEY) {
       const stack = new Error().stack || '';
       const caller = stack.split('\n')[2]?.trim() || 'unknown';
       console.log('🗑️ ==========================================');
@@ -386,6 +599,8 @@ interface UniverseData {
   runs?: UniverseRun[];                    // All practice runs for this universe
   currentRunId?: string;                    // Active run ID (if in progress)
   writeUps?: StudyGuideWriteUp[];          // Generated study guides from completed runs
+  cartographerOverlay?: CartographerOverlay | null;
+  cartographerBlueprint?: UniverseBlueprint | null;
 }
 
 interface UniverseSnapshot {
@@ -420,6 +635,19 @@ interface CanvasStore {
 
 
   selectedNodesForConnection: string[];
+  cartographerOverlay: CartographerOverlay | null;
+  cartographerBlueprint: UniverseBlueprint | null;
+  isCartographerOpen: boolean;
+  isMappingUniverse: boolean;
+  cartographerError: string | null;
+  openCartographer: () => void;
+  mapActiveUniverse: (analysisLens?: string) => Promise<void>;
+  unfoldActiveNexus: (analysisLens?: string) => Promise<void>;
+  createNodesFromBlueprint: (selectedBranchIds?: string[]) => string[];
+  createBridgeFromCartographer: (bridgeId: string) => string | null;
+  createGapNodeFromCartographer: (gapId: string) => string | null;
+  createNextMoveNodeFromCartographer: (moveId: string) => string | null;
+  clearCartographerOverlay: () => void;
   createNexus: (title: string, content: string, videoUrl?: string, audioUrl?: string, fileUrl?: string, fileName?: string) => void;
   loadAcademicPaper: () => void;
   loadAcademicPaperFromData: (data: any) => void;
@@ -431,8 +659,8 @@ interface CanvasStore {
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   addAtomizedRange: (parentId: string, text: string, childNodeId: string) => void;
   exportToWordDoc: () => void;
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => string;
-  addNodes: (nodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => string[];
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number, sources?: SourceReference[]) => string;
+  addNodes: (nodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType; sources?: SourceReference[] }[]) => string[];
   createChatNexus: (title: string, userMessage: string, aiResponse: string) => void;
   addUserMessage: (content: string, parentId: string) => string;
   addAIMessage: (content: string, parentId: string) => string;
@@ -595,6 +823,481 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   connectionModeNodeA: null,
   connectionModeActive: false,
   selectedNodesForConnection: [],
+  cartographerOverlay: null,
+  cartographerBlueprint: null,
+  isCartographerOpen: false,
+  isMappingUniverse: false,
+  cartographerError: null,
+
+  openCartographer: () => {
+    set({
+      isCartographerOpen: true,
+      cartographerError: null,
+    });
+  },
+
+  mapActiveUniverse: async (analysisLens?: string) => {
+    const state = get();
+    const universeId = state.activeUniverseId || state.activeUniverseIds[0];
+    const trimmedLens = analysisLens?.trim() || '';
+
+    if (!universeId) {
+      set({ cartographerError: 'Load or create a universe before mapping it.' });
+      return;
+    }
+
+    const universeTitle = state.universeLibrary[universeId]?.title || state.nexuses[0]?.title || 'Untitled Universe';
+    const nodes = Object.values(state.nodes);
+
+    if (state.nexuses.length === 0 || nodes.length === 0) {
+      set({ cartographerError: 'This universe needs at least one nexus and one node before it can be mapped.' });
+      return;
+    }
+
+    set({
+      isCartographerOpen: true,
+      isMappingUniverse: true,
+      cartographerError: null,
+    });
+
+    try {
+      const payload = {
+        universeId,
+        universeTitle,
+        analysisLens: trimmedLens,
+        nexuses: state.nexuses.map((nexus) => ({
+          id: nexus.id,
+          title: nexus.title,
+          content: nexus.content.slice(0, 1600),
+          fileName: nexus.fileName,
+          videoUrl: nexus.videoUrl,
+          type: nexus.type,
+        })),
+        nodes: nodes.map((node) => ({
+          id: node.id,
+          title: node.semanticTitle || node.title,
+          nodeType: node.nodeType,
+          parentId: node.parentId,
+          children: node.children,
+          content: node.content.slice(0, 1800),
+          isAI: node.isAI,
+          isConnectionNode: node.isConnectionNode,
+          connectionNodes: node.connectionNodes,
+          sources: deriveNodeSources(node),
+        })),
+      };
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'cartographer',
+          operation: 'analyze-universe',
+          messages: [{
+            role: 'user',
+            content: JSON.stringify({ operation: 'analyze-universe', ...payload }),
+          }],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Cartographer request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawOverlay = data.response;
+      const overlay = normalizeCartographerOverlay(rawOverlay, universeId, universeTitle);
+
+      set((currentState) => ({
+        cartographerOverlay: overlay,
+        cartographerBlueprint: null,
+        isCartographerOpen: true,
+        isMappingUniverse: false,
+        cartographerError: null,
+        universeLibrary: currentState.universeLibrary[universeId]
+          ? {
+            ...currentState.universeLibrary,
+            [universeId]: {
+              ...currentState.universeLibrary[universeId],
+              cartographerOverlay: overlay,
+              lastModified: Date.now(),
+            },
+          }
+          : currentState.universeLibrary,
+      }));
+
+      get().saveToLocalStorage();
+    } catch (error) {
+      console.error('❌ Failed to map universe:', error);
+      set({
+        isMappingUniverse: false,
+        cartographerError: error instanceof Error ? error.message : 'Failed to map universe',
+      });
+    }
+  },
+
+  unfoldActiveNexus: async (analysisLens?: string) => {
+    const state = get();
+    const universeId = state.activeUniverseId || state.activeUniverseIds[0];
+    const trimmedLens = analysisLens?.trim() || '';
+    const nexus = state.selectedId
+      ? state.nexuses.find(item => item.id === state.selectedId)
+      : state.nexuses[0];
+
+    if (!universeId || !nexus) {
+      set({ isCartographerOpen: true, cartographerError: 'Select or load a nexus before unfolding it.' });
+      return;
+    }
+
+    if (!nexus.content || nexus.content.trim().length < 80) {
+      set({ isCartographerOpen: true, cartographerError: 'This nexus needs more source material before Astryon can unfold it.' });
+      return;
+    }
+
+    set({
+      isCartographerOpen: true,
+      isMappingUniverse: true,
+      cartographerError: null,
+    });
+
+    try {
+      const payload = {
+        operation: 'unfold-nexus',
+        universeId,
+        analysisLens: trimmedLens,
+        nexus: {
+          id: nexus.id,
+          title: nexus.title,
+          content: nexus.content,
+          fileName: nexus.fileName,
+          fileUrl: nexus.fileUrl,
+          videoUrl: nexus.videoUrl,
+          type: nexus.type,
+        },
+        existingChildren: Object.values(state.nodes)
+          .filter(node => node.parentId === nexus.id)
+          .map(node => ({
+            id: node.id,
+            title: node.semanticTitle || node.title,
+            content: node.content.slice(0, 1200),
+            sources: deriveNodeSources(node),
+          })),
+      };
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'cartographer',
+          operation: 'unfold-nexus',
+          messages: [{
+            role: 'user',
+            content: JSON.stringify(payload),
+          }],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unfold request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      const blueprint = normalizeUniverseBlueprint(data.response, nexus.id);
+
+      set((currentState) => ({
+        cartographerBlueprint: blueprint,
+        cartographerOverlay: null,
+        isCartographerOpen: true,
+        isMappingUniverse: false,
+        cartographerError: null,
+        universeLibrary: currentState.universeLibrary[universeId]
+          ? {
+            ...currentState.universeLibrary,
+            [universeId]: {
+              ...currentState.universeLibrary[universeId],
+              cartographerBlueprint: blueprint,
+              lastModified: Date.now(),
+            },
+          }
+          : currentState.universeLibrary,
+      }));
+
+      get().saveToLocalStorage();
+    } catch (error) {
+      console.error('❌ Failed to unfold nexus:', error);
+      set({
+        isMappingUniverse: false,
+        cartographerError: error instanceof Error ? error.message : 'Failed to unfold nexus',
+      });
+    }
+  },
+
+  createNodesFromBlueprint: (selectedBranchIds?: string[]) => {
+    const state = get();
+    const blueprint = state.cartographerBlueprint;
+
+    if (!blueprint) {
+      set({ cartographerError: 'No blueprint is available to create from.' });
+      return [];
+    }
+
+    const nexus = state.nexuses.find(item => item.id === blueprint.nexusId);
+    if (!nexus) {
+      set({ cartographerError: 'The source nexus for this blueprint is no longer loaded.' });
+      return [];
+    }
+
+    const selectedSet = selectedBranchIds ? new Set(selectedBranchIds) : null;
+    const branchesToCreate = selectedSet
+      ? blueprint.branches.filter(branch => selectedSet.has(branch.id))
+      : blueprint.branches;
+
+    if (branchesToCreate.length === 0) {
+      set({ cartographerError: 'Select at least one branch to create.' });
+      return [];
+    }
+
+    const createdNodeIds: string[] = [];
+
+    const createBranchTree = (branch: ProposedBranch, parentId: string) => {
+      const content = formatCartographerCreatedContent(branch.title, branch.rationale, {
+        label: branch.kind === 'source-chunk' ? 'Cartographer section reading' : 'Cartographer concept reading',
+        sourceGrounding: branch.kind === 'source-chunk'
+          ? formatSourceGrounding(branch.sourceEvidence, branch.sourceText)
+          : formatSourceGrounding(branch.sourceEvidence),
+      });
+      const nodeId = get().addNode(
+        content,
+        parentId,
+        undefined,
+        'ai-response',
+        undefined,
+        branch.sourceEvidence
+      );
+      createdNodeIds.push(nodeId);
+
+      branch.childNodes?.forEach(child => createBranchTree(child, nodeId));
+    };
+
+    branchesToCreate.forEach(branch => createBranchTree(branch, blueprint.nexusId));
+
+    set((currentState) => {
+      const universeId = currentState.activeUniverseId || currentState.activeUniverseIds[0];
+      return {
+        cartographerError: null,
+        cartographerBlueprint: {
+          ...blueprint,
+          branches: blueprint.branches.map(branch => ({
+            ...branch,
+            selectedByDefault: selectedSet ? selectedSet.has(branch.id) : true,
+          })),
+        },
+        universeLibrary: universeId && currentState.universeLibrary[universeId]
+          ? {
+            ...currentState.universeLibrary,
+            [universeId]: {
+              ...currentState.universeLibrary[universeId],
+              nodes: get().nodes,
+              cartographerBlueprint: {
+                ...blueprint,
+                branches: blueprint.branches.map(branch => ({
+                  ...branch,
+                  selectedByDefault: selectedSet ? selectedSet.has(branch.id) : true,
+                })),
+              },
+              lastModified: Date.now(),
+            },
+          }
+          : currentState.universeLibrary,
+      };
+    });
+
+    get().saveCurrentUniverse();
+    console.log(`🗺️ Created ${createdNodeIds.length} nodes from Cartographer blueprint`);
+    return createdNodeIds;
+  },
+
+  createBridgeFromCartographer: (bridgeId: string) => {
+    const state = get();
+    const bridge = state.cartographerOverlay?.bridges.find(item => item.id === bridgeId);
+    if (!bridge) return null;
+
+    const validNodeIds = bridge.nodeIds.filter(nodeId => !!state.nodes[nodeId]);
+    if (validNodeIds.length < 2) {
+      set({ cartographerError: 'This bridge needs at least two existing nodes to connect.' });
+      return null;
+    }
+
+    const bridgeNodes = validNodeIds.map(nodeId => state.nodes[nodeId]);
+    const centroid = bridgeNodes.reduce<[number, number, number]>(
+      (sum, node) => [
+        sum[0] + node.position[0],
+        sum[1] + node.position[1],
+        sum[2] + node.position[2],
+      ],
+      [0, 0, 0]
+    ).map(value => value / bridgeNodes.length) as [number, number, number];
+
+    const newNodeId = `connection-${Date.now()}`;
+    const connectedTitles = bridgeNodes.map(node => `- ${node.semanticTitle || node.title}`).join('\n');
+    const sources = cartographerEvidenceToSources(bridge.evidence);
+    const content = formatCartographerCreatedContent(bridge.title, bridge.summary, {
+      label: 'Cartographer bridge',
+      relatedTitles: connectedTitles,
+      sourceGrounding: formatSourceGrounding(sources),
+    });
+
+    const newNode: Node = {
+      id: newNodeId,
+      position: [centroid[0], centroid[1] + 4, centroid[2]],
+      title: bridge.title,
+      content,
+      parentId: bridgeNodes[0].parentId,
+      children: [],
+      isAI: true,
+      isConnectionNode: true,
+      connectionNodes: validNodeIds,
+      nodeType: 'socratic-question',
+      sources,
+    };
+
+    set(currentState => ({
+      nodes: {
+        ...currentState.nodes,
+        [newNodeId]: newNode,
+      },
+      selectedId: newNodeId,
+      showContentOverlay: true,
+      cartographerError: null,
+    }));
+
+    get().saveCurrentUniverse();
+    console.log('🗺️ Created Cartographer bridge node:', newNodeId);
+    return newNodeId;
+  },
+
+  createGapNodeFromCartographer: (gapId: string) => {
+    const state = get();
+    const gap = state.cartographerOverlay?.gaps.find(item => item.id === gapId);
+    if (!gap) return null;
+
+    const parentNode = gap.nodeIds.map(nodeId => state.nodes[nodeId]).find(Boolean);
+    const parentId = parentNode?.parentId || state.activeUniverseId || state.activeUniverseIds[0] || state.nexuses[0]?.id;
+    if (!parentId) {
+      set({ cartographerError: 'No active universe is available for this gap node.' });
+      return null;
+    }
+
+    const sources = cartographerEvidenceToSources(gap.evidence);
+    const content = formatCartographerCreatedContent(gap.title, gap.summary, {
+      label: `Cartographer gap (${gap.type})`,
+      sourceGrounding: formatSourceGrounding(sources),
+    });
+    const newNodeId = get().addNode(content, parentId, undefined, 'synthesis', undefined, sources);
+
+    set({ selectedId: newNodeId, showContentOverlay: true, cartographerError: null });
+    get().saveCurrentUniverse();
+    console.log('🗺️ Created Cartographer gap node:', newNodeId);
+    return newNodeId;
+  },
+
+  createNextMoveNodeFromCartographer: (moveId: string) => {
+    const state = get();
+    const move = state.cartographerOverlay?.nextMoves.find(item => item.id === moveId);
+    if (!move) return null;
+
+    const validNodeIds = move.nodeIds.filter(nodeId => !!state.nodes[nodeId]);
+    const sources = cartographerEvidenceToSources(move.evidence);
+
+    if (move.action === 'connect-nodes' && validNodeIds.length >= 2) {
+      const moveNodes = validNodeIds.map(nodeId => state.nodes[nodeId]);
+      const centroid = moveNodes.reduce<[number, number, number]>(
+        (sum, node) => [
+          sum[0] + node.position[0],
+          sum[1] + node.position[1],
+          sum[2] + node.position[2],
+        ],
+        [0, 0, 0]
+      ).map(value => value / moveNodes.length) as [number, number, number];
+      const newNodeId = `connection-${Date.now()}`;
+      const connectedTitles = moveNodes.map(node => `- ${node.semanticTitle || node.title}`).join('\n');
+      const content = formatCartographerCreatedContent(move.title, `${move.rationale}${move.suggestedContent ? `\n\nSuggested content:\n${move.suggestedContent}` : ''}`, {
+        label: 'Cartographer next-move bridge',
+        relatedTitles: connectedTitles,
+        sourceGrounding: formatSourceGrounding(sources),
+      });
+
+      const newNode: Node = {
+        id: newNodeId,
+        position: [centroid[0], centroid[1] + 4, centroid[2]],
+        title: move.title,
+        content,
+        parentId: moveNodes[0].parentId,
+        children: [],
+        isAI: true,
+        isConnectionNode: true,
+        connectionNodes: validNodeIds,
+        nodeType: 'socratic-question',
+        sources,
+      };
+
+      set(currentState => ({
+        nodes: {
+          ...currentState.nodes,
+          [newNodeId]: newNode,
+        },
+        selectedId: newNodeId,
+        showContentOverlay: true,
+        cartographerError: null,
+      }));
+
+      get().saveCurrentUniverse();
+      console.log('🗺️ Created Cartographer next-move bridge:', newNodeId);
+      return newNodeId;
+    }
+
+    const parentNode = validNodeIds.map(nodeId => state.nodes[nodeId]).find(Boolean);
+    const parentId = parentNode?.parentId || state.activeUniverseId || state.activeUniverseIds[0] || state.nexuses[0]?.id;
+    if (!parentId) {
+      set({ cartographerError: 'No active universe is available for this next move.' });
+      return null;
+    }
+
+    const content = formatCartographerCreatedContent(move.title, `${move.rationale}${move.suggestedContent ? `\n\nSuggested content:\n${move.suggestedContent}` : ''}`, {
+      label: 'Cartographer next move',
+      sourceGrounding: formatSourceGrounding(sources),
+    });
+    const newNodeId = get().addNode(content, parentId, undefined, move.action === 'revisit-node' ? 'synthesis' : 'ai-response', undefined, sources);
+
+    set({ selectedId: newNodeId, showContentOverlay: true, cartographerError: null });
+    get().saveCurrentUniverse();
+    console.log('🗺️ Created Cartographer next-move node:', newNodeId);
+    return newNodeId;
+  },
+
+  clearCartographerOverlay: () => {
+    const state = get();
+    const universeId = state.cartographerOverlay?.universeId || state.activeUniverseId || state.activeUniverseIds[0];
+
+    set((currentState) => ({
+      cartographerOverlay: null,
+      cartographerBlueprint: null,
+      isCartographerOpen: false,
+      cartographerError: null,
+      universeLibrary: universeId && currentState.universeLibrary[universeId]
+        ? {
+          ...currentState.universeLibrary,
+          [universeId]: {
+            ...currentState.universeLibrary[universeId],
+            cartographerOverlay: null,
+            cartographerBlueprint: null,
+          },
+        }
+        : currentState.universeLibrary,
+    }));
+
+    get().saveToLocalStorage();
+  },
 
 
 
@@ -624,14 +1327,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
 
     // 🛡️ CRITICAL: Never save empty library if one already exists
-    const existingData = localStorage.getItem('aurora-portal-data');
+    const existingData = getStoredAuroraSnapshot();
     if (existingData && existingData !== 'null') {
       try {
-        const existing = JSON.parse(existingData);
-        const existingCount = Object.keys(existing.universeLibrary || {}).length;
         const newCount = Object.keys(state.universeLibrary).length;
 
-        if (existingCount > 0 && newCount === 0) {
+        if (wouldOverwriteExistingLibraryWithEmpty(existingData, newCount)) {
+          const existingCount = Object.keys(parseAuroraSnapshot(existingData).universeLibrary || {}).length;
           console.error('❌ REFUSING TO SAVE: Would overwrite', existingCount, 'universes with empty library!');
           console.error('❌ If you want to clear the library, use window.auroraDebug.clearLibrary()');
           return;
@@ -641,40 +1343,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
     }
 
-    const dataToSave = {
-      universeLibrary: state.universeLibrary,
-      originalSnapshots: state.originalSnapshots,
-      folders: state.folders,
-      activatedConversations: state.activatedConversations,
-      timestamp: Date.now(),
-    };
+    const dataToSave = buildAuroraSnapshot(state);
 
     try {
-      const serialized = JSON.stringify(dataToSave);
-
-      // 🛡️ CRITICAL: Verify serialization didn't produce 'null' or empty
-      if (serialized === 'null' || serialized === '{}' || serialized === '{"universeLibrary":{},"activatedConversations":[]}') {
-        console.error('❌ REFUSING TO SAVE: Serialized data is empty or null!');
-        return;
-      }
+      const serialized = serializeAuroraSnapshot(dataToSave);
 
       // 💾 Save to localStorage (backwards compatibility)
-      localStorage.setItem('aurora-portal-data', serialized);
+      writeStoredAuroraSnapshot(serialized);
 
-      // 💾 Save each universe to IndexedDB
       const universeCount = Object.keys(state.universeLibrary).length;
-      for (const [id, universeData] of Object.entries(state.universeLibrary)) {
-        await saveUniverse(id, universeData);
-        // ☁️ Sync to Cloud (NeonDB)
-        await saveToCloud(id, universeData, universeData.nexuses[0]?.videoUrl);
-      }
 
-      // 💾 Create backup snapshot every 5 saves
       const saveCounter = (window as any)._auroraSaveCount || 0;
       (window as any)._auroraSaveCount = saveCounter + 1;
-      if ((window as any)._auroraSaveCount % 5 === 0) {
-        await createBackup(dataToSave, 'auto');
-      }
+      secondaryPersistence.schedule({
+        universeLibrary: state.universeLibrary,
+        backupSnapshot: dataToSave,
+        shouldCreateBackup: (window as any)._auroraSaveCount % 5 === 0,
+      });
 
       // Comprehensive logging
       const foldersCount = Object.keys(state.folders).length;
@@ -694,15 +1379,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         });
       }
       console.log('💾 Data size:', (serialized.length / 1024).toFixed(2), 'KB');
-      console.log('💾 Storage: localStorage + IndexedDB');
+      console.log('💾 Storage: localStorage immediately; IndexedDB + cloud sync debounced');
       console.log('💾 ==========================================');
 
       // 🔍 DIAGNOSTIC: Verify save worked by reading back
-      const verification = localStorage.getItem('aurora-portal-data');
+      const verification = getStoredAuroraSnapshot();
       if (!verification) {
         throw new Error('Save verification failed - data not in localStorage!');
       }
-      const verifiedData = JSON.parse(verification);
+      const verifiedData = parseAuroraSnapshot(verification);
       const verifiedCount = Object.keys(verifiedData.universeLibrary || {}).length;
       const verifiedFoldersCount = Object.keys(verifiedData.folders || {}).length;
       console.log('💾 ✅ VERIFICATION: Data confirmed in both storages');
@@ -768,7 +1453,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       if (Object.keys(universeLibrary).length === 0) {
         console.log('📂 IndexedDB empty, checking localStorage for migration...');
 
-        const saved = localStorage.getItem('aurora-portal-data');
+        const saved = getStoredAuroraSnapshot();
 
         console.log('📂 Raw data status:', saved === null ? 'NULL' : saved === 'null' ? '"null" STRING' : 'EXISTS');
         if (saved) {
@@ -822,7 +1507,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           return;
         }
 
-        const data = JSON.parse(saved);
+        const data = parseAuroraSnapshot(saved);
 
         // 🛡️ CRITICAL: Verify data structure
         if (!data || typeof data !== 'object') {
@@ -850,7 +1535,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         // Migrate from localStorage to IndexedDB
         universeLibrary = data.universeLibrary || {};
         folders = data.folders || {};
-        activatedConversations = data.activatedConversations || [];
+        activatedConversations = (data.activatedConversations || []) as string[];
         originalSnapshots = data.originalSnapshots || {};
 
         console.log('📂 🔍 MIGRATION: Folders from localStorage:', Object.keys(folders).length);
@@ -873,9 +1558,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       } else {
         // Load folders, snapshots and activated conversations from localStorage (could move to IndexedDB later)
         console.log('📂 IndexedDB has universes, loading folders from localStorage...');
-        const localData = localStorage.getItem('aurora-portal-data');
+        const localData = getStoredAuroraSnapshot();
         if (localData) {
-          const data = JSON.parse(localData);
+          const data = parseAuroraSnapshot(localData);
           console.log('📂 🔍 Raw localStorage data.folders:', data.folders);
           console.log('📂 🔍 Folders in localStorage:', Object.keys(data.folders || {}).length);
           if (data.folders) {
@@ -884,7 +1569,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             });
           }
           folders = data.folders || {};
-          activatedConversations = data.activatedConversations || [];
+          activatedConversations = (data.activatedConversations || []) as string[];
           originalSnapshots = data.originalSnapshots || {};
         } else {
           console.warn('📂 ⚠️ No localStorage data found despite IndexedDB having universes!');
@@ -1486,7 +2171,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // Initialize the new node with a seed message
     const seedMsg: ThreadMessage = {
       id: `msg-${Date.now()}-seed`,
-      role: 'note',
+      role: 'user',
       content: selectedText,
       timestamp: Date.now(),
     };
@@ -1512,7 +2197,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   getNodeMessages: (node: Node): ThreadMessage[] => {
     if (node.messages && node.messages.length > 0) {
-      return node.messages;
+      return node.messages.map(message => (
+        message.role === 'note' && message.id.includes('-seed')
+          ? { ...message, role: 'user' }
+          : message
+      ));
     }
     // Lazy migration: convert existing content to a single message
     if (!node.content) return [];
@@ -1653,7 +2342,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
-  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number) => {
+  addNode: (content: string, parentId: string, quotedText?: string, nodeType?: NodeType, explicitSiblingIndex?: number, sources?: SourceReference[]) => {
     let newNodeId = '';
     let isConnectionNodeParent = false;
 
@@ -1698,6 +2387,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         title: `Reply ${new Date().toLocaleTimeString()}`,
         content,
         quotedText,
+        sources: sources || (quotedText ? [{ kind: 'manual', quotedText, sourceNodeId: parentId }] : undefined),
         parentId,
         children: [],
         nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'), // Default based on context
@@ -1762,7 +2452,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return newNodeId;
   },
 
-  addNodes: (batchNodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType }[]) => {
+  addNodes: (batchNodes: { content: string; parentId: string; quotedText?: string; nodeType?: NodeType; sources?: SourceReference[] }[]) => {
     if (batchNodes.length === 0) return [];
 
     const timestamp = Date.now();
@@ -1775,7 +2465,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const batchSiblingCounts: Record<string, number> = {};
 
       for (let i = 0; i < batchNodes.length; i++) {
-        const { content, parentId, quotedText, nodeType } = batchNodes[i];
+        const { content, parentId, quotedText, nodeType, sources } = batchNodes[i];
         const newNodeId = `node-${timestamp}-${i}`;
         newNodeIds.push(newNodeId);
 
@@ -1817,6 +2507,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           title: `Reply ${new Date().toLocaleTimeString()}`,
           content,
           quotedText,
+          sources: sources || (quotedText ? [{ kind: 'manual', quotedText, sourceNodeId: parentId }] : undefined),
           parentId,
           children: [],
           nodeType: nodeType || (isConnectionNodeParent ? 'socratic-answer' : 'user-reply'),
@@ -2974,9 +3665,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       get().saveToLocalStorage();
 
       // Final verification: Check localStorage
-      const lsData = localStorage.getItem('aurora-portal-data');
+      const lsData = getStoredAuroraSnapshot();
       if (lsData) {
-        const parsed = JSON.parse(lsData);
+        const parsed = parseAuroraSnapshot(lsData);
         if (parsed.universeLibrary && parsed.universeLibrary[nexusId]) {
           console.error('🗑️   ❌ ERROR: Universe still in localStorage!');
         } else {
@@ -4125,6 +4816,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         createdAt: existingUniverse?.createdAt || Date.now(), // Preserve creation time or set new
         lastModified: Date.now(),
         folderId: folderId,  // 🔥 CRITICAL: Preserve folderId
+        cartographerOverlay: state.cartographerOverlay?.universeId === universeId
+          ? state.cartographerOverlay
+          : existingUniverse?.cartographerOverlay || null,
+        cartographerBlueprint: state.cartographerBlueprint?.nexusId
+          ? state.cartographerBlueprint
+          : existingUniverse?.cartographerBlueprint || null,
       };
 
       console.log('📦 Universe data to save:');
@@ -4174,12 +4871,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       get().saveToLocalStorage();
 
       // FINAL VERIFICATION: Check localStorage
-      const lsData = localStorage.getItem('aurora-portal-data');
+      const lsData = getStoredAuroraSnapshot();
       if (!lsData) {
         throw new Error('localStorage is empty after save!');
       }
 
-      const parsedLS = JSON.parse(lsData);
+      const parsedLS = parseAuroraSnapshot(lsData);
       if (!parsedLS.universeLibrary) {
         throw new Error('universeLibrary missing from localStorage!');
       }
@@ -4237,6 +4934,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       connectionModeNodeA: null,
       connectionModeActive: false,
       selectedNodesForConnection: [],
+      cartographerOverlay: null,
+      cartographerBlueprint: null,
+      isCartographerOpen: false,
+      cartographerError: null,
+      isMappingUniverse: false,
     });
     console.log('✅ Canvas cleared - ready for new universe');
   },
@@ -4282,6 +4984,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         selectedId: null,
         showContentOverlay: false,
         showReplyModal: false,
+        cartographerOverlay: universeData.cartographerOverlay || null,
+        cartographerBlueprint: universeData.cartographerBlueprint || null,
+        isCartographerOpen: false,
+        cartographerError: null,
+        isMappingUniverse: false,
       });
     } else {
       // Regular universe - no lock system
@@ -4293,6 +5000,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         selectedId: null,
         showContentOverlay: false,
         showReplyModal: false,
+        cartographerOverlay: universeData.cartographerOverlay || null,
+        cartographerBlueprint: universeData.cartographerBlueprint || null,
+        isCartographerOpen: false,
+        cartographerError: null,
+        isMappingUniverse: false,
       });
     }
 
@@ -4762,15 +5474,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       const data = await response.json();
       const analysisText = data.response;
 
-      // Parse JSON from response
       let analysisData;
       try {
-        // Try to extract JSON from markdown code blocks
-        const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/) ||
-          analysisText.match(/```\n([\s\S]*?)\n```/) ||
-          [null, analysisText];
-        const jsonStr = jsonMatch[1] || analysisText;
-        analysisData = JSON.parse(jsonStr);
+        analysisData = parseAIJson(analysisText, universeAnalysisSchema);
       } catch (e) {
         console.error('Failed to parse analysis JSON:', e);
         throw new Error('Failed to parse analysis results');
@@ -5003,11 +5709,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🛡️ BACKUP LIBRARY
   backupLibrary: () => {
     try {
-      const current = localStorage.getItem('aurora-portal-data');
-
-      // Only backup if data exists and is not null
-      if (current && current !== 'null') {
-        localStorage.setItem('aurora-portal-data-backup', current);
+      if (backupStoredLibrary()) {
         console.log('🛡️ Library backed up successfully');
       } else {
         console.log('🛡️ No valid data to backup');
@@ -5020,27 +5722,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   // 🛡️ RECOVER FROM BACKUP
   recoverFromBackup: () => {
     try {
-      const backup = localStorage.getItem('aurora-portal-data-backup');
-
-      if (!backup || backup === 'null') {
-        console.error('❌ No backup found');
+      const result = recoverStoredLibraryFromBackup();
+      if (!result.recovered) {
+        console.error(`❌ ${result.reason}`);
         return false;
       }
 
-      // Verify backup is valid JSON
-      try {
-        const parsed = JSON.parse(backup);
-        if (!parsed.universeLibrary) {
-          console.error('❌ Backup is corrupted (missing universeLibrary)');
-          return false;
-        }
-      } catch (e) {
-        console.error('❌ Backup is corrupted (invalid JSON)');
-        return false;
-      }
-
-      // Restore from backup
-      localStorage.setItem('aurora-portal-data', backup);
       console.log('✅ Successfully recovered library from backup!');
       console.log('🛡️ Please reload the page to load recovered data');
 

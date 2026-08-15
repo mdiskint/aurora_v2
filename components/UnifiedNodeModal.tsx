@@ -449,7 +449,6 @@ export default function UnifiedNodeModal() {
   const deleteNode = useCanvasStore((state) => state.deleteNode);
   const addMessageToNode = useCanvasStore((state) => state.addMessageToNode);
   const updateMessageInNode = useCanvasStore((state) => state.updateMessageInNode);
-  const breakOffFromNode = useCanvasStore((state) => state.breakOffFromNode);
   const getNodeMessages = useCanvasStore((state) => state.getNodeMessages);
 
   // Delete confirmation state
@@ -472,7 +471,7 @@ export default function UnifiedNodeModal() {
   // Chat thread state
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [threadSelectedText, setThreadSelectedText] = useState('');
-  const [showBreakOffButton, setShowBreakOffButton] = useState(false);
+  const [markedThreadSections, setMarkedThreadSections] = useState<AtomizeMarkedSection[]>([]);
   const [noteMode, setNoteMode] = useState(false);
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
   const [socraticRootId, setSocraticRootId] = useState<string | null>(null);
@@ -740,6 +739,8 @@ export default function UnifiedNodeModal() {
   const isExploreEditorMode = pathname === '/explore';
   const isThreadNode = node && !nexus && !node.isConnectionNode && !isExploreEditorMode;
   const threadMessages: ThreadMessage[] = isThreadNode ? getNodeMessages(node) : [];
+  const atomizeMarkedCount = isThreadNode ? markedThreadSections.length : atomizeMarkerSummary.sections.length;
+  const hasIncompleteAtomizeMarkers = !isThreadNode && atomizeMarkerSummary.incompleteMarkers > 0;
 
   // Auto-scroll thread to bottom when messages change
   const prevMessageCount = useRef(0);
@@ -749,6 +750,11 @@ export default function UnifiedNodeModal() {
     }
     prevMessageCount.current = threadMessages.length;
   }, [threadMessages.length]);
+
+  useEffect(() => {
+    setMarkedThreadSections([]);
+    setThreadSelectedText('');
+  }, [selectedId]);
 
   console.log('🎨 UnifiedNodeModal render:', {
     selectedId,
@@ -1158,7 +1164,19 @@ export default function UnifiedNodeModal() {
 
   const handleMarkAtomizeSelection = () => {
     const textarea = textareaRef.current;
-    if (!textarea || textarea.selectionStart === textarea.selectionEnd) return;
+    if (!textarea) {
+      if (!isThreadNode || !threadSelectedText.trim()) return;
+
+      const markerId = String(markedThreadSections.length + 1);
+      setMarkedThreadSections(current => [...current, { markerId, text: threadSelectedText.trim() }]);
+      setThreadSelectedText('');
+      setSelectedContentText('');
+      window.getSelection()?.removeAllRanges();
+      showToastNotification(`Marked section ${markerId} for atomizing`);
+      return;
+    }
+
+    if (textarea.selectionStart === textarea.selectionEnd) return;
 
     const markerId = getNextAtomizeMarkerId(textarea.value);
     insertAtomizeTextAtSelection(
@@ -1171,6 +1189,41 @@ export default function UnifiedNodeModal() {
   const handleAtomizeMarkedSections = () => {
     const parentId = node ? node.id : nexus?.id;
     if (!parentId) return;
+
+    if (isThreadNode) {
+      if (markedThreadSections.length === 0) {
+        showToastNotification('Mark at least one section before atomizing');
+        return;
+      }
+
+      const newNodeIds = addNodes(markedThreadSections.map(section => ({
+        content: section.text,
+        parentId,
+        nodeType: 'user-reply' as NodeType,
+      })));
+
+      newNodeIds.forEach((newNodeId, index) => {
+        const section = markedThreadSections[index];
+        if (section) {
+          addAtomizedRange(parentId, section.text, newNodeId);
+        }
+      });
+
+      setMarkedThreadSections([]);
+      setThreadSelectedText('');
+      setSelectedContentText('');
+      showToastNotification(`Atomized ${newNodeIds.length} marked section${newNodeIds.length === 1 ? '' : 's'} into child nodes`);
+
+      selectNode(null, false);
+
+      if (newNodeIds.length > 0) {
+        const targetNodeId = newNodeIds[0];
+        setTimeout(() => {
+          selectNode(targetNodeId, true);
+        }, 4000);
+      }
+      return;
+    }
 
     const currentValue = textareaRef.current?.value || editedContent || displayContent || '';
     const { sections, cleanContent, incompleteMarkers } = parseAtomizeMarkedSections(currentValue);
@@ -2595,24 +2648,9 @@ Be conversational and human, not formulaic.`;
     const selection = window.getSelection();
     const highlighted = selection?.toString().trim() || '';
     setThreadSelectedText(highlighted);
-    setShowBreakOffButton(!!highlighted);
 
     // Also track for atomize
     setSelectedContentText(highlighted);
-  };
-
-  // ✂️ BREAK OFF - Create child node from selected thread text
-  const handleBreakOff = () => {
-    if (!threadSelectedText || !selectedId) return;
-
-    const newNodeId = breakOffFromNode(selectedId, threadSelectedText);
-    setThreadSelectedText('');
-    setShowBreakOffButton(false);
-
-    // Navigate to the new node
-    setTimeout(() => {
-      selectNode(newNodeId, true);
-    }, 300);
   };
 
   // Don't show if nothing selected or overlay is hidden
@@ -2736,20 +2774,20 @@ Be conversational and human, not formulaic.`;
                     </button>
                     <button
                       onClick={handleAtomizeMarkedSections}
-                      disabled={atomizeMarkerSummary.sections.length === 0 || atomizeMarkerSummary.incompleteMarkers > 0}
+                      disabled={atomizeMarkedCount === 0 || hasIncompleteAtomizeMarkers}
                       className={`px-3 py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 font-medium text-xs
-                        ${atomizeMarkerSummary.sections.length > 0 && atomizeMarkerSummary.incompleteMarkers === 0
+                        ${atomizeMarkedCount > 0 && !hasIncompleteAtomizeMarkers
                           ? 'bg-transparent hover:bg-amber-600/20 border-2 border-amber-500/50 text-amber-300'
                           : 'bg-slate-800/40 border-2 border-slate-700 text-slate-500 cursor-not-allowed'}`}
                       title={
-                        atomizeMarkerSummary.incompleteMarkers > 0
+                        hasIncompleteAtomizeMarkers
                           ? 'Finish each marked section with matching begin and end markers'
-                          : atomizeMarkerSummary.sections.length > 0
+                          : atomizeMarkedCount > 0
                             ? 'Create one child node for each marked section'
                             : 'Add begin/end markers before atomizing'
                       }
                     >
-                      ⚛️ Atomize Marked ({atomizeMarkerSummary.sections.length})
+                      ⚛️ Atomize Marked ({atomizeMarkedCount})
                     </button>
                   </div>
                 )}
@@ -2827,16 +2865,9 @@ Be conversational and human, not formulaic.`;
                     <div ref={threadEndRef} />
                   </div>
 
-                  {/* Break-off button - appears when text is selected in thread */}
-                  {showBreakOffButton && threadSelectedText && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleBreakOff}
-                        className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50
-                                 text-amber-300 rounded-lg transition-all text-sm font-medium flex items-center gap-2"
-                      >
-                        ✂️ Break Off Selection into New Node
-                      </button>
+                  {markedThreadSections.length > 0 && (
+                    <div className="mt-3 text-center text-xs text-amber-300">
+                      {markedThreadSections.length} marked section{markedThreadSections.length === 1 ? '' : 's'} ready
                     </div>
                   )}
                 </div>

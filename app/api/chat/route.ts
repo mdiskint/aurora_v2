@@ -5,137 +5,35 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
 import { callGeminiFlash } from '@/lib/gemini';
 import { searchWeb } from '@/lib/search';
+import { breakOffUniverseSchema, cartographerSchema, getChatModeDefinition, intuitionQuestionSchema, spatialDataSchema, universeBlueprintSchema } from '@/lib/ai/chatModeRegistry';
+import { getTextFromAIResponse, safeAICall, streamAICall } from '@/lib/ai/providers';
+import { parseAIJson } from '@/lib/ai/json';
+import { chunkNexusText, SourceChunk } from '@/lib/ai/textChunking';
 
 export const maxDuration = 300;
 
-const MODEL_CONFIG = {
-  high: { anthropic: 'claude-opus-4-7', openai: 'gpt-4o' },
-  mid: { anthropic: 'claude-sonnet-4-6', openai: 'gpt-4o' },
-  low: { anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini' },
-};
+function augmentBlueprintWithChunks(blueprint: any, sourceChunks: SourceChunk[]) {
+  const chunksById = new Map(sourceChunks.map(chunk => [chunk.id, chunk]));
 
-async function safeAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const modelToUse = MODEL_CONFIG[complexity];
+  return {
+    ...blueprint,
+    branches: (blueprint.branches || []).map((branch: any, index: number) => {
+      const chunk = chunksById.get(branch.sourceChunkId) || sourceChunks[index];
+      if (!chunk) return branch;
 
-  // Cache the system prompt — stable across requests in each mode, so repeat
-  // calls with the same mode read instead of re-paying full input cost.
-  // Silently no-ops when the prefix is below the model's cache minimum.
-  const systemBlocks = typeof params.system === 'string'
-    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
-    : params.system;
-
-  const currentParams = { ...params, system: systemBlocks, model: modelToUse.anthropic };
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      console.log(`🤖 Attempting Anthropic call (${complexity} tier: ${modelToUse.anthropic})...`);
-      const response = await anthropic.messages.create(currentParams);
-      if (response.usage) {
-        console.log(`💾 Cache: read=${response.usage.cache_read_input_tokens ?? 0} write=${response.usage.cache_creation_input_tokens ?? 0} input=${response.usage.input_tokens} output=${response.usage.output_tokens}`);
-      }
-      return response;
-    } catch (error: any) {
-      console.error('❌ Anthropic failed:', error.message);
-      if (!process.env.OPENAI_API_KEY) throw error;
-      console.log(`🔄 Fallback condition met, switching to OpenAI (${modelToUse.openai})...`);
-    }
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    console.log(`🚀 Executing OpenAI fallback (${modelToUse.openai})...`);
-    const completion = await openai.chat.completions.create({
-      model: modelToUse.openai,
-      messages: [
-        ...(params.system ? [{ role: "system", content: params.system }] : []),
-        ...params.messages
-      ],
-      max_tokens: params.max_tokens,
-      temperature: params.temperature || 0.7,
-    });
-
-    return {
-      content: [{ type: 'text', text: completion.choices[0].message.content || '' }]
-    };
-  }
-
-  throw new Error('No valid AI provider key available');
-}
-
-function buildAnthropicParams(params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const modelToUse = MODEL_CONFIG[complexity];
-  const systemBlocks = typeof params.system === 'string'
-    ? [{ type: 'text' as const, text: params.system, cache_control: { type: 'ephemeral' as const } }]
-    : params.system;
-
-  return { ...params, system: systemBlocks, model: modelToUse.anthropic };
-}
-
-function getOpenAISystemContent(system: any) {
-  if (!system) return '';
-  if (typeof system === 'string') return system;
-  if (Array.isArray(system)) {
-    return system.map((block) => block?.text || '').filter(Boolean).join('\n\n');
-  }
-  return String(system);
-}
-
-function streamAICall(anthropic: Anthropic, openai: OpenAI, params: any, complexity: 'high' | 'mid' | 'low' = 'mid') {
-  const encoder = new TextEncoder();
-  const modelToUse = MODEL_CONFIG[complexity];
-
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        if (process.env.ANTHROPIC_API_KEY) {
-          try {
-            console.log(`🌊 Streaming Anthropic response (${complexity} tier: ${modelToUse.anthropic})...`);
-            const stream = anthropic.messages.stream(buildAnthropicParams(params, complexity));
-
-            for await (const event of stream as any) {
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-                controller.enqueue(encoder.encode(event.delta.text));
-              }
-            }
-
-            controller.close();
-            return;
-          } catch (error: any) {
-            console.error('❌ Anthropic stream failed:', error.message);
-            if (!process.env.OPENAI_API_KEY) throw error;
-            console.log(`🔄 Streaming fallback to OpenAI (${modelToUse.openai})...`);
-          }
-        }
-
-        if (process.env.OPENAI_API_KEY) {
-          const systemContent = getOpenAISystemContent(params.system);
-          const completion = await openai.chat.completions.create({
-            model: modelToUse.openai,
-            messages: [
-              ...(systemContent ? [{ role: 'system' as const, content: systemContent }] : []),
-              ...params.messages,
-            ],
-            max_tokens: params.max_tokens,
-            temperature: params.temperature || 0.7,
-            stream: true,
-          });
-
-          for await (const chunk of completion) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) {
-              controller.enqueue(encoder.encode(text));
-            }
-          }
-
-          controller.close();
-          return;
-        }
-
-        throw new Error('No valid AI provider key available');
-      } catch (error: any) {
-        controller.error(error);
-      }
-    },
-  });
+      return {
+        ...branch,
+        kind: 'source-chunk',
+        sourceChunkId: chunk.id,
+        sourceText: chunk.text,
+        sourceEvidence: [
+          chunk.sourceReference,
+          ...(Array.isArray(branch.sourceEvidence) ? branch.sourceEvidence : []),
+        ],
+      };
+    }),
+    sourceReferences: sourceChunks.map(chunk => chunk.sourceReference),
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -203,6 +101,13 @@ export async function POST(request: NextRequest) {
         { error: 'Message cannot be empty' },
         { status: 400 }
       );
+    }
+
+    const modeDefinition = getChatModeDefinition(mode);
+    if (mode && !modeDefinition) {
+      console.warn(`⚠️ Unknown chat mode received: ${mode}`);
+    } else if (modeDefinition && !modeDefinition.implemented) {
+      console.warn(`⚠️ Chat mode ${mode} is registered but not implemented in this route`);
     }
 
     // 🌌 SPATIAL MODE: Explicitly triggered by mode parameter
@@ -289,7 +194,7 @@ ${input}`;
       }
 
       // Preprocess the input before parsing (skip for atomize — always use AI mode)
-      let userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
+      const userTopic = atomize ? userMessage : await preprocessStructuredInput(userMessage);
 
       console.log('🎯 Topic for universe:', userTopic.substring(0, 200) + (userTopic.length > 200 ? '...' : ''));
 
@@ -447,50 +352,12 @@ IMPORTANT:
 
       console.log('✅ Got response from Claude');
 
-      const textContent = response.content.find((block) => block.type === 'text');
-      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+      const rawResponse = getTextFromAIResponse(response);
 
       console.log('📝 Raw AI response:', rawResponse);
 
       try {
-        // Sanitize JSON: Try parsing as-is first, then with cleanup if needed
-        // Updated: Fixed regex pattern for newline handling
-        let spatialData;
-        try {
-          spatialData = JSON.parse(rawResponse);
-        } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
-
-          // Extract JSON from markdown code blocks if present
-          let cleanedResponse = rawResponse.trim();
-          if (cleanedResponse.startsWith('```json')) {
-            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
-          } else if (cleanedResponse.startsWith('```')) {
-            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
-          }
-
-          // 🔥 FIX: Sanitize literal newlines in JSON strings
-          // Replace literal newlines inside JSON string values with escaped \n
-          console.log('🧹 Sanitizing literal newlines in JSON...');
-
-          // Strategy: Replace newlines inside quoted strings only
-          // Use a more robust regex that handles newlines within strings
-          cleanedResponse = cleanedResponse.replace(
-            /"((?:[^"\\]|\\.)*)"/g,  // Match string values with proper escaping
-            (match) => {
-              return match
-                .replace(/\r\n/g, '\\n')  // Windows line endings
-                .replace(/\n/g, '\\n')    // Unix line endings
-                .replace(/\r/g, '\\n')    // Old Mac line endings
-                .replace(/\t/g, '\\t');   // Tabs
-            }
-          );
-
-          console.log('🧹 Cleaned response (first 500 chars):', cleanedResponse.substring(0, 500));
-
-          // Parse the cleaned response
-          spatialData = JSON.parse(cleanedResponse);
-        }
+        const spatialData = parseAIJson(rawResponse, spatialDataSchema);
 
         console.log('✅ Successfully parsed spatial JSON:', spatialData);
 
@@ -591,38 +458,12 @@ IMPORTANT:
 
       console.log('✅ Got response from Claude for break-off');
 
-      const textContent = response.content.find((block) => block.type === 'text');
-      const rawResponse = textContent && 'text' in textContent ? textContent.text : '';
+      const rawResponse = getTextFromAIResponse(response);
 
       console.log('📝 Raw AI response:', rawResponse);
 
       try {
-        let newUniverse;
-        try {
-          newUniverse = JSON.parse(rawResponse);
-        } catch (firstError) {
-          console.log('⚠️ Initial parse failed, attempting cleanup...');
-
-          let cleanedResponse = rawResponse.trim();
-          if (cleanedResponse.startsWith('```json')) {
-            cleanedResponse = cleanedResponse.replace(/^```json\s*\n/, '').replace(/\n```$/, '');
-          } else if (cleanedResponse.startsWith('```')) {
-            cleanedResponse = cleanedResponse.replace(/^```\s*\n/, '').replace(/\n```$/, '');
-          }
-
-          cleanedResponse = cleanedResponse.replace(
-            /"((?:[^"\\]|\\.)*)"/g,
-            (match) => {
-              return match
-                .replace(/\r\n/g, '\\n')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\n')
-                .replace(/\t/g, '\\t');
-            }
-          );
-
-          newUniverse = JSON.parse(cleanedResponse);
-        }
+        const newUniverse = parseAIJson(rawResponse, breakOffUniverseSchema);
 
         console.log('✅ Successfully parsed break-off universe:', newUniverse);
 
@@ -1375,12 +1216,11 @@ Return ONLY valid JSON, no other text.`;
         messages: [{ role: 'user', content: intuitionPrompt }],
       });
 
-      const rawResponse = response.content[0].type === 'text' ? response.content[0].text : '';
+      const rawResponse = getTextFromAIResponse(response);
       console.log('💡 Intuition question generated');
 
-      // Parse JSON from response
       try {
-        const parsed = JSON.parse(rawResponse);
+        const parsed = parseAIJson(rawResponse, intuitionQuestionSchema);
         return NextResponse.json({ response: parsed });
       } catch {
         console.error('Failed to parse intuition question JSON:', rawResponse);
@@ -1560,6 +1400,206 @@ Would you like another question?`;
       console.log('✅ Doctrine mode response:', aiResponse.substring(0, 100) + '...');
 
       return NextResponse.json({ response: aiResponse });
+    }
+
+    // 🗺️ CARTOGRAPHER MODE: Read one universe and propose a non-destructive analytical overlay
+    if (mode === 'cartographer') {
+      console.log('🗺️ CARTOGRAPHER MODE: Mapping universe structure');
+
+      let cartographerPayload: any = {};
+      try {
+        cartographerPayload = JSON.parse(userMessage);
+      } catch {
+        cartographerPayload = { operation: 'analyze-universe', rawInput: userMessage };
+      }
+
+      const operation = cartographerPayload.operation === 'unfold-nexus' ? 'unfold-nexus' : 'analyze-universe';
+      const analysisLens = typeof cartographerPayload.analysisLens === 'string'
+        ? cartographerPayload.analysisLens.trim()
+        : '';
+      const lensInstruction = analysisLens
+        ? `USER-SUPPLIED LENS:\n${analysisLens}\n\nRead through this lens intentionally. You may prioritize material relevant to the lens, but still note major structure that the lens would otherwise hide.`
+        : `NO USER LENS PROVIDED:\nCast a wide net. Capture the full piece or universe across its major sections, arguments, examples, tensions, and through-lines. Do not collapse the whole analysis into one theme unless the source itself is genuinely that narrow.`;
+      const sourceChunks = operation === 'unfold-nexus'
+        ? chunkNexusText(cartographerPayload.nexus?.content || '', {
+          sourceTitle: cartographerPayload.nexus?.title,
+          fileName: cartographerPayload.nexus?.fileName,
+          kind: cartographerPayload.nexus?.fileName ? 'document' : 'manual',
+        })
+        : [];
+
+      const cartographerPrompt = operation === 'unfold-nexus'
+        ? `You are Astryon's AI Cartographer. Your job is to unfold dense source material into a proposed spatial universe blueprint.
+
+This is NOT atomization. Do not merely copy each source chunk into a node and append a tiny note.
+
+${lensInstruction}
+
+The first level of the universe MUST still be source-aware: each top-level branch must correspond to exactly one source chunk below. But each branch should be an interpretive node that summarizes, clarifies, and illuminates what that source chunk is doing.
+
+For every top-level branch, write "rationale" as node-ready analytical content in this shape:
+Thesis / function:
+- Explain the role this section plays in the larger material.
+
+Key points:
+- 2-4 concrete takeaways from the section.
+
+Why this matters:
+- Explain the conceptual, doctrinal, practical, or argumentative significance.
+
+Watch for:
+- Name a likely confusion, hidden distinction, exam trap, or unresolved tension if one exists.
+
+Do not paste the source chunk into rationale. Use short evidence quotes only in sourceEvidence.
+
+Return ONLY valid JSON with exactly these top-level keys:
+{
+  "proposedTitle": "short universe title",
+  "branches": [
+    {
+      "id": "branch-1",
+      "sourceChunkId": "chunk-1",
+      "title": "interpretive title for this section",
+      "rationale": "node-ready analytical content with bullets, not copied source text",
+      "selectedByDefault": true,
+      "childNodes": [
+        {
+          "id": "branch-1-child-1",
+          "title": "important illuminating subpoint",
+          "rationale": "node-ready explanation of the subpoint, with concrete bullets where helpful",
+          "selectedByDefault": true,
+          "sourceEvidence": [{"kind": "manual", "quotedText": "short source excerpt"}],
+          "childNodes": []
+        }
+      ]
+    }
+  ],
+  "suggestedConnections": [
+    {
+      "id": "connection-1",
+      "title": "relationship title",
+      "rationale": "why these branches should be connected",
+      "branchIds": ["branch-1", "branch-2"],
+      "sourceEvidence": [{"kind": "manual", "quotedText": "short source excerpt"}]
+    }
+  ],
+  "unresolvedQuestions": [
+    {
+      "id": "gap-1",
+      "title": "gap or question",
+      "rationale": "why this missing piece matters",
+      "sourceEvidence": [{"kind": "manual", "quotedText": "short source excerpt"}]
+    }
+  ],
+  "sourceReferences": [{"kind": "manual", "quotedText": "short source excerpt"}]
+}
+
+Rules:
+- Return exactly one top-level branch for every source chunk.
+- Each top-level branch must include the matching sourceChunkId.
+- Each top-level branch should illuminate the chunk, not reproduce it.
+- If no user lens is provided, the top-level branches together must cover the full source, not just one thesis or recurring idea.
+- If a user lens is provided, make the lens visible in the interpretation without pretending unrelated source sections are irrelevant.
+- Include childNodes only where the source supports real conceptual substructure.
+- Child nodes should be things the user would actually want to open: distinctions, implications, examples, tensions, analytical moves, or questions.
+- Include 2-5 suggestedConnections.
+- Include 2-5 unresolvedQuestions.
+- Do not create generic study categories unless they are truly present in the source.
+- Do not invent page numbers, timestamps, filenames, or quotes.
+- This is a proposal only. Do not say nodes were created.
+
+SOURCE CHUNKS:
+${JSON.stringify(sourceChunks.map(chunk => ({
+          id: chunk.id,
+          title: chunk.title,
+          text: chunk.text,
+          sourceReference: chunk.sourceReference,
+        })), null, 2)}`
+        : `You are Astryon's AI Cartographer. Your job is to read a spatial knowledge universe and reveal structure the user may not see yet.
+
+This is NOT a directory of existing nodes. Do not simply say "open this node" or restate what is already there.
+
+${lensInstruction}
+
+Map This Universe should produce useful analytical artifacts:
+- Bridges should explain the actual relationship between separated nodes and create a meaningful connection node.
+- Gaps should explain missing information, missing synthesis, missing examples, missing distinctions, or missing counterarguments in a way that can become a new node.
+- Next moves should include concrete draft content, bullet points, or analytical instructions that the user can immediately use.
+
+Analyze the universe below and return ONLY valid JSON with exactly these top-level keys:
+{
+  "clusters": [
+    {
+      "id": "cluster-1",
+      "name": "short conceptual region name",
+      "summary": "1-2 sentence explanation of what this region contains",
+      "nodeIds": ["node-id-1", "node-id-2"],
+      "evidence": [{"nodeId": "node-id-1", "excerpt": "short quoted evidence"}]
+    }
+  ],
+  "bridges": [
+    {
+      "id": "bridge-1",
+      "title": "short connection title",
+      "summary": "node-ready bridge content with a short thesis and 2-4 bullets explaining the relationship",
+      "nodeIds": ["node-id-1", "node-id-2"],
+      "evidence": [{"nodeId": "node-id-1", "excerpt": "short quoted evidence"}]
+    }
+  ],
+  "gaps": [
+    {
+      "id": "gap-1",
+      "type": "missing-distinction | missing-example | missing-counterargument | missing-synthesis | orphaned-branch | other",
+      "title": "short gap title",
+      "summary": "node-ready content explaining what is missing, why it matters, and 2-4 bullets for what the new node should add",
+      "nodeIds": ["node-id-1"],
+      "evidence": [{"nodeId": "node-id-1", "excerpt": "short quoted evidence"}]
+    }
+  ],
+  "nextMoves": [
+    {
+      "id": "move-1",
+      "action": "create-node | connect-nodes | revisit-node",
+      "title": "short recommendation",
+      "rationale": "why this is the next worthwhile move, with concrete analytical direction",
+      "nodeIds": ["node-id-1", "node-id-2"],
+      "suggestedContent": "required draft content for the node/bridge: use bullets, distinctions, examples, or proposed synthesis",
+      "evidence": [{"nodeId": "node-id-1", "excerpt": "short quoted evidence"}]
+    }
+  ]
+}
+
+Rules:
+- Return 2-5 clusters.
+- Return 2-5 bridges.
+- Return 2-5 gaps.
+- Return exactly 3 nextMoves.
+- Use only node IDs present in the universe.
+- If no user lens is provided, clusters should represent the full universe, not one dominant theme.
+- If a user lens is provided, bridges/gaps/next moves should prioritize that lens but still avoid ignoring major disconnected regions.
+- For bridges, gaps, and nextMoves, write content that is valuable when opened as a node.
+- Every nextMove MUST include suggestedContent.
+- Every claim should include evidence when the universe provides usable excerpts or source metadata.
+- Do not invent sources, page numbers, or timestamps.
+- Do not recommend automatic restructuring. Recommend proposed actions only.
+- Be concrete and useful. Avoid generic study advice.
+
+UNIVERSE:
+${JSON.stringify(cartographerPayload, null, 2)}`;
+
+      const response = await safeAICall(anthropic, openai, {
+        max_tokens: 4096,
+        system: 'You are Astryon AI Cartographer. Return only valid JSON. Ground every structural claim in node content and available source metadata.',
+        messages: [{ role: 'user', content: cartographerPrompt }],
+      }, 'high');
+
+      const rawResponse = getTextFromAIResponse(response);
+      const cartographerOverlay = operation === 'unfold-nexus'
+        ? augmentBlueprintWithChunks(parseAIJson(rawResponse, universeBlueprintSchema), sourceChunks)
+        : parseAIJson(rawResponse, cartographerSchema);
+
+      console.log('✅ Cartographer overlay generated');
+      return NextResponse.json({ operation, response: cartographerOverlay });
     }
 
     // 🌐 ASK-WITH-SEARCH MODE: In-node AI query with Tavily web search for L2+ nodes

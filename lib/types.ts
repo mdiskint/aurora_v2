@@ -37,12 +37,114 @@ export interface ApplicationEssay {
   rubric: string;
 }
 
+export type SourceReference = {
+  kind: 'document' | 'video' | 'conversation' | 'manual' | 'ai-generated';
+  sourceTitle?: string;
+  fileName?: string;
+  pageNumber?: number;
+  section?: string;
+  timestampStart?: number;
+  timestampEnd?: number;
+  quotedText?: string;
+  sourceNodeId?: string;
+};
+
+export type CartographerEvidence = {
+  nodeId?: string;
+  nodeTitle?: string;
+  source?: SourceReference;
+  excerpt?: string;
+};
+
+export type CartographerCluster = {
+  id: string;
+  name: string;
+  summary: string;
+  nodeIds: string[];
+  evidence?: CartographerEvidence[];
+};
+
+export type CartographerBridge = {
+  id: string;
+  title: string;
+  summary: string;
+  nodeIds: string[];
+  evidence?: CartographerEvidence[];
+};
+
+export type CartographerGap = {
+  id: string;
+  title: string;
+  summary: string;
+  type: 'missing-distinction' | 'missing-example' | 'missing-counterargument' | 'missing-synthesis' | 'orphaned-branch' | 'other';
+  nodeIds: string[];
+  evidence?: CartographerEvidence[];
+};
+
+export type CartographerNextMove = {
+  id: string;
+  action: 'create-node' | 'connect-nodes' | 'revisit-node';
+  title: string;
+  rationale: string;
+  nodeIds: string[];
+  suggestedContent?: string;
+  evidence?: CartographerEvidence[];
+};
+
+export type CartographerOverlay = {
+  universeId: string;
+  universeTitle: string;
+  generatedAt: number;
+  clusters: CartographerCluster[];
+  bridges: CartographerBridge[];
+  gaps: CartographerGap[];
+  nextMoves: CartographerNextMove[];
+};
+
+export type ProposedBranch = {
+  id: string;
+  title: string;
+  rationale: string;
+  kind?: 'source-chunk' | 'concept';
+  sourceChunkId?: string;
+  sourceText?: string;
+  sourceEvidence?: SourceReference[];
+  childNodes?: ProposedBranch[];
+  selectedByDefault: boolean;
+};
+
+export type ProposedConnection = {
+  id: string;
+  title: string;
+  rationale: string;
+  branchIds: string[];
+  sourceEvidence?: SourceReference[];
+};
+
+export type ProposedGap = {
+  id: string;
+  title: string;
+  rationale: string;
+  sourceEvidence?: SourceReference[];
+};
+
+export type UniverseBlueprint = {
+  nexusId: string;
+  proposedTitle?: string;
+  generatedAt: number;
+  branches: ProposedBranch[];
+  suggestedConnections: ProposedConnection[];
+  unresolvedQuestions: ProposedGap[];
+  sourceReferences: SourceReference[];
+};
+
 export interface Node {
   id: string;
   position: [number, number, number];
   title: string;
   content: string;
   quotedText?: string;
+  sources?: SourceReference[];
   parentId: string;
   children: string[];
   audioUrl?: string;
