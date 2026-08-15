@@ -932,7 +932,7 @@ export default function MemoriesPage() {
                       fontSize: '14px',
                       marginBottom: '16px'
                     }}>
-                      📁 All new universes will be saved in the <strong>"Atomized"</strong> folder.
+                      📁 All new universes will be saved in the <strong>&ldquo;Atomized&rdquo;</strong> folder.
                     </p>
 
                     <p style={{ color: '#9CA3AF', fontSize: '14px' }}>

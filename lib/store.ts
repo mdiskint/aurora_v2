@@ -571,6 +571,7 @@ interface Nexus {
   originalContent?: string | null;     // Preserves original professor/AI framing
   applicationLabConfig?: ApplicationLabConfig | null;  // Generated Application Lab content
   needsApplicationLab?: boolean;       // Flag to trigger Application Lab generation
+  masterySummary?: string;
 }
 
 interface Folder {
@@ -686,6 +687,7 @@ interface CanvasStore {
   // 🌱 EVOLVING NEXUS → APPLICATION LAB - Completion heuristics
   getNodesForNexus: (nexusId: string) => Node[];
   isNexusCompleted: (nexusId: string) => boolean;
+  setNexusMasterySummary: (nexusId: string, summary: string) => void;
   setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => void;
   addNodeFromWebSocket: (data: any) => void;
   addNexusFromWebSocket: (data: any) => void;
@@ -1732,36 +1734,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().clearCanvas();
 
     // 🌌 STEP 3: Create the new nexus
-    let newNexus: Nexus | null = null;
-    let newUniverseId = '';
+    const newUniverseId = `nexus-${Date.now()}`;
+    const newNexus: Nexus = {
+      id: newUniverseId,
+      position: [0, 0, 0],
+      title,
+      content,
+      videoUrl,
+      audioUrl,
+      fileUrl,
+      fileName,
+      type: 'social',
+      evolutionState: 'seed',
+      originalContent: content,
+      applicationLabConfig: null,
+      needsApplicationLab: false,
+    };
 
-    set((state) => {
-      const position: [number, number, number] = [0, 0, 0]; // First nexus always at origin
+    console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
 
-      newUniverseId = `nexus-${Date.now()}`;
-      newNexus = {
-        id: newUniverseId,
-        position,
-        title,
-        content,
-        videoUrl,
-        audioUrl,
-        fileUrl,
-        fileName,
-        type: 'social',
-        // 🌱 Initialize evolution state
-        evolutionState: 'seed',
-        originalContent: content, // Preserve original framing
-        applicationLabConfig: null,
-        needsApplicationLab: false,
-      };
-
-      console.log('🆕   🟢 Created NEW nexus with ID:', newUniverseId);
-
-      return {
-        nexuses: [newNexus], // Start fresh with just this nexus
-        activeUniverseId: newUniverseId // Set as active universe
-      };
+    set({
+      nexuses: [newNexus],
+      activeUniverseId: newUniverseId,
     });
 
     // 🌌 STEP 4: Auto-save the new universe to library
@@ -1772,15 +1766,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('🆕 ==========================================');
 
     // Broadcast nexus creation to WebSocket
-    if (newNexus) {
-      const socket = typeof window !== 'undefined' ? (window as any).socket : null;
-      if (socket) {
-        socket.emit('create_nexus', {
-          portalId: 'default-portal',
-          ...newNexus
-        });
-        console.log('📤 Broadcasting nexus creation:', newNexus.id);
-      }
+    const socket = typeof window !== 'undefined' ? (window as any).socket : null;
+    if (socket) {
+      socket.emit('create_nexus', {
+        portalId: 'default-portal',
+        ...newNexus,
+      });
+      console.log('📤 Broadcasting nexus creation:', newNexus.id);
     }
   },
 
@@ -2255,7 +2247,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { Document, Paragraph, HeadingLevel, AlignmentType, Packer } = await import('docx');
 
     const sections = Object.values(nodes)
-      .filter((n) => n.type !== 'nexus')
       .sort((a, b) => {
         const aIndex = parseInt(a.id.split('-')[1]) || 0;
         const bIndex = parseInt(b.id.split('-')[1]) || 0;
@@ -3413,6 +3404,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return completionRate >= COMPLETION_THRESHOLD;
   },
 
+  setNexusMasterySummary: (nexusId: string, summary: string) => {
+    set((state) => {
+      const nexuses = state.nexuses.map((nexus) =>
+        nexus.id === nexusId ? { ...nexus, masterySummary: summary } : nexus
+      );
+      const universeLibrary = Object.fromEntries(
+        Object.entries(state.universeLibrary).map(([universeId, universe]) => [
+          universeId,
+          {
+            ...universe,
+            nexuses: universe.nexuses.map((nexus) =>
+              nexus.id === nexusId ? { ...nexus, masterySummary: summary } : nexus
+            ),
+          },
+        ])
+      );
+
+      return { nexuses, universeLibrary };
+    });
+    get().saveToLocalStorage();
+  },
+
   // 🌱 EVOLVING NEXUS → APPLICATION LAB - Set Application Lab config and evolve nexus
   setNexusApplicationLab: (nexusId: string, config: ApplicationLabConfig) => {
     console.log(`🌱 [Nexus ${nexusId}] Setting Application Lab config`);
@@ -3991,7 +4004,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     console.log('✅ Node marked as completed:', nodeId);
 
     // Unlock next node (only for course universes)
-    let unlockedNodeId = null;
+    let unlockedNodeId: string | null = null;
     if (isCourseUniverse) {
       unlockedNodeId = get().unlockNextNode(nodeId);
     }

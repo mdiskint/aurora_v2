@@ -7,9 +7,10 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx lib/__tests__/studyGuideGenerator.test.ts && npx tsx lib/__tests__/universeRunLifecycle.test.ts",
-    "test:guide": "npx tsx lib/__tests__/studyGuideGenerator.test.ts",
-    "test:lifecycle": "npx tsx lib/__tests__/universeRunLifecycle.test.ts"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx lib/__tests__/studyGuideGenerator.test.ts && tsx lib/__tests__/universeRunLifecycle.test.ts",
+    "test:guide": "tsx lib/__tests__/studyGuideGenerator.test.ts",
+    "test:lifecycle": "tsx lib/__tests__/universeRunLifecycle.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.67.0",
@@ -51,6 +52,7 @@
     "eslint-config-next": "15.5.4",
     "prisma": "^5.22.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.12",
     "typescript": "^5"
   }
 }

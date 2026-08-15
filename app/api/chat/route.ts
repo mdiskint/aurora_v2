@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import { callGeminiFlash } from '@/lib/gemini';
 import { searchWeb } from '@/lib/search';
 import { breakOffUniverseSchema, cartographerSchema, getChatModeDefinition, intuitionQuestionSchema, spatialDataSchema, universeBlueprintSchema } from '@/lib/ai/chatModeRegistry';

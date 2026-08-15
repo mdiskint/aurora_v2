@@ -20,8 +20,13 @@ export function useCameraAnimation() {
   const getSelectedAndNextNode = () => {
     if (!selectedId) return { selected: null, next: null };
 
-    let selectedNode = null;
-    let nextNode = null;
+    type CameraNode = {
+      position: [number, number, number];
+      parentId?: string;
+    };
+
+    let selectedNode: CameraNode | null = null;
+    let nextNode: CameraNode | null = null;
 
     const selectedNexus = nexuses.find(n => n.id === selectedId);
     
@@ -131,7 +136,7 @@ export function useCameraAnimation() {
 
     const midPoint = new THREE.Vector3().lerpVectors(startPos, endPos, 0.5);
     
-    const isJumpingToNexus = selectedNexus !== null;
+    const isJumpingToNexus = Boolean(selectedNexus);
     let controlPoint: THREE.Vector3;
 
     if (isJumpingToNexus) {
@@ -175,7 +180,7 @@ export function useCameraAnimation() {
         
         if (controls) {
           const selectedNexus = nexuses.find(n => n.id === selectedId);
-          const isJumpingToNexus = selectedNexus !== null;
+          const isJumpingToNexus = Boolean(selectedNexus);
           const currentLookAt = isJumpingToNexus 
             ? target.lookAt.clone()
             : new THREE.Vector3().lerpVectors(startLookAt, target.lookAt, eased);

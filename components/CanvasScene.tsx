@@ -1048,7 +1048,7 @@ function Scene({ isHoldingShift }: { isHoldingShift: boolean }) {
 
   useCameraAnimation();
 
-  const selectedMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
+  const selectedMaterialsRef = useRef<Map<string, THREE.MeshStandardMaterial>>(new Map());
   const sparkleMaterialsRef = useRef<Map<string, THREE.MeshBasicMaterial[]>>(new Map());
 
   // Double-click detection for nexus meshes

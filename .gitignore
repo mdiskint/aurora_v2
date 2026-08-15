@@ -42,3 +42,6 @@ next-env.d.ts
 
 /lib/generated/prisma
 .env*.local
+
+# local agent worktrees and generated artifacts
+/.claude/

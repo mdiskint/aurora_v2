@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 import prisma from '@/lib/prisma'
 import crypto from 'crypto'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const webOrigin = process.env.NEXT_PUBLIC_WEB_URL ?? '*'
 
 export async function OPTIONS() {
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
   const appUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
   // ponytail: skip email in dev when key not set
-  if (process.env.RESEND_API_KEY) {
+  if (resend) {
     await resend.emails.send({
       from: 'Astryon <noreply@astryon.com>',
       to: email,
