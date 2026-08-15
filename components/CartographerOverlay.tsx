@@ -27,6 +27,7 @@ export default function CartographerOverlay() {
   const isOpen = useCanvasStore(state => state.isCartographerOpen);
   const isMapping = useCanvasStore(state => state.isMappingUniverse);
   const error = useCanvasStore(state => state.cartographerError);
+  const closeCartographer = useCanvasStore(state => state.closeCartographer);
   const clearCartographerOverlay = useCanvasStore(state => state.clearCartographerOverlay);
   const mapActiveUniverse = useCanvasStore(state => state.mapActiveUniverse);
   const unfoldActiveNexus = useCanvasStore(state => state.unfoldActiveNexus);
@@ -66,7 +67,7 @@ export default function CartographerOverlay() {
   };
 
   return (
-    <aside style={panelStyle}>
+    <aside style={panelStyle} aria-label="AI Cartographer">
       <div style={headerStyle}>
         <div>
           <div style={{ color: '#d8b4fe', fontWeight: 800, fontSize: 18 }}>Cartographer</div>
@@ -74,7 +75,12 @@ export default function CartographerOverlay() {
             {blueprint ? 'Unfolded nexus blueprint' : overlay ? overlay.universeTitle : 'Choose how Astryon should read this space'}
           </div>
         </div>
-        <button onClick={clearCartographerOverlay} style={secondaryButtonStyle}>Close</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {(overlay || blueprint) && (
+            <button onClick={clearCartographerOverlay} style={secondaryButtonStyle}>Clear</button>
+          )}
+          <button onClick={closeCartographer} style={secondaryButtonStyle}>Close</button>
+        </div>
       </div>
 
       <div style={{ overflowY: 'auto', padding: 18 }}>
@@ -121,7 +127,7 @@ export default function CartographerOverlay() {
           </div>
         )}
 
-        {blueprint && (
+        {!isMapping && blueprint && (
           <BlueprintView
             blueprint={blueprint}
             selectedBranchIds={selectedBranchIds}
@@ -135,7 +141,7 @@ export default function CartographerOverlay() {
             onCreateAll={() => createNodesFromBlueprint()}
           />
         )}
-        {overlay && (
+        {!isMapping && overlay && (
           <MapView
             overlay={overlay}
             openFirstNode={openFirstNode}
@@ -215,7 +221,7 @@ function BlueprintView({
         ))}
       </Section>
 
-      <div style={footerNoteStyle}>Creation actions are intentionally withheld in this MVP. This is the review step before mutation.</div>
+      <div style={footerNoteStyle}>Nothing is added to the universe until you choose Create Selected or Create Full Universe.</div>
     </div>
   );
 }

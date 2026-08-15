@@ -9,6 +9,7 @@ import { breakOffUniverseSchema, cartographerSchema, getChatModeDefinition, intu
 import { getTextFromAIResponse, safeAICall, streamAICall } from '@/lib/ai/providers';
 import { parseAIJson } from '@/lib/ai/json';
 import { chunkNexusText, SourceChunk } from '@/lib/ai/textChunking';
+import { validateCartographerPayload } from '@/lib/cartographer';
 
 export const maxDuration = 300;
 
@@ -1406,25 +1407,39 @@ Would you like another question?`;
     if (mode === 'cartographer') {
       console.log('🗺️ CARTOGRAPHER MODE: Mapping universe structure');
 
-      let cartographerPayload: any = {};
-      try {
-        cartographerPayload = JSON.parse(userMessage);
-      } catch {
-        cartographerPayload = { operation: 'analyze-universe', rawInput: userMessage };
+      if (process.env.CARTOGRAPHER_ENABLED === 'false') {
+        return NextResponse.json({ error: 'Cartographer is currently unavailable.' }, { status: 404 });
       }
 
-      const operation = cartographerPayload.operation === 'unfold-nexus' ? 'unfold-nexus' : 'analyze-universe';
+      if (userMessage.length > 300_000) {
+        return NextResponse.json({ error: 'Cartographer request is too large.' }, { status: 413 });
+      }
+
+      let rawCartographerPayload: unknown;
+      try {
+        rawCartographerPayload = JSON.parse(userMessage);
+      } catch {
+        return NextResponse.json({ error: 'Cartographer request must contain valid JSON.' }, { status: 400 });
+      }
+
+      const validation = validateCartographerPayload(rawCartographerPayload);
+      if (!validation.valid) {
+        return NextResponse.json({ error: validation.error }, { status: validation.status });
+      }
+
+      const cartographerPayload = validation.payload;
+      const operation = validation.operation;
       const analysisLens = typeof cartographerPayload.analysisLens === 'string'
-        ? cartographerPayload.analysisLens.trim()
+        ? cartographerPayload.analysisLens.trim().slice(0, 500)
         : '';
       const lensInstruction = analysisLens
         ? `USER-SUPPLIED LENS:\n${analysisLens}\n\nRead through this lens intentionally. You may prioritize material relevant to the lens, but still note major structure that the lens would otherwise hide.`
         : `NO USER LENS PROVIDED:\nCast a wide net. Capture the full piece or universe across its major sections, arguments, examples, tensions, and through-lines. Do not collapse the whole analysis into one theme unless the source itself is genuinely that narrow.`;
       const sourceChunks = operation === 'unfold-nexus'
-        ? chunkNexusText(cartographerPayload.nexus?.content || '', {
-          sourceTitle: cartographerPayload.nexus?.title,
-          fileName: cartographerPayload.nexus?.fileName,
-          kind: cartographerPayload.nexus?.fileName ? 'document' : 'manual',
+        ? chunkNexusText((cartographerPayload.nexus as Record<string, any>).content || '', {
+          sourceTitle: (cartographerPayload.nexus as Record<string, any>).title,
+          fileName: (cartographerPayload.nexus as Record<string, any>).fileName,
+          kind: (cartographerPayload.nexus as Record<string, any>).fileName ? 'document' : 'manual',
         })
         : [];
 

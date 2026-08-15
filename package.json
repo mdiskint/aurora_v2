@@ -8,8 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx lib/__tests__/aiFoundation.test.ts && tsx lib/__tests__/persistence.test.ts && tsx lib/__tests__/studyGuideGenerator.test.ts && tsx lib/__tests__/universeRunLifecycle.test.ts",
+    "test": "tsx lib/__tests__/aiFoundation.test.ts && tsx lib/__tests__/cartographer.test.ts && tsx lib/__tests__/cartographerStore.test.ts && tsx lib/__tests__/persistence.test.ts && tsx lib/__tests__/studyGuideGenerator.test.ts && tsx lib/__tests__/universeRunLifecycle.test.ts",
     "test:ai": "tsx lib/__tests__/aiFoundation.test.ts",
+    "test:cartographer": "tsx lib/__tests__/cartographer.test.ts && tsx lib/__tests__/cartographerStore.test.ts",
     "test:persistence": "tsx lib/__tests__/persistence.test.ts",
     "test:guide": "tsx lib/__tests__/studyGuideGenerator.test.ts",
     "test:lifecycle": "tsx lib/__tests__/universeRunLifecycle.test.ts"

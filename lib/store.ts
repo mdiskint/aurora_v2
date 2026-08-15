@@ -17,6 +17,7 @@ import { transformConversation, transformHighlightImport, HighlightImportData } 
 import { calculateL1Position, calculateL2Position, calculateMetaPosition, validatePosition } from './nodePositioning';
 import { universeAnalysisSchema } from './ai/chatModeRegistry';
 import { parseAIJson } from './ai/json';
+import { normalizeCartographerOverlay, normalizeUniverseBlueprint } from './cartographer';
 import {
   AURORA_STORAGE_KEY,
   backupStoredLibrary,
@@ -97,88 +98,6 @@ function cartographerEvidenceToSources(evidence?: Array<{ source?: SourceReferen
   });
 }
 
-function normalizeCartographerOverlay(
-  rawOverlay: Omit<CartographerOverlay, 'universeId' | 'universeTitle' | 'generatedAt'>,
-  universeId: string,
-  universeTitle: string
-): CartographerOverlay {
-  const allowedGapTypes = new Set([
-    'missing-distinction',
-    'missing-example',
-    'missing-counterargument',
-    'missing-synthesis',
-    'orphaned-branch',
-    'other',
-  ]);
-  const allowedActions = new Set(['create-node', 'connect-nodes', 'revisit-node']);
-
-  return {
-    universeId,
-    universeTitle,
-    generatedAt: Date.now(),
-    clusters: rawOverlay.clusters.map((cluster, index) => ({
-      ...cluster,
-      id: cluster.id || `cluster-${index + 1}`,
-    })),
-    bridges: rawOverlay.bridges.map((bridge, index) => ({
-      ...bridge,
-      id: bridge.id || `bridge-${index + 1}`,
-    })),
-    gaps: rawOverlay.gaps.map((gap, index) => ({
-      ...gap,
-      id: gap.id || `gap-${index + 1}`,
-      type: allowedGapTypes.has(gap.type) ? gap.type : 'other',
-    })),
-    nextMoves: rawOverlay.nextMoves.slice(0, 3).map((move, index) => ({
-      ...move,
-      id: move.id || `move-${index + 1}`,
-      action: allowedActions.has(move.action) ? move.action : 'revisit-node',
-    })),
-  };
-}
-
-function normalizeProposedBranches(branches: any[], prefix = 'branch'): ProposedBranch[] {
-  return branches.map((branch, index) => ({
-    id: branch.id || `${prefix}-${index + 1}`,
-    title: branch.title,
-    rationale: branch.rationale,
-    kind: branch.kind || (branch.sourceChunkId || branch.sourceText ? 'source-chunk' : 'concept'),
-    sourceChunkId: branch.sourceChunkId,
-    sourceText: branch.sourceText,
-    sourceEvidence: branch.sourceEvidence || [],
-    selectedByDefault: branch.selectedByDefault !== false,
-    childNodes: Array.isArray(branch.childNodes)
-      ? normalizeProposedBranches(branch.childNodes, `${branch.id || `${prefix}-${index + 1}`}-child`)
-      : [],
-  }));
-}
-
-function normalizeUniverseBlueprint(
-  rawBlueprint: any,
-  nexusId: string,
-): UniverseBlueprint {
-  return {
-    nexusId,
-    proposedTitle: rawBlueprint.proposedTitle,
-    generatedAt: Date.now(),
-    branches: normalizeProposedBranches(rawBlueprint.branches || []),
-    suggestedConnections: (rawBlueprint.suggestedConnections || []).map((connection: any, index: number) => ({
-      id: connection.id || `connection-${index + 1}`,
-      title: connection.title,
-      rationale: connection.rationale,
-      branchIds: connection.branchIds || [],
-      sourceEvidence: connection.sourceEvidence || [],
-    })),
-    unresolvedQuestions: (rawBlueprint.unresolvedQuestions || []).map((gap: any, index: number) => ({
-      id: gap.id || `gap-${index + 1}`,
-      title: gap.title,
-      rationale: gap.rationale,
-      sourceEvidence: gap.sourceEvidence || [],
-    })),
-    sourceReferences: rawBlueprint.sourceReferences || [],
-  };
-}
-
 function formatSourceGrounding(sources?: SourceReference[], fallbackText?: string): string {
   const excerpts = (sources || [])
     .map(source => source.quotedText?.trim())
@@ -216,6 +135,16 @@ function formatCartographerCreatedContent(title: string, body: string, options?:
   }
 
   return sections.join('\n\n');
+}
+
+async function getCartographerResponseError(response: Response, fallback: string) {
+  try {
+    const payload = await response.json();
+    if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error;
+  } catch {
+    // The fallback includes the response status when the body is not JSON.
+  }
+  return `${fallback} (status ${response.status})`;
 }
 
 // 🐛 DEBUG HELPERS - Accessible in browser console via window.auroraDebug
@@ -642,6 +571,7 @@ interface CanvasStore {
   isMappingUniverse: boolean;
   cartographerError: string | null;
   openCartographer: () => void;
+  closeCartographer: () => void;
   mapActiveUniverse: (analysisLens?: string) => Promise<void>;
   unfoldActiveNexus: (analysisLens?: string) => Promise<void>;
   createNodesFromBlueprint: (selectedBranchIds?: string[]) => string[];
@@ -838,6 +768,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
+  closeCartographer: () => {
+    set({
+      isCartographerOpen: false,
+      cartographerError: null,
+    });
+  },
+
   mapActiveUniverse: async (analysisLens?: string) => {
     const state = get();
     const universeId = state.activeUniverseId || state.activeUniverseIds[0];
@@ -903,7 +840,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
 
       if (!response.ok) {
-        throw new Error(`Cartographer request failed with status ${response.status}`);
+        throw new Error(await getCartographerResponseError(response, 'Cartographer request failed'));
       }
 
       const data = await response.json();
@@ -1000,7 +937,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
 
       if (!response.ok) {
-        throw new Error(`Unfold request failed with status ${response.status}`);
+        throw new Error(await getCartographerResponseError(response, 'Unfold request failed'));
       }
 
       const data = await response.json();

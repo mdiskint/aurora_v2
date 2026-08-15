@@ -6,11 +6,14 @@ import { useCanvasStore } from '@/lib/store';
 export default function Navigation() {
   const router = useRouter();
   const enableApplicationLabMode = useCanvasStore((state) => state.enableApplicationLabMode);
+  const openCartographer = useCanvasStore((state) => state.openCartographer);
   const hasUniverse = useCanvasStore((state) => {
     const activeUniverseId = state.activeUniverseId || state.activeUniverseIds[0];
     return activeUniverseId ? Object.keys(state.universeLibrary[activeUniverseId]?.nexuses || {}).length > 0 : false;
   });
   const isApplicationLabMode = useCanvasStore((state) => state.isApplicationLabMode);
+  const isCartographerOpen = useCanvasStore((state) => state.isCartographerOpen);
+  const cartographerEnabled = process.env.NEXT_PUBLIC_CARTOGRAPHER_ENABLED !== 'false';
 
   return (
     <div style={{
@@ -75,6 +78,33 @@ export default function Navigation() {
 
       {/* Right Section - Application Lab & Memories Buttons */}
       <div style={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+        {cartographerEnabled && hasUniverse && !isApplicationLabMode && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              openCartographer();
+            }}
+            aria-pressed={isCartographerOpen}
+            style={{
+              padding: '12px 20px',
+              background: isCartographerOpen ? 'rgba(126, 34, 206, 0.5)' : 'rgba(126, 34, 206, 0.22)',
+              border: '2px solid #A855F7',
+              borderRadius: '8px',
+              color: '#F3E8FF',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span style={{ fontSize: '20px' }}>🗺️</span>
+            Cartographer
+          </button>
+        )}
+
         {/* Application Lab Button - only show when there's a universe */}
         {hasUniverse && !isApplicationLabMode && (
           <button
