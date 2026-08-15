@@ -2,7 +2,6 @@
 
 import dynamic from 'next/dynamic';
 import Navigation from '@/components/Navigation';
-import CartographerOverlay from '@/components/CartographerOverlay';
 import { useNexusEvolution } from '@/lib/useNexusEvolution';
 import { useNexusApplicationLabEvolution } from '@/lib/useNexusApplicationLabEvolution';
 
@@ -31,8 +30,6 @@ export default function ChatPage() {
         }}>
         {/* 3D Canvas */}
         <CanvasScene />
-
-        {process.env.NEXT_PUBLIC_CARTOGRAPHER_ENABLED !== 'false' && <CartographerOverlay />}
 
         {/* UnifiedNodeModal is rendered in CanvasScene */}
       </div>

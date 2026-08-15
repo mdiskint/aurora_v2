@@ -41,7 +41,6 @@ async function run() {
   );
   console.log('✓ JSON extraction, repair, and schema validation');
 
-  assert.equal(getChatModeDefinition('cartographer')?.implemented, true);
   assert.equal(getChatModeDefinition('unknown-mode'), null);
   assert.deepEqual(
     parseAIJson(

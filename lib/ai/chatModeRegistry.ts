@@ -19,7 +19,6 @@ export type ChatMode =
   | 'nexus-application-lab'
   | 'doctrine'
   | 'ask-with-search'
-  | 'cartographer'
   | 'standard'
   | 'synthesis'
   | 'connection'
@@ -141,12 +140,6 @@ export const CHAT_MODE_REGISTRY: Record<ChatMode, ChatModeDefinition> = {
     responseShape: 'text',
     implemented: true,
   },
-  cartographer: {
-    mode: 'cartographer',
-    description: 'Read one universe and propose clusters, bridges, gaps, and next moves.',
-    responseShape: 'json',
-    implemented: true,
-  },
   standard: {
     mode: 'standard',
     description: 'Standard chat fallback used by some frontend flows.',
@@ -258,67 +251,4 @@ export type ApplicationEssayJson = {
 
 export const applicationEssaySchema = makeObjectSchema<ApplicationEssayJson>('ApplicationEssay', (value): value is ApplicationEssayJson =>
   hasString(value, 'question') && hasString(value, 'rubric')
-);
-
-export type CartographerJson = {
-  clusters: Array<{ id?: string; name: string; summary: string; nodeIds: string[]; evidence?: unknown[] }>;
-  bridges: Array<{ id?: string; title: string; summary: string; nodeIds: string[]; evidence?: unknown[] }>;
-  gaps: Array<{ id?: string; title: string; summary: string; type?: string; nodeIds: string[]; evidence?: unknown[] }>;
-  nextMoves: Array<{ id?: string; action: string; title: string; rationale: string; nodeIds: string[]; suggestedContent?: string; evidence?: unknown[] }>;
-};
-
-export type UniverseBlueprintJson = {
-  proposedTitle?: string;
-  branches: Array<{
-    id?: string;
-    title: string;
-    rationale: string;
-    sourceEvidence?: unknown[];
-    childNodes?: unknown[];
-    selectedByDefault?: boolean;
-  }>;
-  suggestedConnections: Array<{
-    id?: string;
-    title: string;
-    rationale: string;
-    branchIds: string[];
-    sourceEvidence?: unknown[];
-  }>;
-  unresolvedQuestions: Array<{
-    id?: string;
-    title: string;
-    rationale: string;
-    sourceEvidence?: unknown[];
-  }>;
-  sourceReferences?: unknown[];
-};
-
-const hasStringArray = (value: Record<string, unknown>, key: string) =>
-  Array.isArray(value[key]) && (value[key] as unknown[]).every((item) => typeof item === 'string');
-
-export const cartographerSchema = makeObjectSchema<CartographerJson>('CartographerOverlay', (value): value is CartographerJson =>
-  hasArray(value, 'clusters') &&
-  hasArray(value, 'bridges') &&
-  hasArray(value, 'gaps') &&
-  hasArray(value, 'nextMoves') &&
-  (value.clusters as unknown[]).every((item) => isRecord(item) && hasString(item, 'name') && hasString(item, 'summary') && hasStringArray(item, 'nodeIds')) &&
-  (value.bridges as unknown[]).every((item) => isRecord(item) && hasString(item, 'title') && hasString(item, 'summary') && hasStringArray(item, 'nodeIds')) &&
-  (value.gaps as unknown[]).every((item) => isRecord(item) && hasString(item, 'title') && hasString(item, 'summary') && hasStringArray(item, 'nodeIds')) &&
-  (value.nextMoves as unknown[]).every((item) => isRecord(item) && hasString(item, 'action') && hasString(item, 'title') && hasString(item, 'rationale') && hasStringArray(item, 'nodeIds'))
-);
-
-function isBranchLike(item: unknown): item is Record<string, unknown> {
-  return isRecord(item) &&
-    hasString(item, 'title') &&
-    hasString(item, 'rationale') &&
-    (!('childNodes' in item) || (Array.isArray(item.childNodes) && item.childNodes.every(isBranchLike)));
-}
-
-export const universeBlueprintSchema = makeObjectSchema<UniverseBlueprintJson>('UniverseBlueprint', (value): value is UniverseBlueprintJson =>
-  hasArray(value, 'branches') &&
-  hasArray(value, 'suggestedConnections') &&
-  hasArray(value, 'unresolvedQuestions') &&
-  (value.branches as unknown[]).every(isBranchLike) &&
-  (value.suggestedConnections as unknown[]).every((item) => isRecord(item) && hasString(item, 'title') && hasString(item, 'rationale') && hasStringArray(item, 'branchIds')) &&
-  (value.unresolvedQuestions as unknown[]).every((item) => isRecord(item) && hasString(item, 'title') && hasString(item, 'rationale'))
 );

@@ -32,7 +32,7 @@ npm run dev        # Start Next.js frontend on http://localhost:3000
 npm run build      # prisma generate && next build
 npm start          # Start production frontend
 npm run lint       # Run ESLint
-npm run test       # Run AI, Cartographer, persistence, study-guide, and lifecycle tests
+npm run test       # Run AI, persistence, study-guide, and lifecycle tests
 npm run typecheck  # Run TypeScript without emitting files
 ```
 
@@ -60,8 +60,6 @@ NEXTAUTH_SECRET=
 NEXTAUTH_URL=http://localhost:3000
 NEXT_PUBLIC_WEB_URL=http://localhost:3000
 NEXT_PUBLIC_SERVER_URL=http://localhost:3001
-NEXT_PUBLIC_CARTOGRAPHER_ENABLED=true
-CARTOGRAPHER_ENABLED=true
 BLOB_READ_WRITE_TOKEN=
 TAVILY_API_KEY=
 GOOGLE_CLIENT_ID=
@@ -266,7 +264,6 @@ The store has significant defensive code to prevent overwriting non-empty librar
 - `/api/chat/route.ts` is also very large and has many mode-specific prompt branches.
 - Several save paths still call `saveToLocalStorage()` directly while newer flows prefer `saveCurrentUniverse()`.
 - Course builder sends `mode: 'atomize-content'`, but the current `/api/chat/route.ts` scan does not show a matching explicit branch for that mode. Treat that as a likely bug or unfinished feature.
-- Cartographer can be disabled independently with `NEXT_PUBLIC_CARTOGRAPHER_ENABLED=false` and `CARTOGRAPHER_ENABLED=false`.
 - Lint passes with warnings; CI treats lint errors, type errors, test failures, and build failures as release blockers.
 
 For deeper system details, read `ARCHITECTURE.md`.
