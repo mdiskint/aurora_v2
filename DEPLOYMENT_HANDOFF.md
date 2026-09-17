@@ -63,7 +63,7 @@ Add these to the application Vercel project for Production, Preview, and Develop
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 NEXTAUTH_SECRET=...
-NEXTAUTH_URL=https://APP_DOMAIN
+NEXTAUTH_URL=https://app.astryon.com
 DATABASE_URL=...
 ANTHROPIC_API_KEY=...
 RESEND_API_KEY=...
@@ -79,7 +79,7 @@ GEMINI_API_KEY=...
 OPENAI_API_KEY=...
 BLOB_READ_WRITE_TOKEN=...
 TAVILY_API_KEY=...
-EMAIL_FROM=Astryon <noreply@YOUR_DOMAIN>
+EMAIL_FROM=Astryon <noreply@astryon.com>
 ```
 
 Notes:
@@ -101,8 +101,8 @@ DATABASE_URL=...
 RESEND_API_KEY=...
 UPSTASH_REDIS_REST_URL=...
 UPSTASH_REDIS_REST_TOKEN=...
-NEXT_PUBLIC_WEB_URL=https://MARKETING_DOMAIN
-NEXTAUTH_URL=https://APP_DOMAIN
+NEXT_PUBLIC_WEB_URL=https://astryon.com
+NEXTAUTH_URL=https://app.astryon.com
 ```
 
 The marketing site uses:
@@ -144,7 +144,7 @@ Do not use `prisma migrate dev` against the production database.
 In Google Cloud Console, configure the OAuth client with the production callback URL:
 
 ```text
-https://APP_DOMAIN/api/auth/callback/google
+https://app.astryon.com/api/auth/callback/google
 ```
 
 Keep the local callback URL too if local development is still needed:
@@ -161,7 +161,7 @@ In Resend:
 
 1. Add and verify the sending domain.
 2. Add the SPF/DKIM records Resend provides at the DNS provider.
-3. Use a sender address on that verified domain, such as `noreply@YOUR_DOMAIN`.
+3. Use a sender address on that verified domain, such as `noreply@astryon.com`.
 4. Create an API key scoped to the required projects.
 5. Add it as `RESEND_API_KEY` to both Vercel projects.
 6. Set `EMAIL_FROM` for the application if the default sender should be changed.
@@ -196,15 +196,15 @@ Never expose these as `NEXT_PUBLIC_*` variables.
 Choose the final hostnames first. A sensible arrangement is:
 
 ```text
-Marketing site: https://YOUR_DOMAIN
-Application:    https://app.YOUR_DOMAIN
+Marketing site: https://astryon.com
+Application:    https://app.astryon.com
 ```
 
 ### Add the marketing domain
 
 1. Open the marketing Vercel project.
 2. Go to Settings → Domains.
-3. Add `YOUR_DOMAIN` and, if desired, `www.YOUR_DOMAIN`.
+3. Add `astryon.com` and, if desired, `www.astryon.com`.
 4. Vercel will show the exact DNS records for the project.
 5. At the registrar/DNS provider, add the records Vercel requests.
 
@@ -213,7 +213,7 @@ For a typical Vercel setup, the apex domain uses an A record and a subdomain use
 ### Add the application subdomain
 
 1. Open the application Vercel project.
-2. Add `app.YOUR_DOMAIN` under Settings → Domains.
+2. Add `app.astryon.com` under Settings → Domains.
 3. Add the CNAME record Vercel provides for `app` at the DNS provider.
 4. Wait for DNS verification and HTTPS certificate issuance.
 
@@ -223,10 +223,10 @@ If using Vercel nameservers, delegate the domain’s nameservers to Vercel and m
 
 Update:
 
-- Application `NEXTAUTH_URL` → `https://app.YOUR_DOMAIN`
-- Marketing `NEXT_PUBLIC_WEB_URL` → `https://YOUR_DOMAIN`
-- Marketing `NEXTAUTH_URL` → `https://app.YOUR_DOMAIN`
-- Google OAuth production callback → `https://app.YOUR_DOMAIN/api/auth/callback/google`
+- Application `NEXTAUTH_URL` → `https://app.astryon.com`
+- Marketing `NEXT_PUBLIC_WEB_URL` → `https://astryon.com`
+- Marketing `NEXTAUTH_URL` → `https://app.astryon.com`
+- Google OAuth production callback → `https://app.astryon.com/api/auth/callback/google`
 - `EMAIL_FROM` → a sender on the verified domain
 
 ## 12. Production launch test
@@ -237,12 +237,12 @@ Update:
 2. Submit a test beta-signup email.
 3. Confirm the request creates one `BetaSignup` record in Neon.
 4. Confirm the invite email arrives through Resend.
-5. Confirm the link points to `https://app.YOUR_DOMAIN/join?...`.
+5. Confirm the link points to `https://app.astryon.com/join?...`.
 6. Submit repeated requests and confirm rate limiting responds safely.
 
 ### Application project
 
-1. Open `https://app.YOUR_DOMAIN`.
+1. Open `https://app.astryon.com`.
 2. Sign in with Google.
 3. Redeem the invite link.
 4. Confirm the session persists after refresh.
