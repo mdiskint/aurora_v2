@@ -1,10 +1,10 @@
-# AGENTS.md
+# Application project guide
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-Astryon is a 3D spatial conversation and knowledge visualization platform built with Next.js 15, React Three Fiber, and Socket.IO. It enables users to create and explore interconnected ideas in a 3D space, with AI-powered conversational threads and academic paper visualization.
+Astryon is a 3D spatial conversation and knowledge visualization platform built with Next.js 16, React 19, React Three Fiber, and Socket.IO. It enables users to create and explore interconnected ideas in a 3D space, with AI-powered conversational threads and academic paper visualization.
 
 ## Development Commands
 
@@ -23,10 +23,7 @@ npm run dev        # Start WebSocket/API server on port 3001
 npm start          # Same as dev (no separate prod mode)
 ```
 
-**Important**: Both frontend and backend servers must be running for full functionality. The frontend requires the backend for:
-- Real-time collaboration via WebSocket
-- AI chat (Codex API integration)
-- Conversation persistence
+For local development, the frontend and backend can run together. The Express/Socket.IO backend is local-development-only for the current production beta; production uses same-origin Next.js route handlers and does not deploy or connect to `server/`.
 
 ## Environment Variables
 
@@ -212,15 +209,19 @@ Connection nodes are special:
 - Check React Three Fiber console errors
 - Ensure `'use client'` directive at top of component files
 
-### WebSocket Not Connecting
+### WebSocket Not Connecting Locally
 - Confirm backend server is running on port 3001
 - Check CORS configuration in `server/server.js`
 - Verify socket initialization in browser console
 
 ### AI Chat Failing
-- Verify `ANTHROPIC_API_KEY` in server environment
-- Check server logs for API errors
-- Ensure server is running and accessible at `http://localhost:3001`
+- Verify the relevant provider key in the environment where the request runs.
+- Check Vercel function logs for production errors or server logs for local errors.
+- Confirm the user is authenticated; production AI traffic uses the same-origin `/api/chat` route.
+
+## Production deployment
+
+Read the monorepo root [`DEPLOYMENT_HANDOFF.md`](../DEPLOYMENT_HANDOFF.md) for the complete Vercel, Neon, OAuth, Resend, Upstash, Blob, DNS, and migration checklist. The application Vercel project must use `app` as its Root Directory and `https://app.astryon.com` as `NEXTAUTH_URL`.
 
 ## Code Style Notes
 
