@@ -25,6 +25,7 @@ Read the project-specific guide before changing code:
 - The application and marketing site share production services deliberately: Neon for the database, Resend for invitations, and Upstash Redis for rate limiting. Coordinate changes to their schemas and environment variables.
 - Preserve Prisma migration history under `app/prisma/migrations/`. Use `npx prisma migrate deploy` for production; never use `prisma migrate dev` against production.
 - Treat `main` as the production branch once Mike merges the `aurora-v2` pull request. Both Vercel projects should use `main` as their Production Branch.
+- Treat `app/` as the current production Astryon application being relocated into Mike’s original repository, not as a prototype or rewrite target. Preserve working behavior, routes, auth, persistence, integrations, and production assumptions during the promotion.
 
 ## Common commands
 

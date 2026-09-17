@@ -18,6 +18,7 @@ Use this page when you need to find project or deployment guidance. Start with t
 - `app/AGENTS.md` and `web/AGENTS.md` describe code inside their respective projects.
 - `DEPLOYMENT_HANDOFF.md` describes shared production operations and must be updated when domains, providers, migrations, or Vercel settings change.
 - `PROMOTE_TO_MAIN.md` explains the branch transition, conflict-resolution workflow, and agent handoff for Mike.
+- `PROMOTE_TO_MAIN.md` also records the critical production context: `app/` is the live application being moved, not a theoretical replacement.
 - `REVIEW_NOTES.md` records review evidence, accepted risks, and outstanding launch decisions.
 
 When a task spans both projects, read both project guides and the deployment handoff before editing. Never infer a project’s environment variables, deployment root, or runtime behavior from the other project.

@@ -6,6 +6,23 @@ Claude: read this entire file before taking action. Then inspect the repository 
 
 You are responsible for discovering the current repository state rather than assuming the examples below are still exact. Preserve the intended `app/` + `web/` monorepo, do not commit secrets, and report your decisions and validation evidence when finished.
 
+## Production context — do not lose this
+
+This is the exact Astryon application that is currently in production. It is not a prototype, sample implementation, future design, or rewrite plan. The purpose of this work is to move the live application back into Mike’s original `mdiskint/aurora_v2` repository so Mike can own and deploy both production surfaces:
+
+- the existing production application at `app.astryon.com`; and
+- the marketing and beta-signup site at `astryon.com`.
+
+The agent must preserve the application’s current behavior, routes, authentication, data model, AI integrations, persistence, and operational assumptions unless a specific compatibility fix is required by the repository move. Do not simplify, replace, rename, redesign, or “clean up” working production behavior as part of the branch promotion. Treat unexpected differences from `main` as migration risks that need investigation, not as invitations to rewrite the app.
+
+The desired outcome is ownership and deployment consolidation, not product change:
+
+```text
+Mike’s original repository
+├── app/   → current production Astryon application → app.astryon.com
+└── web/   → marketing and beta-signup site        → astryon.com
+```
+
 ## What this change is
 
 `aurora-v2` is the branch that contains the current Astryon handoff:
@@ -17,13 +34,13 @@ You are responsible for discovering the current repository state rather than ass
 - `docs/DEPLOYMENT_HANDOFF.md` contains the production setup for Vercel, Neon, Google OAuth, Resend, Upstash, AI providers, Blob, and DNS;
 - `docs/REVIEW_NOTES.md` records validation evidence, accepted risks, and launch follow-ups.
 
-This is intended to become the new production baseline. It is not a small feature branch.
+This is intended to become the new production baseline for the application that is already live. It is not a small feature branch and it must not be treated as an opportunity to build a replacement application.
 
 ## Why the pull request may show conflicts
 
 The existing `main` branch contains an earlier MVP release, while `aurora-v2` contains the newer monorepo/application structure. They have overlapping edits in application files, documentation, and configuration. GitHub may therefore show the pull request as `CONFLICTING` even though the target is intentionally a replacement baseline.
 
-Do not resolve this by blindly choosing “ours” or “theirs” for every file. The correct result is the complete `aurora-v2` monorepo, while preserving any genuinely newer production fixes that exist only on `main`.
+Do not resolve this by blindly choosing “ours” or “theirs” for every file. The correct result is the complete `aurora-v2` monorepo with the current production application intact, while preserving any genuinely newer production fixes that exist only on `main`.
 
 ## Recommended promotion workflow
 
@@ -49,7 +66,7 @@ git switch -c promote/aurora-v2-to-main origin/main
 git merge --no-ff origin/aurora-v2
 ```
 
-If Git reports conflicts, resolve them file by file. The target structure should have:
+If Git reports conflicts, resolve them file by file. Compare behavior against the current production source before changing application logic. The target structure should have:
 
 ```text
 app/
