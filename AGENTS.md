@@ -13,6 +13,7 @@ Read the project-specific guide before changing code:
 - [`web/AGENTS.md`](./web/AGENTS.md) — marketing-site conventions and validation
 - [`docs/README.md`](./docs/README.md) — documentation map and reading order
 - [`docs/DEPLOYMENT_HANDOFF.md`](./docs/DEPLOYMENT_HANDOFF.md) — Mike’s production deployment checklist
+- [`docs/PROMOTE_TO_MAIN.md`](./docs/PROMOTE_TO_MAIN.md) — branch-promotion and agent handoff guide for Mike
 - [`docs/REVIEW_NOTES.md`](./docs/REVIEW_NOTES.md) — deployment review findings and open risks
 
 ## Repository rules
