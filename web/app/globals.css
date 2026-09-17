@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-void: #050A14;
+  --color-deep-blue: #0A1F44;
+  --color-substrate: #0D1B36;
+  --color-cyan: #00D4FF;
+  --color-purple: #8B5CF6;
+  --color-pink: #E040FB;
+  --color-teal: #00FFD1;
+  --color-atom-white: #F0F6FF;
+  --color-dim: #4A5568;
+  --color-amber: #F59E0B;
+  --color-green: #10B981;
+  --font-sans: var(--font-sora);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-display: var(--font-instrument-serif);
+}
+
+body {
+  background: #050A14;
+  color: #F0F6FF;
+  font-family: var(--font-sora), sans-serif;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* Glow utilities */
+.glow-cyan {
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.6), 0 0 32px rgba(0, 212, 255, 0.2);
+}
+
+.glow-purple {
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.6), 0 0 32px rgba(139, 92, 246, 0.2);
+}
+
+.glow-pink {
+  box-shadow: 0 0 8px rgba(224, 64, 251, 0.6), 0 0 32px rgba(224, 64, 251, 0.2);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5), 0 0 60px rgba(0, 212, 255, 0.2);
+}
+
+/* Gradient button */
+.btn-gradient {
+  background: linear-gradient(135deg, #00D4FF, #8B5CF6);
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.btn-gradient:hover {
+  transform: scale(1.03) translateY(-1px);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.4), 0 0 60px rgba(139, 92, 246, 0.2);
+}
+
+/* Keyframes */
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+}
+
+/* Animation utilities */
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+.breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050A14;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E3A5F;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2A4A7F;
+}
