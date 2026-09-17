@@ -221,7 +221,7 @@ Connection nodes are special:
 
 ## Production deployment
 
-Read the monorepo root [`DEPLOYMENT_HANDOFF.md`](../DEPLOYMENT_HANDOFF.md) for the complete Vercel, Neon, OAuth, Resend, Upstash, Blob, DNS, and migration checklist. The application Vercel project must use `app` as its Root Directory and `https://app.astryon.com` as `NEXTAUTH_URL`.
+Read the monorepo root [`AGENTS.md`](../AGENTS.md) first, then [`docs/README.md`](../docs/README.md) for the documentation map. The complete Vercel, Neon, OAuth, Resend, Upstash, Blob, DNS, and migration checklist is in [`docs/DEPLOYMENT_HANDOFF.md`](../docs/DEPLOYMENT_HANDOFF.md). The application Vercel project must use `app` as its Root Directory and `https://app.astryon.com` as `NEXTAUTH_URL`.
 
 ## Code Style Notes
 

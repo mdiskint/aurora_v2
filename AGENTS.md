@@ -11,8 +11,9 @@ Read the project-specific guide before changing code:
 
 - [`app/AGENTS.md`](./app/AGENTS.md) — application architecture, APIs, Prisma, auth, AI, and local server
 - [`web/AGENTS.md`](./web/AGENTS.md) — marketing-site conventions and validation
-- [`DEPLOYMENT_HANDOFF.md`](./DEPLOYMENT_HANDOFF.md) — Mike’s production deployment checklist
-- [`REVIEW_NOTES.md`](./REVIEW_NOTES.md) — deployment review findings and open risks
+- [`docs/README.md`](./docs/README.md) — documentation map and reading order
+- [`docs/DEPLOYMENT_HANDOFF.md`](./docs/DEPLOYMENT_HANDOFF.md) — Mike’s production deployment checklist
+- [`docs/REVIEW_NOTES.md`](./docs/REVIEW_NOTES.md) — deployment review findings and open risks
 
 ## Repository rules
 
@@ -54,7 +55,7 @@ https://app.astryon.com/api/auth/callback/google
 
 Before declaring a deployment-related change complete:
 
-1. Update the relevant project guide or [`DEPLOYMENT_HANDOFF.md`](./DEPLOYMENT_HANDOFF.md).
+1. Update the relevant project guide or the appropriate document under [`docs/`](./docs/).
 2. Run the affected project’s lint, type-check, and build commands when dependencies are available.
 3. Confirm the Git diff contains no secrets or local-only artifacts.
 4. Report database migrations, environment-variable changes, DNS changes, and rollback considerations explicitly.

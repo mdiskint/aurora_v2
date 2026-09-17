@@ -1,5 +1,7 @@
 # AGENTS.md — Astryon Codebase Guide
 
+This is the marketing-site project inside the Astryon monorepo. Before changing code, read the repository-level [`../AGENTS.md`](../AGENTS.md), the documentation map in [`../docs/README.md`](../docs/README.md), and this file. The application project has separate instructions at [`../app/AGENTS.md`](../app/AGENTS.md); do not assume its APIs or runtime rules apply unchanged here.
+
 ## Stack Overview
 
 - **Next.js 16** (App Router, server components by default)
@@ -143,3 +145,7 @@ Before marking work done, verify:
 4. No `as any`, `@ts-ignore`, or `@ts-expect-error` introduced
 5. No `console.log` left in committed code (use proper logging or remove)
 6. New components follow existing naming and file structure conventions
+
+## Deployment pointers
+
+The Vercel project for this directory must use `web` as its Root Directory. Production deployment, shared environment variables, DNS, and beta-signup behavior are documented in [`../docs/DEPLOYMENT_HANDOFF.md`](../docs/DEPLOYMENT_HANDOFF.md). Review known risks in [`../docs/REVIEW_NOTES.md`](../docs/REVIEW_NOTES.md).

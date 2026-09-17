@@ -7,4 +7,4 @@ This repository contains two independent Next.js projects:
 
 Each project has its own `package.json`, lockfile, build command, and Vercel Root Directory. Deploy them as two separate Vercel projects from this repository.
 
-Start with [`AGENTS.md`](./AGENTS.md) for repository-wide development guidance. See [`DEPLOYMENT_HANDOFF.md`](./DEPLOYMENT_HANDOFF.md) for the production setup checklist and [`REVIEW_NOTES.md`](./REVIEW_NOTES.md) for the deployment-readiness review and remaining risks.
+Start with [`AGENTS.md`](./AGENTS.md) for repository-wide development guidance. The complete documentation map is in [`docs/README.md`](./docs/README.md). See [`docs/DEPLOYMENT_HANDOFF.md`](./docs/DEPLOYMENT_HANDOFF.md) for production setup and [`docs/REVIEW_NOTES.md`](./docs/REVIEW_NOTES.md) for deployment-readiness findings.
